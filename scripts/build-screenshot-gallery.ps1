@@ -9,17 +9,20 @@ Add-Type -AssemblyName System.Drawing
 $screens = @(
     @{ File = "overview.png"; Label = "Overview" },
     @{ File = "skills.png"; Label = "Skills" },
+    @{ File = "skills-batch.png"; Label = "Batch Skill Actions" },
     @{ File = "groups.png"; Label = "Groups & Relations" },
     @{ File = "updates.png"; Label = "Update Center" },
-    @{ File = "security.png"; Label = "Security Center" },
+    @{ File = "security-summary.png"; Label = "Security Summary" },
+    @{ File = "security-clusters.png"; Label = "Risk Clusters & Codex Review" },
+    @{ File = "install-preview.png"; Label = "Install & Safety Preview" },
     @{ File = "history.png"; Label = "History & Rollback" },
     @{ File = "quarantine.png"; Label = "Quarantine" },
     @{ File = "reports.png"; Label = "Reports" },
     @{ File = "settings.png"; Label = "Settings" }
 )
 
-$columns = 3
-$rows = 3
+$columns = 4
+$rows = [Math]::Ceiling($screens.Count / $columns)
 $tileWidth = 600
 $imageHeight = 338
 $labelHeight = 42

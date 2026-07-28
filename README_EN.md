@@ -8,9 +8,9 @@ Codex Skill Manager is a local Windows 10/11 application for downloading, scanni
 
 ## Interface overview
 
-![Nine primary Codex Skill Manager screens: Overview, Skills, Groups and Relations, Update Center, Security Center, History and Rollback, Quarantine, Reports, and Settings](docs/images/ui-gallery.png)
+![Key Codex Skill Manager screens and operation states: grouped Skills, batch selection, group relations, updates, risk clusters, Codex review, install preview, history and rollback, quarantine, reports, and settings](docs/images/ui-gallery.png)
 
-> Privacy note: these screenshots use an isolated anonymous demo environment. They do not read real Skills, GitHub credentials, Codex sign-in data, personal directories, or operation logs. Example paths use the `demo` user.
+> Privacy note: these screenshots use an isolated anonymous demo environment with three example groups and fictional Skills. They do not read real Skills, GitHub credentials, Codex sign-in data, personal directories, or operation logs. Example paths use the `demo` user.
 
 ## Purpose
 
