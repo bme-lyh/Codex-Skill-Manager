@@ -4,18 +4,38 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     labels: ["dependencies", "go"]
+    groups:
+      go-dependencies:
+        patterns: ["*"]
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     labels: ["dependencies", "frontend"]
+    groups:
+      frontend-runtime:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+          - lucide-react
+      frontend-build:
+        patterns:
+          - typescript
+          - vite
+          - "@vitejs/*"
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 2
     labels: ["dependencies", "github-actions"]
+    groups:
+      github-actions:
+        patterns: ["*"]
