@@ -40,14 +40,16 @@ jobs:
             throw "Go files are not formatted"
           }
 
-      - name: Run Go tests
-        run: go test ./...
-
       - name: Install frontend dependencies
         run: pnpm --dir frontend install --frozen-lockfile
 
       - name: Type-check and build frontend
         run: pnpm --dir frontend run build
+
+      # The root Wails package embeds frontend/dist, so build it before Go
+      # compiles or tests that package on a clean checkout.
+      - name: Run Go tests
+        run: go test ./...
 
       - name: Build CLI
         run: go build -trimpath -o build/bin/csm.exe ./cmd/csm
