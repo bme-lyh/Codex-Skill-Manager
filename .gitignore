@@ -1,0 +1,38 @@
+# Local toolchains and dependencies
+.toolchains/
+.cache/
+.gocache/
+.gomodcache/
+.pnpm-store/
+frontend/node_modules/
+
+# Generated frontend and Wails bindings
+frontend/dist/
+frontend/wailsjs/
+
+# Build, test and runtime state
+build/
+test-output/
+.code-review-graph/
+data/
+logs/
+reports/
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Downloaded archives
+*.zip
+
+# Local configuration and credentials
+.env
+.env.*
+config.local.yaml
+portable.marker
+
+# Editors and operating system
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

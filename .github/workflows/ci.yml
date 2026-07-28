@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Check Go formatting
+        shell: pwsh
+        run: |
+          $unformatted = gofmt -l .
+          if ($unformatted) {
+            $unformatted
+            throw "Go files are not formatted"
+          }
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Type-check and build frontend
+        run: pnpm --dir frontend run build
+
+      - name: Build CLI
+        run: go build -trimpath -o build/bin/csm.exe ./cmd/csm
+
+      - name: Build Wails desktop application
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -s -m -trimpath -platform windows/amd64 -o CodexSkillManager.exe
+
+      - name: Upload unsigned Windows binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodexSkillManager-windows-amd64-unsigned
+          path: |
+            build/bin/CodexSkillManager.exe
+            build/bin/csm.exe
+          if-no-files-found: error
+          retention-days: 14

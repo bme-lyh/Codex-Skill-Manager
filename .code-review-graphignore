@@ -1,0 +1,10 @@
+.toolchains/**
+.gocache/**
+.gomodcache/**
+.pnpm-store/**
+frontend/node_modules/**
+frontend/dist/**
+frontend/wailsjs/**
+build/**
+test-output/**
+*.zip

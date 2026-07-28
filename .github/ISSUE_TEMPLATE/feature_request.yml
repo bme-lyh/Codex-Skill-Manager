@@ -1,0 +1,29 @@
+name: 功能建议 / Feature request
+description: 建议新的工作流、界面或安全能力
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题
+      description: 当前工作流在哪里不够清楚、安全或高效？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: 安全与恢复
+      description: 涉及写入时，请说明目标、预览、备份、日志和恢复路径。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Skill Manager"
+  short_description: "Safely manage, audit, and restore Codex skills"
+  default_prompt: "Use Codex Skill Manager to inspect or manage my installed skills safely, previewing mutations before applying them."

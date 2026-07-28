@@ -1,0 +1,12 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "codex-skill-manager",
+  "outputfilename": "CodexSkillManager",
+  "frontend:install": "pnpm install --frozen-lockfile=false",
+  "frontend:build": "pnpm run build",
+  "frontend:dev:watcher": "pnpm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Codex Skill Manager Contributors"
+  }
+}
