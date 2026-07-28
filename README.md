@@ -13,6 +13,12 @@ Codex Skill Manager 是面向 Windows 10/11 的本地 Skills 管理工具。它�
 ![License](https://img.shields.io/badge/license-MIT-334155)
 [![CI](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml)
 
+## 界面总览
+
+![Codex Skill Manager 九个主要界面：概览、Skills、分组与关系、更新中心、安全中心、历史与回滚、隔离区、报告和设置](docs/images/ui-gallery.png)
+
+> 隐私说明：截图来自隔离的匿名演示环境，不读取真实 Skills、GitHub 凭据、Codex 登录信息、个人目录或操作日志；示例路径统一使用 `demo`。
+
 ## 项目目的
 
 Skill 本质上是一组会影响 Agent 行为的指令和文件。直接复制到 `.codex/skills` 很方便，但也容易失去来源、版本和风险记录。
