@@ -13,11 +13,11 @@ Codex Skill Manager 是面向 Windows 10/11 的本地 Skills 管理工具。它�
 ![License](https://img.shields.io/badge/license-MIT-334155)
 [![CI](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml)
 
-## 界面总览
+## 界面轮播
 
-![Codex Skill Manager 关键界面与操作状态：多分组 Skills、批量选择、分组关系、更新、安全风险簇、Codex 复核、安装预览、历史回滚、隔离、报告和设置](docs/images/ui-gallery.png)
+[![Codex Skill Manager 关键界面与操作状态轮播：多分组 Skills、批量选择、分组关系、更新、安全风险簇、Codex 复核、安装预览、历史回滚、隔离、报告和设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
-> 隐私说明：截图来自隔离的匿名演示环境，使用三个示例分组和虚构 Skills，不读取真实 Skills、GitHub 凭据、Codex 登录信息、个人目录或操作日志；示例路径统一使用 `demo`。
+> GIF 会自动循环展示 12 个关键状态。截图来自隔离的匿名演示环境，使用三个示例分组和虚构 Skills，不读取真实 Skills、GitHub 凭据、Codex 登录信息、个人目录或操作日志；示例路径统一使用 `demo`。
 
 ## 项目目的
 
