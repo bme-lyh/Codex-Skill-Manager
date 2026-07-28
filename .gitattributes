@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+# Keep native Windows scripts compatible with direct execution.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets must never be line-ending normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.exe binary
+*.zip binary
+*.db binary
