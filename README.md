@@ -15,7 +15,7 @@ Codex Skill Manager 是面向 Windows 10/11 的本地 Skills 管理工具。它�
 
 ## 界面展示
 
-[![Codex Skill Manager 关键界面与操作状态轮播：多分组 Skills、批量选择、分组关系、更新、安全风险簇、Codex 复核、安装预览、历史回滚、隔离、报告和设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
+[![Codex Skill Manager 当前界面轮播：多分组 Skills、批量操作、更新状态、安全中心默认折叠、按分组查看 Codex 复核、安装预览、历史回滚、隔离、报告和设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
 > 动图展示主要界面。里面使用的分组、Skill 和路径都是示例，不包含真实账号或个人信息。
 
