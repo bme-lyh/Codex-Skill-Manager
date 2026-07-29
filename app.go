@@ -276,8 +276,7 @@ func (a *App) ReviewScanWithCodex(report model.ScanReport, skillNames []string) 
 	if err := a.ready(); err != nil {
 		return model.ScanReport{}, err
 	}
-	timeout := time.Duration(a.mgr.Config.CodexReview.TimeoutSeconds) * time.Second
-	ctx, cancel := context.WithTimeout(a.ctx, timeout)
+	ctx, cancel := context.WithCancel(a.ctx)
 	defer cancel()
 	return a.mgr.ReviewScanWithCodex(ctx, report, skillNames, func(progress model.CodexReviewProgress) {
 		wailsruntime.EventsEmit(a.ctx, "codex-review-progress", progress)

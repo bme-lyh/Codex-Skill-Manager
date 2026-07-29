@@ -28,7 +28,8 @@ current CLI, with catalog failures kept separate from compatibility failures.
 review. Repeated `--skill` values restrict work to trusted Skills discovered
 inside the persisted report target. Omitting the flag reviews all discovered
 Skills. The result is stable per Skill. All selected Skills in the same application
-group share one review task; only different groups execute concurrently.
+group share one review task. Groups execute serially by default; a failed group or
+an output missing a requested Skill is retried once serially.
 If at least one group succeeds, the command returns the partial report; its
 review and journal status are `partial`, with failed groups named explicitly.
 

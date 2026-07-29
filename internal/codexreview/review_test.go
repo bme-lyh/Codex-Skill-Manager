@@ -3,6 +3,7 @@ package codexreview
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -238,6 +239,28 @@ func TestValidateBatchOutputKeepsOnlyTrustedSkillsAndClusters(t *testing.T) {
 	}
 }
 
+func TestValidateGeneratedBatchRequiresEverySkillConclusion(t *testing.T) {
+	batch := []reviewSkill{
+		{Name: "alpha", SourcePath: "alpha"},
+		{Name: "beta", SourcePath: "beta"},
+	}
+	generated := generatedBatch{SkillReviews: []model.CodexSkillReview{{
+		SkillName: "alpha", SourcePath: "alpha",
+	}}}
+	err := validateGeneratedBatch(batch, generated)
+	if err == nil || !strings.Contains(err.Error(), "beta") {
+		t.Fatalf("expected missing beta to require a retry, got %v", err)
+	}
+}
+
+func TestUserFacingBatchErrorSummarizesModelRefreshFailure(t *testing.T) {
+	err := errors.New("Codex CLI failed to refresh available models: timeout waiting for child process to exit")
+	message := userFacingBatchError(err)
+	if !strings.Contains(message, "刷新模型目录") || len(message) > 180 {
+		t.Fatalf("expected concise model refresh guidance, got %q", message)
+	}
+}
+
 func TestOutputSchemaIsValidJSON(t *testing.T) {
 	var schema map[string]any
 	if err := json.Unmarshal([]byte(outputSchema), &schema); err != nil {
@@ -307,6 +330,94 @@ exit /b 0
 	}
 }
 
+func TestReviewRetriesFailedGroupOnceSerially(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("fake Codex command fixture uses a Windows batch file")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(root, "SKILL.md"),
+		[]byte("---\nname: alpha\ndescription: fixture\n---\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixtureRoot := t.TempDir()
+	counter := filepath.Join(fixtureRoot, "attempts.txt")
+	fake := filepath.Join(fixtureRoot, "fake-codex.cmd")
+	script := `@echo off
+setlocal
+if "%~1"=="--version" (
+  echo codex-cli fixture
+  exit /b 0
+)
+if "%~1"=="login" (
+  echo Logged in
+  exit /b 0
+)
+if "%~1"=="--help" (
+  echo --config --model --sandbox --ask-for-approval
+  exit /b 0
+)
+if "%~1"=="exec" if "%~2"=="--help" (
+  echo --ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules --json --output-schema --output-last-message
+  exit /b 0
+)
+set "OUT="
+:args
+if "%~1"=="" goto run
+if "%~1"=="--output-last-message" set "OUT=%~2"
+shift
+goto args
+:run
+set "COUNT=0"
+if exist "__COUNTER__" set /p COUNT=<"__COUNTER__"
+set /a COUNT+=1
+> "__COUNTER__" echo %COUNT%
+if %COUNT%==1 (
+  echo transient model refresh failure 1>&2
+  exit /b 1
+)
+echo {"type":"turn.started"}
+> "%OUT%" echo {"skillReviews":[{"skillName":"alpha","sourcePath":".","verdict":"no-material-risk","summary":"ok","confidence":0.9,"concerns":[],"clusterReviews":[]}]}
+exit /b 0
+`
+	script = strings.ReplaceAll(script, "__COUNTER__", counter)
+	if err := os.WriteFile(fake, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report := model.ScanReport{
+		ID: "scan-retry", Target: root,
+		Skills: []model.ScanSkillSummary{{
+			SkillName: "alpha", SourcePath: ".", GroupID: "g1", GroupName: "Group",
+		}},
+	}
+	result, err := reviewInBatches(
+		context.Background(),
+		model.CodexReviewConfig{
+			CLIPath: fake, Model: "default", ReasoningEffort: "medium",
+			TimeoutSeconds: 30, MaxParallelBatches: 1,
+		},
+		report,
+		t.TempDir(),
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "completed" || len(result.Batches) != 1 || result.Batches[0].Attempts != 2 {
+		t.Fatalf("expected successful second attempt, got %#v", result)
+	}
+	data, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "2" {
+		t.Fatalf("expected exactly two Codex attempts, got %q", data)
+	}
+}
+
 func TestProgressTrackerPreservesParallelBatchGroups(t *testing.T) {
 	var latest model.CodexReviewProgress
 	tracker := &progressTracker{
@@ -314,14 +425,18 @@ func TestProgressTrackerPreservesParallelBatchGroups(t *testing.T) {
 		reviewID: "review", reportID: "report", startedAt: time.Now().UTC(),
 		batchCount: 2, totalSkills: 3, active: map[int]model.CodexActiveBatch{},
 	}
-	tracker.startBatch(1, reviewBatch{GroupID: "g2", GroupName: "第二组", Skills: []reviewSkill{{Name: "gamma"}}})
+	tracker.startBatch(1, reviewBatch{GroupID: "g2", GroupName: "第二组", Skills: []reviewSkill{{Name: "gamma"}}}, 1)
+	firstSequence := latest.Sequence
 	tracker.startBatch(0, reviewBatch{
 		GroupID: "g1", GroupName: "第一组", Skills: []reviewSkill{{Name: "alpha"}, {Name: "beta"}},
-	})
+	}, 1)
 	if len(latest.ActiveBatches) != 2 || latest.ActiveBatches[0].Index != 1 ||
 		!slices.Equal(latest.ActiveBatches[0].SkillNames, []string{"alpha", "beta"}) ||
 		latest.ActiveBatches[1].Index != 2 {
 		t.Fatalf("unexpected grouped progress: %#v", latest.ActiveBatches)
+	}
+	if latest.Sequence <= firstSequence {
+		t.Fatalf("progress sequence must increase monotonically: %d <= %d", latest.Sequence, firstSequence)
 	}
 }
 

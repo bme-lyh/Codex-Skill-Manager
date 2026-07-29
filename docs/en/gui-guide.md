@@ -20,7 +20,7 @@ Each source is applied as an independent transaction with its own backup and rol
 
 ## Security Center
 
-Skills with no trusted scan record or changed content are selected by default. Checked and unchanged Skills are skipped by default, but can be added with checkboxes, Select all, or Invert. Results and counts follow Group → Skill → Warning. Each warning shows its rule, severity, evidence, explanation, and recommendation.
+Skills with no trusted scan record or changed content are selected by default. Checked and unchanged Skills are skipped by default, but can be added with checkboxes, Select all, or Invert. Results and counts follow Group → Skill → Warning. Groups, Skill details, and Codex conclusions are collapsed by default so large reports remain readable.
 
 Repeated scans do not inflate the badge: it counts unique active High/Critical findings from the latest effective report per target. Every severity and deterministic rule can be ignored individually or all at once, without running Codex first or entering a mandatory reason.
 
@@ -40,9 +40,11 @@ required capabilities instead of pinning a CLI version and refreshes status
 when focus returns after browser authentication. Once authenticated, the model
 picker loads the current CLI's visible model catalog instead of using a
 hard-coded list. Each application group is one review task, so Skills in the same
-group keep shared context. Different groups may run in parallel. Local rule input
-is a count-only overview; Codex reads evidence from the repository. Reviews return
-a separate summary for every Skill, with live group and Skill progress. Codex review
+group keep shared context. Groups run serially by default; higher concurrency can
+cause CLI model-refresh contention or rate limiting. Local rule input is a count-only
+overview; Codex reads evidence from the repository. Reviews return a separate summary
+for every Skill, with live group and Skill progress. Switching pages keeps the task
+and result alive. A failed or incomplete group is retried once serially. Codex review
 requires an installed, signed-in Codex CLI and consumes account usage. Background CLI probes run
 without flashing console windows. Tokens
 are stored in Windows Credential Manager and are never written to logs or

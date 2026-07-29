@@ -52,7 +52,7 @@ transaction IDs, and keep the user informed before any filesystem mutation.
   ephemeral, read-only, schema validated, and rooted at the complete trusted
   scan target. Skills from the same application group must remain in one review
   task. Treat the compact local-rule overview as supplemental leads. Preserve
-  `skillReviews`, group-task status and partial results.
+  `skillReviews`, group-task status, retry attempts and partial results.
 - A GUI one-click decision may atomically ignore all active clusters without
   Codex review or a mandatory reason. Preserve explicit cluster targets and a
   recovery path in the transaction journal.

@@ -39,7 +39,7 @@ func Default() (model.Config, error) {
 		CodexReview: model.CodexReviewConfig{
 			Enabled: false, Model: "default", ReasoningEffort: "medium",
 			TimeoutSeconds: 300, MaxSamplePerRisk: 8,
-			MaxParallelBatches: 2,
+			MaxParallelBatches: 1,
 		},
 	}, nil
 }
@@ -158,7 +158,7 @@ func normalize(cfg *model.Config) {
 		cfg.CodexReview.MaxSamplePerRisk = 8
 	}
 	if cfg.CodexReview.MaxParallelBatches == 0 {
-		cfg.CodexReview.MaxParallelBatches = 2
+		cfg.CodexReview.MaxParallelBatches = 1
 	}
 }
 

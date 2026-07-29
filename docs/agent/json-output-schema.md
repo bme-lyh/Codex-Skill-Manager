@@ -28,10 +28,14 @@ cluster counts. Optional `codexReview` data is advisory and schema validated;
 repository context was available to the review. `skillReviews` contains one
 stable entry per requested Skill with `summary`, `verdict`, `confidence`,
 `concerns`, `clusterIds` and validated `clusterReviews`. `batches` records
-the effective `groupId`, `groupName`, member Skills and task status;
+the effective `groupId`, `groupName`, member Skills, task status and `attempts`;
 `totalSkills` and `durationMillis` support
 progress and performance reporting. The legacy flat `reviews` collection is
 retained for cluster-oriented consumers.
+
+Desktop `codex-review-progress` events include a monotonically increasing
+`sequence` per review. Consumers must ignore an event whose sequence is not newer
+than the last accepted event for the same `reviewId`.
 
 Security scan reports include `skills`, a per-Skill summary with effective group,
 source path, file count and active/ignored warning counts. Findings and clusters

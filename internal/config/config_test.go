@@ -7,7 +7,7 @@ func TestDefaultCodexReviewGroupParallelismIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.CodexReview.MaxParallelBatches != 2 {
+	if cfg.CodexReview.MaxParallelBatches != 1 {
 		t.Fatalf("unexpected Codex review group parallelism: %#v", cfg.CodexReview)
 	}
 	if err := Validate(cfg); err != nil {
