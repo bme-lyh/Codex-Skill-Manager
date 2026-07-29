@@ -8,7 +8,7 @@ Codex Skill Manager is a local Windows 10/11 application for downloading, scanni
 
 ## Interface preview
 
-[![Animated carousel of key Codex Skill Manager screens and operation states: grouped Skills, batch selection, group relations, updates, risk clusters, Codex review, install preview, history and rollback, quarantine, reports, and settings](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
+[![Current Codex Skill Manager interface carousel: grouped Skills, batch actions, update status, collapsed Security Center results, grouped Codex review, install preview, history and rollback, quarantine, reports, and settings](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
 > The animation uses fictional Skills, groups, and paths. It contains no real account or personal information.
 
