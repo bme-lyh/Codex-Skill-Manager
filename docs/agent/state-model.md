@@ -14,10 +14,18 @@ resolved commit, source path and installed file hashes.
 - group labels/order in `skill_groups` and the layout-only Skill assignments in
   `skill_group_assignments`.
 - latest structured update state per source group in `update_statuses`.
+- per-Skill security check hashes, report IDs and check times in
+  `skill_security_states`.
 
 The dashboard risk count is derived from unique, non-ignored High/Critical
 findings in the latest report for each in-scope installed-skill target. It is
 not a count of historical scan rows.
+
+The dashboard compares each current Skill inventory hash with
+`skill_security_states`. Unchanged checked Skills are skipped by default;
+missing or changed state is selected for the next security scan. A managed
+Skill with a valid legacy `LastScanReport` and no local changes is treated as
+checked during migration.
 
 Installed Commit state is recorded per Skill. `PackageLock.resolvedCommit`
 remains backward-compatible package metadata; readers prefer

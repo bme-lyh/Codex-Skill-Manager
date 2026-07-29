@@ -19,6 +19,8 @@ csm reports
 csm doctor
 ```
 
+不指定 `--skill` 时，`audit` 会检查全部非系统 Skills，并按应用中的分组记录结果；指定后只检查该 Skill。
+
 `check` 返回每个来源的结构化状态、上次检查时间、远端 Commit 和待更新 Skills。
 可重复使用 `--group ID` 只检查指定来源，使用 `--force` 绕过五分钟短期缓存。
 限流或临时错误不会清除上一次成功状态。
@@ -32,7 +34,7 @@ csm codex review --report SCAN_ID [--skill NAME ...]
 `github-auth` 验证凭据并显示 REST API 剩余额度。`codex status` 检查独立 CLI、登录
 状态和复核能力兼容性；登录成功时还会返回当前 CLI 的可见模型目录。`codex review`
 对指定扫描报告执行可选只读语义复核；可重复使用 `--skill` 只复核明确选定的 Skills，
-省略时复核报告目标中识别到的全部 Skills。结果按 Skill 分开，并包含批次状态和耗时。
+省略时复核报告目标中识别到的全部 Skills。结果按 Skill 分开，并包含分组任务状态和耗时。
 兼容性依据实际命令能力判断，不绑定 CLI 版本号。
 模型目录读取失败属于非致命状态，不会把本来兼容的复核功能判定为不可用。该功能必须先在配置中启用
 `codexReview.enabled`，默认模型 `default` 表示 Codex 当前默认先进模型，默认推理强度

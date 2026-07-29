@@ -28,9 +28,15 @@ cluster counts. Optional `codexReview` data is advisory and schema validated;
 repository context was available to the review. `skillReviews` contains one
 stable entry per requested Skill with `summary`, `verdict`, `confidence`,
 `concerns`, `clusterIds` and validated `clusterReviews`. `batches` records
-queued/completed/failed work units; `totalSkills` and `durationMillis` support
+the effective `groupId`, `groupName`, member Skills and task status;
+`totalSkills` and `durationMillis` support
 progress and performance reporting. The legacy flat `reviews` collection is
 retained for cluster-oriented consumers.
+
+Security scan reports include `skills`, a per-Skill summary with effective group,
+source path, file count and active/ignored warning counts. Findings and clusters
+also carry `skillName`, `groupId` and `groupName`, allowing readers to render
+Group → Skill → Warning without reconstructing ownership from file paths.
 Dashboard `riskCount` is the number of unique, active High/Critical clusters
 from the latest in-scope report per target.
 

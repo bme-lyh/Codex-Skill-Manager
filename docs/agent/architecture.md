@@ -16,8 +16,8 @@ Core packages:
 - `reporting`: Markdown and JSON reader-facing reports;
 - `scheduler`: Windows Task Scheduler integration for checks only;
 - `auth`: GitHub token resolution and Windows Credential Manager storage.
-- `codexreview`: opt-in CLI discovery, auth diagnostics, bounded parallel
-  per-Skill review batches, JSONL activity progress, read-only execution and
+- `codexreview`: opt-in CLI discovery, auth diagnostics, parallel group-scoped
+  review tasks, per-Skill results, JSONL activity progress, read-only execution and
   JSON-Schema-validated summaries.
 
 The GUI calls the same manager facade as the CLI. The source lock is the
@@ -25,9 +25,16 @@ portable source of truth; SQLite is operational history. Filesystem changes,
 lock updates and reports are tied together by transaction IDs.
 
 Scanner findings remain immutable evidence. The manager decorates them into
-stable clusters by rule, category and file class. A human cluster decision
+stable clusters by effective group, Skill, rule, category and file class. A human cluster decision
 expands to every member fingerprint. Multi-cluster decisions use one SQLite
 transaction and one journal entry. Reasons are optional, deterministic rules use
 the same human action as every other severity, and model output is always
 advisory. Codex review runs with the complete target as its read-only working
-directory; static clusters are leads rather than the complete review payload.
+directory. One application group is one review task; all selected Skills in that
+group remain together, while different groups may run concurrently. Static findings
+are reduced to count-only rule overviews and remain leads rather than conclusions.
+
+SQLite `skill_security_states` stores the content hash, report ID and check time
+for each successfully scanned Skill. Dashboard inventory hashes are compared with
+that state so unchanged Skills can be skipped by default without hiding changed or
+untracked content.

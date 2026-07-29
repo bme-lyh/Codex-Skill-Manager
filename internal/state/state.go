@@ -68,8 +68,59 @@ CREATE TABLE IF NOT EXISTS skill_group_assignments (
 CREATE TABLE IF NOT EXISTS update_statuses (
   group_id TEXT PRIMARY KEY, checked_at TEXT NOT NULL, payload_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS skill_security_states (
+  skill_name TEXT PRIMARY KEY, content_hash TEXT NOT NULL,
+  report_id TEXT NOT NULL, checked_at TEXT NOT NULL
+);
 `)
 	return err
+}
+
+func (s *Store) SaveSkillSecurityStates(states []model.SkillSecurityState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	for _, state := range states {
+		if state.SkillName == "" || state.ContentHash == "" || state.ReportID == "" || state.CheckedAt.IsZero() {
+			_ = tx.Rollback()
+			return errors.New("skill security state is incomplete")
+		}
+		if _, err = tx.Exec(`
+INSERT INTO skill_security_states(skill_name,content_hash,report_id,checked_at) VALUES(?,?,?,?)
+ON CONFLICT(skill_name) DO UPDATE SET
+content_hash=excluded.content_hash,report_id=excluded.report_id,checked_at=excluded.checked_at`,
+			state.SkillName, state.ContentHash, state.ReportID, state.CheckedAt.Format(time.RFC3339Nano)); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) SkillSecurityStates() (map[string]model.SkillSecurityState, error) {
+	rows, err := s.db.Query(`SELECT skill_name,content_hash,report_id,checked_at FROM skill_security_states`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]model.SkillSecurityState{}
+	for rows.Next() {
+		var state model.SkillSecurityState
+		var checkedAt string
+		if err := rows.Scan(&state.SkillName, &state.ContentHash, &state.ReportID, &checkedAt); err != nil {
+			return nil, err
+		}
+		state.CheckedAt, err = time.Parse(time.RFC3339Nano, checkedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse skill security check time: %w", err)
+		}
+		out[state.SkillName] = state
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SaveUpdateStatuses(statuses []model.UpdateStatus) error {
