@@ -28,7 +28,7 @@ function useCodexProgress() {
 const nav: Array<{ id: Page; label: string; icon: any }> = [
   { id: "overview", label: "概览", icon: LayoutDashboard },
   { id: "skills", label: "Skills", icon: Boxes },
-  { id: "groups", label: "分组与关系", icon: GitBranch },
+  { id: "groups", label: "分组", icon: GitBranch },
   { id: "updates", label: "更新中心", icon: RefreshCw },
   { id: "security", label: "安全中心", icon: ShieldCheck },
   { id: "history", label: "历史与回滚", icon: History },
@@ -80,7 +80,7 @@ export default function App() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand" title="Codex Skill Manager">
-          <div className="brand-copy"><span>CODEX</span><strong>Skill Manager</strong><small>LOCAL · SAFE · REVERSIBLE</small></div>
+          <div className="brand-copy"><span>CODEX</span><strong>Skill Manager</strong></div>
         </div>
         <nav>
           {nav.map(item => {
@@ -93,13 +93,13 @@ export default function App() {
         </nav>
         <div className="sidebar-foot">
           <span className="status-dot" />
-          <div><strong>本地保护已启用</strong><small>不会上传 Skill 内容</small></div>
+          <div><strong>本地模式</strong><small>Codex 复核需单独启用</small></div>
         </div>
       </aside>
 
       <main>
         <header>
-          <div><p className="eyebrow">CODEX SKILLS</p><h1>{title}</h1></div>
+          <h1>{title}</h1>
           <div className="header-actions">
             <button className="ghost" disabled={loading} onClick={() => void runOperation("刷新 Skills 清单", refresh, "清单已刷新")}>
               <RefreshCw size={17} className={loading ? "spin" : ""} />{loading ? "刷新中…" : "刷新"}
@@ -146,17 +146,17 @@ function Loading() {
 
 function Overview({ data, onNavigate }: { data: Dashboard; onNavigate: (p: Page) => void }) {
   const cards = [
-    { label: "已管理", value: data.managedCount, detail: "来源和版本已锁定", icon: CheckCircle2, tone: "teal" },
-    { label: "未管理", value: data.unmanagedCount, detail: "建议确认来源", icon: Link2, tone: "amber" },
-    { label: "系统 Skills", value: data.systemCount, detail: "由 Codex 维护", icon: ShieldCheck, tone: "blue" },
-    { label: "高风险报告", value: data.riskCount, detail: "需要人工审查", icon: ShieldAlert, tone: "red" }
+    { label: "已管理", value: data.managedCount, detail: "已记录来源和版本", icon: CheckCircle2, tone: "teal" },
+    { label: "未管理", value: data.unmanagedCount, detail: "等待确认来源", icon: Link2, tone: "amber" },
+    { label: "系统 Skills", value: data.systemCount, detail: "由 Codex 管理", icon: ShieldCheck, tone: "blue" },
+    { label: "待处理报告", value: data.riskCount, detail: "需要人工处理", icon: ShieldAlert, tone: "red" }
   ];
   return <>
     <section className="hero">
-      <div><span className="pill">LOCAL FIRST</span><h2>你的 Skills，清楚、可控、可回滚。</h2>
-        <p>统一管理来源、版本、安全检查和更新记录。任何修改都先生成计划。</p>
+      <div><h2>Skills 管理</h2>
+        <p>查看来源、版本、安全状态和最近操作。</p>
       </div>
-      <button onClick={() => onNavigate("updates")}><RefreshCw size={19} />检查全部更新</button>
+      <button onClick={() => onNavigate("updates")}><RefreshCw size={19} />检查更新</button>
     </section>
     <div className="stats">
       {cards.map(c => { const Icon = c.icon; return <article key={c.label}>
@@ -166,11 +166,11 @@ function Overview({ data, onNavigate }: { data: Dashboard; onNavigate: (p: Page)
     </div>
     <div className="grid-two">
       <section className="panel">
-        <PanelHead title="管理分组" subtitle="自动识别来源，也可按需要手动整理" action="查看关系" onClick={() => onNavigate("groups")} />
+        <PanelHead title="分组" subtitle="按来源分组，也支持手动调整" action="查看分组" onClick={() => onNavigate("groups")} />
         <div className="group-list">{data.groups.slice(0, 5).map(g => <GroupRow key={g.id} group={g} />)}</div>
       </section>
       <section className="panel">
-        <PanelHead title="最近活动" subtitle="安装、更新和回滚事务" action="完整历史" onClick={() => onNavigate("history")} />
+        <PanelHead title="最近操作" subtitle="安装、更新和回滚记录" action="查看历史" onClick={() => onNavigate("history")} />
         <Timeline data={data.recentHistory.slice(0, 5)} />
       </section>
     </div>
@@ -190,7 +190,7 @@ function GroupRow({ group }: { group: Group }) {
 }
 
 function Timeline({ data }: { data: Dashboard["recentHistory"] }) {
-  if (!data.length) return <Empty text="暂无管理事务" />;
+  if (!data.length) return <Empty text="暂无最近操作" />;
   return <div className="timeline">{data.map(tx => <div key={tx.id}><span className={tx.status} />
     <div><strong>{tx.type} · {tx.targets.join("、") || "—"}</strong><small>{new Date(tx.startedAt).toLocaleString("zh-CN")}</small></div>
     <em>{tx.status}</em></div>)}</div>;
@@ -248,7 +248,7 @@ function SkillsPage({ data, selected, setSelected, refresh, runOperation }: {
           <ShieldCheck size={16} />扫描此 Skill
         </button>}
         {unmanagedSelected.length > 0 && <button className="ghost adopt-button" onClick={analyzeAdoption} disabled={working}>
-          {working ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />}分析并管理 {unmanagedSelected.length} 个
+          {working ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />}管理 {unmanagedSelected.length} 个
         </button>}
         <button className="danger" onClick={remove} disabled={working}><Trash2 size={16} />{working ? "处理中…" : "移至隔离区"}</button></div>}
     </div>
@@ -313,14 +313,14 @@ function AdoptionDialog({ preview, close, refresh, runOperation, onCompleted }: 
   const apply = async () => {
     setWorking(true);
     try {
-      const result = await runOperation("管理现有 Skills", () => api.applyAdoption(preview.id, selected), "已建立来源快照并完成管理");
+      const result = await runOperation("管理现有 Skills", () => api.applyAdoption(preview.id, selected), "已完成管理");
       if (result) { onCompleted(); await refresh(); close(); }
     } finally { setWorking(false); }
   };
   return <div className="modal-backdrop"><div className="modal adoption-modal">
-    <div className="modal-head"><div><p className="eyebrow">MANAGE EXISTING</p><h2>分析并管理</h2></div><button onClick={close}><X /></button></div>
-    <div className="notice"><ShieldCheck size={20} /><span><strong>只建立管理快照，不移动 Skill 文件</strong>
-      <small>工具会自动识别真实来源并分组；无法确认 GitHub 来源时，会建立独立本地分组。</small></span></div>
+    <div className="modal-head"><h2>管理现有 Skills</h2><button onClick={close}><X /></button></div>
+    <div className="notice"><ShieldCheck size={20} /><span><strong>记录来源和分组</strong>
+      <small>不会移动文件；无法识别 GitHub 来源时会创建本地分组。</small></span></div>
     <div className="candidate-list">{preview.skills.map(skill => <label key={skill.name}>
       <input type="checkbox" checked={selected.includes(skill.name)}
         onChange={() => setSelected(selected.includes(skill.name) ? selected.filter(name => name !== skill.name) : [...selected, skill.name])} />
@@ -410,7 +410,7 @@ function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh:
   };
   return <div className="groups-layout">
     <section className="panel group-nav">
-      <div className="group-nav-head"><div><h3>管理分组</h3><p>拖动分组排序，拖动 Skill 更换分组</p></div>
+      <div className="group-nav-head"><div><h3>分组</h3><p>拖动排序或移动 Skill</p></div>
         <button className="icon-button" title="新建分组" disabled={working} onClick={create}><Plus size={17} /></button></div>
       {data.groups.map(g => <div key={g.id} className={`group-nav-item ${active === g.id ? "active" : ""}`}
         draggable={!g.readOnly && !working}
@@ -424,7 +424,7 @@ function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh:
         {!g.readOnly && <button className="group-rename" title="重命名" onClick={() => void rename(g)}><Pencil size={14} /></button>}
       </div>)}
     </section>
-    <section className="panel relation-panel"><PanelHead title={group?.name || "分组详情"} subtitle="Skill 可直接拖动到左侧其他分组" />
+    <section className="panel relation-panel"><PanelHead title={group?.name || "分组详情"} subtitle="拖动 Skill 可更换分组" />
       {group ? <>
         <div className="group-skill-list">{group.skillNames.length ? group.skillNames.map(name => {
           const skill = data.skills.find(item => item.name === name);
@@ -506,23 +506,23 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
   const lastChecked = statuses.reduce<string | undefined>((latest, status) =>
     !latest || new Date(status.checkedAt) > new Date(latest) ? status.checkedAt : latest, data.lastUpdateCheck);
   return <section className="panel full">
-    <div className="update-hero"><div className="round-icon"><RefreshCw size={28} /></div><div><h2>先检查，再计划，最后更新</h2>
-      <p>远端版本会解析为不可变 Commit。发现更新后，可选择单个或多个 Skills，审查安全结果再应用。</p>
+    <div className="update-hero"><div className="round-icon"><RefreshCw size={28} /></div><div><h2>检查更新</h2>
+      <p>检查版本并选择要更新的 Skills。更新前会显示计划和安全结果。</p>
       <small>{lastChecked ? `上次检查：${new Date(lastChecked).toLocaleString("zh-CN")}` : "尚未执行过更新检查"}</small></div>
       <button className="primary" onClick={check} disabled={working}>{working ? <LoaderCircle className="spin" size={17} /> : <RefreshCw size={17} />}{working ? "正在检查…" : "检查更新"}</button></div>
     {availableGroups.length > 0 && <div className="update-toolbar">
-      <div><strong>批量更新</strong><span>仅选择已发现新版本的来源；每个来源都有独立备份和回滚事务。</span></div>
+      <div><strong>选择更新来源</strong><span>仅显示有新版本的来源；每个来源可单独回滚。</span></div>
       <div className="selection-tools">
         <button className="ghost" onClick={selectAll}><CheckSquare2 size={15} />全选可更新</button>
         <button className="ghost" onClick={invert}><ListRestart size={15} />反选</button>
         <button className="ghost" onClick={clear} disabled={!selectedGroups.length}><X size={15} />清空</button>
         <button className="primary" disabled={working || !selectedAvailableGroups.length} onClick={() => void prepare(selectedAvailableGroups)}>
           {working ? <LoaderCircle className="spin" size={16} /> : <ArrowUpCircle size={16} />}
-          审查所选 {selectedAvailableGroups.length} 个来源
+          检查所选 {selectedAvailableGroups.length} 个来源
         </button>
       </div>
     </div>}
-    {prepareFailures.length > 0 && <div className="prepare-failures"><CircleAlert size={17} /><div><strong>部分更新计划未能准备</strong>
+    {prepareFailures.length > 0 && <div className="prepare-failures"><CircleAlert size={17} /><div><strong>部分更新无法准备</strong>
       {prepareFailures.map(message => <small key={message}>{message}</small>)}</div><button onClick={() => setPrepareFailures([])}><X size={15} /></button></div>}
     <div className="update-list">{updateGroups.length === 0 ? <Empty text="暂无可检查的个人 Skill 来源" /> : updateGroups.map(g => {
       const status = statusByGroup.get(g.id);
@@ -541,7 +541,7 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
         </div>
         <div className="update-actions"><span className={`badge ${presentation.badge}`}>{presentation.label}</span>
           {status?.status === "update-available" && <button className="ghost compact" disabled={working} onClick={() => void prepare([g])}>
-            <ShieldCheck size={15} />单独审查
+            <ShieldCheck size={15} />单独检查
           </button>}
           {(status?.status === "error" || status?.status === "rate-limited") &&
             <button className="ghost compact" disabled={working}
@@ -690,11 +690,11 @@ function UpdateDialog({ items, close, refresh }: {
       setFailures(errors);
       if (!errors.length) close();
     } catch (error: any) {
-      setFailures([`状态核对失败：${error?.message ?? String(error)}。已完成的事务可在“历史与回滚”中确认。`]);
+      setFailures([`状态核对失败：${error?.message ?? String(error)}。已完成的操作可在“历史与回滚”中确认。`]);
     } finally { setWorking(false); setProgress(""); }
   };
   return <div className="modal-backdrop"><div className="modal update-modal batch-update-modal">
-    <div className="modal-head"><div><p className="eyebrow">SAFE BATCH UPDATE</p><h2>审查并选择要更新的 Skills</h2>
+    <div className="modal-head"><div><h2>选择要更新的 Skills</h2>
       <small>{items.length} 个来源 · 已选择 {selectedCount} 个 Skills</small></div><button onClick={close} disabled={working}><X /></button></div>
     <div className="update-plan-list">{items.map(({ group, value }) => {
       const names = selected[value.id] ?? [];
@@ -721,11 +721,11 @@ function UpdateDialog({ items, close, refresh }: {
           onApplyCodexSuggestions={clusters => applyCodexSuggestions(value.id, clusters)}
           onIgnoreAll={clusters => ignoreAll(value.id, clusters)} />
         {blocking && <div className="error-banner inline"><CircleAlert size={17} />
-          仍有未忽略的高风险或严重风险。可以直接使用“一键忽略全部警告”；处理完成前不会执行更新。</div>}
+          仍有未处理的高风险或严重风险。请先处理或忽略警告。</div>}
       </section>;
     })}</div>
     {progress && <div className="batch-progress"><LoaderCircle className="spin" size={17} /><span>{progress}</span></div>}
-    {failures.length > 0 && <div className="prepare-failures"><CircleAlert size={17} /><div><strong>部分来源更新失败，已完成的来源仍可单独回滚</strong>
+    {failures.length > 0 && <div className="prepare-failures"><CircleAlert size={17} /><div><strong>部分来源更新失败</strong>
       {failures.map(message => <small key={message}>{message}</small>)}</div></div>}
     <div className="modal-actions"><button className="ghost" onClick={close}>取消</button>
       <button className="primary" disabled={working || reviewing !== "" || hasBlockingWarnings || selectedCount === 0} onClick={apply}>
@@ -751,24 +751,24 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
   const activeClusters = clusters.filter(cluster => !cluster.ignored);
   return <>
     {clusters.length ? <RiskOverview report={report} /> :
-      <div className="scan-clean"><CheckCircle2 size={16} />本地规则未发现警告，仍可使用 Codex 做完整上下文复核</div>}
+      <div className="scan-clean"><CheckCircle2 size={16} />本地规则未发现警告。可选用 Codex 复核完整上下文。</div>}
     {onIgnoreAll && activeClusters.length > 0 && <div className="manual-review-action"><div>
-      <strong>人工决定优先</strong>
-      <small>无需 Codex 复核，也无需填写原因；一次忽略当前报告中全部 {activeClusters.length} 个待处理风险簇。</small>
+      <strong>批量处理警告</strong>
+      <small>一次忽略本报告中全部 {activeClusters.length} 个待处理警告。</small>
     </div><button className="primary compact" disabled={reviewing !== "" || codexWorking}
       onClick={() => void onIgnoreAll(activeClusters)}>
       {reviewing === "manual-batch" ? <LoaderCircle className="spin" size={14} /> : <CheckSquare2 size={14} />}
       {reviewing === "manual-batch" ? "正在记录…" : "一键忽略全部警告"}
     </button></div>}
-    {onCodexReview && <div className="codex-review-action"><div><strong>需要快速归纳大量警告？</strong>
-      <small>Codex 会按分组复核完整上下文；本地规则只提供简短概览。</small></div>
+    {onCodexReview && <div className="codex-review-action"><div><strong>Codex 复核</strong>
+      <small>按分组读取完整上下文，本地规则结果作为参考。</small></div>
       <button className="ghost" disabled={codexWorking} onClick={() => void onCodexReview()}>
         {codexWorking ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
-        {codexWorking ? "Codex 正在复核…" : report.codexReview ? "重新用 Codex 复核" : "使用 Codex 辅助复核"}
+        {codexWorking ? "Codex 正在复核…" : report.codexReview ? "重新复核" : "使用 Codex 复核"}
       </button></div>}
     {codexWorking && codexProgress && <CodexProgressCard progress={codexProgress} />}
     {report.codexReview && <div className={`codex-review-summary ${report.codexReview.status}`}>
-      <Sparkles size={18} /><div><strong>Codex 辅助复核</strong>
+      <Sparkles size={18} /><div><strong>Codex 复核结果</strong>
         <p>{report.codexReview.summary || report.codexReview.error}</p>
         <small>{report.codexReview.model === "default" ? "Codex 默认先进模型" : report.codexReview.model} ·
           推理强度 {report.codexReview.reasoningEffort} ·
@@ -781,7 +781,7 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
             {reviewing === "codex-batch" ? <LoaderCircle className="spin" size={14} /> : <CheckSquare2 size={14} />}
             {reviewing === "codex-batch" ? "正在记录…" : `一键采纳 ${suggestedClusters.length} 个建议`}
           </button>}
-        <small className="codex-baseline-note">Codex 结论仅供参考；所有级别最终均可由人工直接决定。</small></div>
+        <small className="codex-baseline-note">结果仅供参考，最终由人工决定。</small></div>
     </div>}
     {!!report.codexReview?.skillReviews?.length && <CodexSkillReviewList report={report} />}
     {clusters.length > 0 && <GroupedRiskDetails report={report} clusters={clusters}
@@ -907,7 +907,7 @@ function CodexSkillReviewList({ report }: { report: ScanReport }) {
         <span className={`codex-verdict ${review.verdict}`}>{codexSkillVerdictLabel(review.verdict)}</span></div>
       <p>{review.summary}</p>
       <small>置信度 {Math.round((review.confidence || 0) * 100)}% ·
-        Skill 目录文件 {review.contextFileCount || 0} 个 · 风险簇 {review.clusterIds?.length || 0} 个</small>
+        Skill 目录文件 {review.contextFileCount || 0} 个 · 关联警告 {review.clusterIds?.length || 0} 个</small>
       {review.error && <div className="codex-skill-error">{review.error}</div>}
       {!!review.concerns?.length && <div className="codex-concern-list">{review.concerns.map((concern, index) =>
         <div key={`${concern.title}:${index}`}><span className={`severity ${concern.severity}`}>{severityLabel(concern.severity)}</span>
@@ -990,9 +990,9 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
   const toggleIgnore = async (cluster: RiskCluster) => {
     setReviewing(cluster.id);
     const changed = await runOperation(
-      cluster.ignored ? "恢复风险簇" : "记录风险簇人工决定",
+      cluster.ignored ? "恢复警告" : "记录人工决定",
       () => api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true),
-      cluster.ignored ? "风险簇已恢复" : "风险簇已按人工决定忽略"
+      cluster.ignored ? "警告已恢复" : "警告已忽略"
     );
     setReviewing("");
     if (!changed) return;
@@ -1005,7 +1005,7 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     const changed = await runOperation(
       "一键忽略全部安全警告",
       () => api.setRiskClustersIgnored(clusters, true, ""),
-      `已忽略 ${clusters.length} 个待处理风险簇`
+      `已忽略 ${clusters.length} 个待处理警告`
     );
     setReviewing("");
     if (!changed) return;
@@ -1018,7 +1018,7 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     clearProgress();
     try {
       const reviewed = await runOperation(
-        "Codex 辅助风险复核",
+        "Codex 风险复核",
         () => api.reviewWithCodex(report, (report.skills ?? []).map(skill => skill.skillName)),
         "Codex 风险归纳已完成"
       );
@@ -1042,15 +1042,15 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     skills: selectable.filter(skill => skill.groupId === group.id)
   })).filter(group => group.skills.length > 0);
   return <div className="security-grid">
-    <section className="panel security-summary"><div className="shield"><ShieldCheck size={42} /></div><h2>本地安全基线</h2>
-      <p>扫描提示注入、凭据访问、命令执行、网络外泄、批量删除和混淆载荷。</p>
+    <section className="panel security-summary"><div className="shield"><ShieldCheck size={42} /></div><h2>本地安全扫描</h2>
+      <p>检查提示注入、凭据访问、命令执行、网络请求、批量删除和混淆内容。</p>
       <button className="primary" onClick={audit} disabled={working || codexWorking || selectedSkills.size === 0}>
         {working ? <LoaderCircle className="spin" size={17} /> : <ShieldCheck size={17} />}
         {working ? "正在扫描…" : `扫描选中的 ${selectedSkills.size} 个`}
       </button>
-      <small>扫描只读取本地文件，不上传内容；Codex 复核入口位于最近扫描结果中。</small></section>
+      <small>仅在本地读取文件；Codex 复核可在扫描结果中启动。</small></section>
     <section className="panel security-queue"><PanelHead title="选择要检查的 Skills"
-      subtitle="没有检查记录或内容已变化的 Skill 会默认选中；已检查且未变化的 Skill 默认跳过。" />
+      subtitle="默认选择未检查或内容已变化的 Skills。" />
       <div className="selection-tools">
         <button className="ghost compact" onClick={selectRecommended}>恢复推荐</button>
         <button className="ghost compact" onClick={selectAll}>全选</button>
@@ -1101,7 +1101,7 @@ function ScanSummary({ report, compact = false }: { report: ScanReport; compact?
   return <div className={`scan-summary ${compact ? "compact" : ""}`}>
     <span className={`severity ${report.activeHighestSeverity}`}>{severityLabel(report.activeHighestSeverity)}</span>
     <div><strong>{report.activeFindingCount === 0 ? "没有待处理警告" : `${report.activeFindingCount} 个警告需要处理`}</strong>
-      <small>本次检查 {groupCount || "未知"} 个分组、{skillCount || "未知"} 个 Skill；已人工处理 {report.ignoredFindingCount} 个警告。</small></div>
+      <small>检查 {groupCount || "未知"} 个分组、{skillCount || "未知"} 个 Skill；{report.ignoredFindingCount} 个警告已处理。</small></div>
   </div>;
 }
 
@@ -1177,7 +1177,7 @@ function codexSuggestedClusters(report: ScanReport): RiskCluster[] {
 
 function codexBatchReason(report: ScanReport, clusters: RiskCluster[]): string {
   const model = report.codexReview?.model || "Codex";
-  return `人工一键采纳 ${model} 的完整上下文复核建议（${clusters.length} 个风险簇）`;
+  return `人工采纳 ${model} 的复核建议（${clusters.length} 个警告）`;
 }
 
 function confirmCodexSuggestions(_report: ScanReport, clusters: RiskCluster[]): boolean {
@@ -1197,15 +1197,15 @@ function HistoryPage({ data, refresh, runOperation }: { data: Dashboard; refresh
       : original?.type === "manage" || original?.type === "adopt"
         ? "只会恢复来源记录，不会移动 Skill 文件。"
         : "当前版本会先移动到隔离区。";
-    if (!confirm(`回滚事务 ${id}？${detail}`)) return;
+    if (!confirm(`回滚操作 ${id}？${detail}`)) return;
     setWorkingId(id);
     try {
-      const result = await runOperation("回滚管理事务", () => api.rollback(id), "回滚已完成");
+      const result = await runOperation("回滚操作", () => api.rollback(id), "回滚已完成");
       if (result) await refresh();
     } finally { setWorkingId(""); }
   };
-  return <section className="panel full"><PanelHead title="事务历史" subtitle="每次修改都保留状态、报告和回滚依据" />
-    <div className="history-list">{data.recentHistory.length === 0 ? <Empty text="暂无事务" /> : data.recentHistory.map(tx => <article key={tx.id}>
+  return <section className="panel full"><PanelHead title="操作历史" subtitle="查看操作状态并执行回滚" />
+    <div className="history-list">{data.recentHistory.length === 0 ? <Empty text="暂无操作" /> : data.recentHistory.map(tx => <article key={tx.id}>
       <div className={`tx-icon ${tx.status}`}><Clock3 size={19} /></div><div className="grow"><strong>{tx.type}</strong><span>{tx.targets.join("、") || "—"}</span>
         <small>{new Date(tx.startedAt).toLocaleString("zh-CN")} · {tx.id}</small></div><span className={`badge ${tx.status === "completed" ? "green" : "red"}`}>{tx.status}</span>
       {tx.status === "completed" && (tx.type === "install" || tx.type === "adopt" || tx.type === "manage" || tx.type.startsWith("group-")) && <button className="icon-button" disabled={!!workingId} title="回滚" onClick={() => rollback(tx.id)}>
@@ -1225,7 +1225,7 @@ function QuarantinePage({ refresh, runOperation }: { refresh: () => Promise<void
       if (result) { setItems(await api.quarantineList()); await refresh(); }
     } finally { setWorking(""); }
   };
-  return <section className="panel full"><PanelHead title="隔离区" subtitle="卸载内容不会被永久删除，可随时恢复" />
+  return <section className="panel full"><PanelHead title="隔离区" subtitle="查看已移除的 Skills，并选择恢复" />
     <div className="history-list">{items.length === 0 ? <Empty text="隔离区为空" /> : items.map(item => <article key={item.skill + item.transactionId}>
       <div className="tx-icon"><ArchiveRestore size={19} /></div><div className="grow"><strong>{item.skill}</strong><span>{item.transactionId}</span><small>{item.path}</small></div>
       <button className="ghost" disabled={!!working} onClick={() => restore(item.skill, item.transactionId)}>
@@ -1235,7 +1235,7 @@ function QuarantinePage({ refresh, runOperation }: { refresh: () => Promise<void
 }
 
 function ReportsPage({ data }: { data: Dashboard }) {
-  return <section className="panel full"><PanelHead title="扫描报告" subtitle="报告同时保存为 Markdown 和 JSON" />
+  return <section className="panel full"><PanelHead title="扫描报告" subtitle="查看已保存的 Markdown 和 JSON 报告" />
     <div className="history-list">{data.recentReports.length === 0 ? <Empty text="暂无报告" /> : data.recentReports.map(r => <article key={r.id}>
       <div className={`tx-icon ${r.activeHighestSeverity}`}><ShieldCheck size={19} /></div><div className="grow"><strong>{r.id}</strong><span>{r.target}</span>
         <small>{new Date(r.completedAt).toLocaleString("zh-CN")} · {r.filesScanned} 文件 · {r.ignoredFindingCount} 已忽略</small></div>
@@ -1287,7 +1287,7 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
   const configuredModelMissing = configuredModel !== "default" &&
     !codexModels.some(model => model.slug === configuredModel);
   const pathFields = [
-    ["Skills 根目录", "skillsRoot"], ["数据目录", "dataRoot"], ["操作日志", "logsRoot"], ["扫描与事务报告", "reportsRoot"],
+    ["Skills 根目录", "skillsRoot"], ["数据目录", "dataRoot"], ["操作日志", "logsRoot"], ["扫描与操作报告", "reportsRoot"],
     ["备份目录", "backupsRoot"], ["隔离区", "quarantineRoot"], ["缓存目录", "cacheRoot"], ["暂存目录", "stagingRoot"]
   ];
   const save = async () => {
@@ -1336,14 +1336,14 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
     if (result) setDiagnostics(result);
   };
   return <div className="settings-grid">
-    <section className="panel settings-paths"><PanelHead title="存储位置" subtitle="所有目录均支持自定义绝对路径" />
+    <section className="panel settings-paths"><PanelHead title="存储位置" subtitle="设置 Skills、数据、日志和备份目录" />
       <div className="form">{pathFields.map(([label, key]) => <label key={key}><span>{label}</span>
         <input value={cfg.paths[key]} onChange={e => setCfg({ ...cfg, paths: { ...cfg.paths, [key]: e.target.value } })} /></label>)}</div>
       <div className="settings-save"><small>路径变更保存后需重启应用</small>
         <button className="primary compact" onClick={save}>{saved ? <CheckCircle2 size={15} /> : <Settings size={15} />}
           {saved ? "已保存" : "保存设置"}</button></div>
     </section>
-    <section className="panel"><PanelHead title="定时检查" subtitle="只检查更新，不自动安装" />
+    <section className="panel"><PanelHead title="定时检查" subtitle="设置检查时间；不会自动更新" />
       <div className="schedule-form"><label className="switch-row"><span><strong>启用计划任务</strong><small>通过 Windows 任务计划程序运行</small></span>
         <input type="checkbox" checked={cfg.schedule.enabled} onChange={e => setCfg({ ...cfg, schedule: { ...cfg.schedule, enabled: e.target.checked } })} /></label>
         <label><span>频率</span><select value={cfg.schedule.frequency} onChange={e => setCfg({ ...cfg, schedule: { ...cfg.schedule, frequency: e.target.value } })}><option value="daily">每天</option><option value="weekly">每周</option></select></label>
@@ -1352,7 +1352,7 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
           {scheduling ? <LoaderCircle className="spin" size={16} /> : <Clock3 size={16} />}{scheduling ? "正在应用…" : "应用计划任务"}</button>
       </div>
     </section>
-    <section className="panel"><PanelHead title="GitHub 凭据与限额" subtitle="公共和私有仓库共用；凭据仅保存在 Windows 本地" />
+    <section className="panel"><PanelHead title="GitHub 连接" subtitle="访问公共和私有仓库；凭据保存在 Windows 本地" />
       <div className="credential-form">
         <label><span>用户名（可选）</span><input value={githubUser} onChange={e => setGitHubUser(e.target.value)} placeholder="GitHub 用户名" /></label>
         <label><span>Personal Access Token</span><input type="password" value={githubToken} onChange={e => setGitHubToken(e.target.value)} placeholder="输入后不会再次显示" /></label>
@@ -1368,10 +1368,10 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
         </div>}
       </div>
     </section>
-    <section className="panel codex-settings"><PanelHead title="Codex 辅助风险复核" subtitle="可选的第二阶段语义归纳；默认关闭，不替代人工决定" />
+    <section className="panel codex-settings"><PanelHead title="Codex 风险复核" subtitle="可选功能；默认关闭，结果需人工确认" />
       <div className="schedule-form">
         <label className="switch-row"><span><strong>启用 Codex CLI 复核</strong>
-          <small>复用独立 Codex CLI 的已登录状态，仅提交本地扫描审查包</small></span>
+          <small>使用当前 CLI 登录状态，按分组复核完整上下文</small></span>
           <input type="checkbox" checked={cfg.codexReview.enabled}
             onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, enabled: e.target.checked } })} /></label>
         <label><span>CLI 路径</span><input value={cfg.codexReview.cliPath || ""}
@@ -1396,7 +1396,7 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
             value={cfg.codexReview.maxParallelBatches || 1}
             onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, maxParallelBatches: Number(e.target.value) } })} /></label>
         </div>
-        <small className="codex-batch-hint">同一分组内的 Skill 始终一起复核。默认串行处理；提高并发可能造成 Codex CLI 模型刷新竞争或限流。</small>
+        <small className="codex-batch-hint">同组 Skills 一起复核。建议保持串行，避免 CLI 冲突或限流。</small>
         <div className="credential-actions codex-actions">
           <button className="ghost" onClick={validateCodex}><Stethoscope size={16} />检查 CLI 与登录状态</button>
           <button className="primary compact" onClick={save}><Settings size={15} />保存复核设置</button>
@@ -1417,7 +1417,7 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
         </div>}
       </div>
     </section>
-    <section className="panel"><PanelHead title="工具与诊断" subtitle="对应 CLI 的 bootstrap、doctor 和 version" />
+    <section className="panel"><PanelHead title="诊断" subtitle="检查应用版本、目录和 CLI 环境" />
       <div className="diagnostics">
         <div className="diagnostic-version"><Sparkles size={19} /><span><small>应用版本</small><strong>{diagnostics?.version || "读取中…"}</strong></span></div>
         {diagnostics && <div className="diagnostic-grid">
@@ -1528,14 +1528,14 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
     }
   };
   return <div className="modal-backdrop"><div className="modal">
-    <div className="modal-head"><div><p className="eyebrow">SAFE INSTALL</p><h2>安装 Skill</h2></div><button onClick={close}><X /></button></div>
+    <div className="modal-head"><h2>安装 Skill</h2><button onClick={close}><X /></button></div>
     {!preview ? <div className="install-source">
       <div className="tabs"><button className={mode === "github" ? "active" : ""} onClick={() => setMode("github")}><FolderGit2 size={17} />GitHub 链接</button>
         <button className={mode === "local" ? "active" : ""} onClick={() => setMode("local")}><Boxes size={17} />本地目录</button></div>
       <label><span>{mode === "github" ? "GitHub 仓库、目录或 SKILL.md 链接" : "包含一个或多个 Skills 的绝对路径"}</span>
         <input autoFocus value={source} onChange={e => setSource(e.target.value)} placeholder={mode === "github" ? "https://github.com/owner/repository" : "D:\\skills\\my-package"} /></label>
       {mode === "github" && <label><span>分支、标签或 Commit（可选）</span><input value={ref} onChange={e => setRef(e.target.value)} placeholder="留空时使用链接版本或默认分支" /></label>}
-      <div className="notice"><ShieldCheck size={20} /><span><strong>先暂存和扫描</strong><small>分析阶段不会写入正式 Skills 目录，也不会执行仓库脚本。</small></span></div>
+      <div className="notice"><ShieldCheck size={20} /><span><strong>安装前检查</strong><small>先下载到暂存目录并扫描，不执行仓库脚本。</small></span></div>
     </div> : <div className="preview">
       <div className="repo-summary"><FolderGit2 size={24} /><div><strong>{preview.repository.fullName}</strong><span>{preview.repository.resolvedRef} · {preview.repository.commitSha?.slice(0, 10)}</span></div>
         <span className={`severity ${preview.scan.activeHighestSeverity}`}>{severityLabel(preview.scan.activeHighestSeverity)}</span></div>
@@ -1543,8 +1543,8 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
       <div className="candidate-list">{preview.skills.map(s => <label key={s.name}><input type="checkbox" checked={selected.includes(s.name)}
         onChange={() => setSelected(selected.includes(s.name) ? selected.filter(n => n !== s.name) : [...selected, s.name])} />
         <span><strong>{s.name}</strong><small>{s.description}</small><code>{s.sourcePath}</code></span></label>)}</div>
-      <div className="notice"><ShieldAlert size={20} /><span><strong>{preview.scan.findings.length} 个原始安全发现，{preview.scan.activeFindingCount} 个待核查</strong>
-        <small>所有级别均在下方概述，可由人工直接忽略单个风险簇或一键忽略全部；无需填写原因。</small></span></div>
+      <div className="notice"><ShieldAlert size={20} /><span><strong>发现 {preview.scan.findings.length} 条规则命中，{preview.scan.activeFindingCount} 条待处理</strong>
+        <small>可逐项或一键忽略，无需填写原因。</small></span></div>
       <FindingDetails report={preview.scan} reviewing={reviewing} onToggle={toggleCluster}
         onCodexReview={codexReview} codexWorking={codexWorking}
         codexProgress={codexProgress?.reportId === preview.scan.id ? codexProgress : null}

@@ -23,7 +23,7 @@ portable archive, and SHA-256 manifest with:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\package-release.ps1 -Version 0.7.5
+  -File .\scripts\package-release.ps1 -Version 0.7.6
 ```
 
 The packager refuses to overwrite an existing output directory. Release assets

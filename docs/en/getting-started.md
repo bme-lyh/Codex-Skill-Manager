@@ -11,7 +11,7 @@ Portable releases contain `portable.marker` and store configuration and runtime 
 
 ## Manage existing Skills
 
-Open **Skills**, select unmanaged items, and click **Analyze and manage**. The read-only preview shows detected repositories, source paths, proposed groups, confidence, and scan results. Confirming the plan records provenance and hashes; it does not move or rewrite Skill content.
+Open **Skills**, select unmanaged items, and click **Manage**. The read-only preview shows detected repositories, source paths, proposed groups, confidence, and scan results. Confirming the plan records provenance and hashes; it does not move or rewrite Skill content.
 
 ## Install a new Skill
 
