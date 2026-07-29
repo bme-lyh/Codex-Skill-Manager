@@ -429,10 +429,21 @@ func extractZip(data []byte, dest string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	base, err := filepath.Abs(dest)
+	if err != nil {
+		return "", err
+	}
+	base = filepath.Clean(base)
 	var top string
 	for _, f := range zr.File {
+		// Reject traversal syntax in the untrusted archive name before it
+		// reaches filepath.Join or any filesystem operation. The resolved-path
+		// check below remains a second, independent containment boundary.
+		if strings.Contains(f.Name, "..") {
+			return "", fmt.Errorf("archive path traversal: %s", f.Name)
+		}
 		clean := filepath.Clean(filepath.FromSlash(f.Name))
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		if clean == "" || clean == "." || filepath.IsAbs(clean) || filepath.VolumeName(clean) != "" {
 			return "", fmt.Errorf("archive path traversal: %s", f.Name)
 		}
 		parts := strings.Split(filepath.ToSlash(clean), "/")
@@ -447,13 +458,13 @@ func extractZip(data []byte, dest string) (string, error) {
 		if f.Mode()&os.ModeSymlink != 0 {
 			return "", fmt.Errorf("symbolic link is forbidden: %s", f.Name)
 		}
-		target := filepath.Join(dest, clean)
+		target := filepath.Join(base, clean)
 		resolved, err := filepath.Abs(target)
 		if err != nil {
 			return "", err
 		}
-		base, _ := filepath.Abs(dest)
-		if resolved != base && !strings.HasPrefix(strings.ToLower(resolved), strings.ToLower(base)+string(filepath.Separator)) {
+		relative, err := filepath.Rel(base, resolved)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 			return "", fmt.Errorf("archive escaped staging root: %s", f.Name)
 		}
 		if f.FileInfo().IsDir() {
@@ -490,5 +501,5 @@ func extractZip(data []byte, dest string) (string, error) {
 	if top == "" {
 		return "", errors.New("empty repository archive")
 	}
-	return filepath.Join(dest, top), nil
+	return filepath.Join(base, top), nil
 }
