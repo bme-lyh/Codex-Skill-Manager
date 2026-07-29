@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const Version = "0.7.1"
+const Version = "0.7.2"
 
 type RiskSeverity string
 
@@ -180,16 +180,18 @@ type CodexClusterReview struct {
 }
 
 type CodexReviewResult struct {
-	ID              string               `json:"id"`
-	Status          string               `json:"status"`
-	Summary         string               `json:"summary"`
-	OverallVerdict  string               `json:"overallVerdict"`
-	Model           string               `json:"model"`
-	ReasoningEffort string               `json:"reasoningEffort"`
-	StartedAt       time.Time            `json:"startedAt"`
-	CompletedAt     time.Time            `json:"completedAt,omitempty"`
-	Reviews         []CodexClusterReview `json:"reviews"`
-	Error           string               `json:"error,omitempty"`
+	ID               string               `json:"id"`
+	Status           string               `json:"status"`
+	Summary          string               `json:"summary"`
+	OverallVerdict   string               `json:"overallVerdict"`
+	Model            string               `json:"model"`
+	ReasoningEffort  string               `json:"reasoningEffort"`
+	ContextMode      string               `json:"contextMode,omitempty"`
+	ContextFileCount int                  `json:"contextFileCount,omitempty"`
+	StartedAt        time.Time            `json:"startedAt"`
+	CompletedAt      time.Time            `json:"completedAt,omitempty"`
+	Reviews          []CodexClusterReview `json:"reviews"`
+	Error            string               `json:"error,omitempty"`
 }
 
 type ScanReport struct {

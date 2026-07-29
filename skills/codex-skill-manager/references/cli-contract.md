@@ -44,9 +44,14 @@ csm --json group move --group GROUP_ID --skill SKILL_A
 Ignore or restore an exact warning:
 
 ```powershell
-csm --json warning --fingerprint HASH --rule RULE_ID --file FILE --reason "reviewed"
+csm --json warning --fingerprint HASH --rule RULE_ID --file FILE
 csm --json warning --fingerprint HASH --rule RULE_ID --file FILE --restore
+csm --json warning --report SCAN_ID --dry-run
+csm --json warning --report SCAN_ID
 ```
+
+Reasons are optional. Report-wide decisions apply atomically to every active
+cluster of every severity, including deterministic rules.
 
 Reversible lifecycle:
 

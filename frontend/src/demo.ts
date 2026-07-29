@@ -138,6 +138,8 @@ export const demoScanReport: ScanReport = {
     overallVerdict: "人工复核后可接受",
     model: "gpt-5.6",
     reasoningEffort: "medium",
+    contextMode: "full-target-read-only",
+    contextFileCount: 128,
     startedAt: "2026-07-28T10:21:00Z",
     completedAt: "2026-07-28T10:22:00Z",
     reviews: [

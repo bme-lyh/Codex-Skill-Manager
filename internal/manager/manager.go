@@ -110,8 +110,17 @@ func (m *Manager) ReviewScanWithCodex(ctx context.Context, report model.ScanRepo
 	if !m.Config.CodexReview.Enabled {
 		return report, errors.New("Codex 辅助复核未启用；请先在设置中启用")
 	}
+	persisted, err := m.store.Scan(report.ID)
+	if err != nil {
+		return report, fmt.Errorf("无法读取可信扫描报告：%w", err)
+	}
+	ignored, err := m.store.IgnoredFindings()
+	if err != nil {
+		return report, err
+	}
+	report = m.decorateScan(persisted, ignored)
 	if len(report.Clusters) == 0 {
-		return report, errors.New("当前扫描没有可复核的风险簇")
+		return report, errors.New("可信扫描报告没有可复核的风险簇")
 	}
 	tx := model.Transaction{
 		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
@@ -595,12 +604,6 @@ func (m *Manager) SetFindingIgnored(finding model.Finding, ignored bool, reason 
 		return errors.New("invalid finding fingerprint")
 	}
 	reason = strings.TrimSpace(reason)
-	if ignored && reason == "" {
-		return errors.New("an ignore reason is required to record the manual review")
-	}
-	if ignored && (finding.RuleID == "CSM-FS-001" || finding.RuleID == "CSM-FILE-002" || finding.RuleID == "CSM-DEL-001") {
-		return errors.New("deterministic safety findings must be handled as a cluster with explicit manual override confirmation")
-	}
 	txType := "ignore-warning"
 	if !ignored {
 		txType = "restore-warning"
@@ -623,37 +626,49 @@ func (m *Manager) SetFindingIgnored(finding model.Finding, ignored bool, reason 
 func (m *Manager) SetRiskClusterIgnored(cluster model.RiskCluster, ignored bool, reason string, confirmDeterministic bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cluster.ID == "" || cluster.RuleID == "" || len(cluster.Fingerprints) == 0 {
-		return errors.New("risk cluster identity is incomplete")
+	_ = confirmDeterministic // Kept for API compatibility; a human action is now sufficient for every severity.
+	return m.setRiskClustersIgnoredLocked([]model.RiskCluster{cluster}, ignored, reason)
+}
+
+func (m *Manager) SetRiskClustersIgnored(clusters []model.RiskCluster, ignored bool, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.setRiskClustersIgnoredLocked(clusters, ignored, reason)
+}
+
+func (m *Manager) setRiskClustersIgnoredLocked(clusters []model.RiskCluster, ignored bool, reason string) error {
+	if len(clusters) == 0 {
+		return errors.New("at least one risk cluster is required")
 	}
-	for _, fingerprint := range cluster.Fingerprints {
-		if decoded, err := hex.DecodeString(fingerprint); err != nil || len(decoded) != sha256.Size {
-			return errors.New("risk cluster contains an invalid finding fingerprint")
+	targets := make([]string, 0, len(clusters))
+	for index := range clusters {
+		cluster := &clusters[index]
+		if cluster.ID == "" || cluster.RuleID == "" || len(cluster.Fingerprints) == 0 {
+			return errors.New("risk cluster identity is incomplete")
 		}
+		for _, fingerprint := range cluster.Fingerprints {
+			if decoded, err := hex.DecodeString(fingerprint); err != nil || len(decoded) != sha256.Size {
+				return errors.New("risk cluster contains an invalid finding fingerprint")
+			}
+		}
+		cluster.Deterministic = cluster.Deterministic || cluster.RuleID == "CSM-FS-001" ||
+			cluster.RuleID == "CSM-FILE-002" || cluster.RuleID == "CSM-DEL-001"
+		targets = append(targets, cluster.ID)
 	}
 	reason = strings.TrimSpace(reason)
-	if ignored && reason == "" {
-		return errors.New("an ignore reason is required to record the manual review")
-	}
-	deterministic := cluster.Deterministic || cluster.RuleID == "CSM-FS-001" ||
-		cluster.RuleID == "CSM-FILE-002" || cluster.RuleID == "CSM-DEL-001"
-	cluster.Deterministic = deterministic
-	if ignored && deterministic && !confirmDeterministic {
-		return errors.New("deterministic safety findings require explicit manual override confirmation")
-	}
 	txType := "ignore-risk-cluster"
 	if !ignored {
 		txType = "restore-risk-cluster"
 	}
+	if len(clusters) > 1 {
+		txType += "-batch"
+	}
 	tx := model.Transaction{
 		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), Type: txType,
-		Status: "running", Targets: []string{cluster.ID}, StartedAt: time.Now().UTC(),
+		Status: "running", Targets: targets, StartedAt: time.Now().UTC(),
 	}
 	_ = m.store.SaveTransaction(tx)
-	if ignored && deterministic {
-		_ = m.store.Approve(cluster.ID, "manual-override-deterministic", reason)
-	}
-	if err := m.store.SetClusterIgnored(cluster, ignored, reason); err != nil {
+	if err := m.store.SetClustersIgnored(clusters, ignored, reason); err != nil {
 		_, failErr := m.fail(tx, err)
 		return failErr
 	}
@@ -948,7 +963,7 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 	return tx, nil
 }
 
-func (m *Manager) ApplyInstall(planID string, selected []string, acceptHighRisk bool) (model.Transaction, error) {
+func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	preview, ok := m.previews[planID]
@@ -967,20 +982,19 @@ func (m *Manager) ApplyInstall(planID string, selected []string, acceptHighRisk 
 		return model.Transaction{}, err
 	}
 	preview.Scan = m.decorateScan(preview.Scan, ignored)
-	if preview.Scan.ActiveHighestSeverity == model.RiskCritical {
-		activeCritical := 0
-		for _, finding := range preview.Scan.Findings {
-			if !finding.Ignored && finding.Severity == model.RiskCritical {
-				activeCritical++
+	if preview.Scan.ActiveHighestSeverity == model.RiskCritical ||
+		preview.Scan.ActiveHighestSeverity == model.RiskHigh {
+		activeBlockingClusters := 0
+		for _, cluster := range preview.Scan.Clusters {
+			if !cluster.Ignored &&
+				(cluster.Severity == model.RiskCritical || cluster.Severity == model.RiskHigh) {
+				activeBlockingClusters++
 			}
 		}
 		return model.Transaction{}, fmt.Errorf(
-			"仍有 %d 个未忽略的 Critical 风险；必须逐条人工核查并记录原因后才能安装",
-			activeCritical,
+			"仍有 %d 个未忽略的高风险或严重风险簇；请使用统一的人工忽略操作后再安装",
+			activeBlockingClusters,
 		)
-	}
-	if preview.Scan.ActiveHighestSeverity == model.RiskHigh && !acceptHighRisk {
-		return model.Transaction{}, errors.New("high-risk findings require explicit acceptance")
 	}
 	chosen := chooseCandidates(preview.Skills, selected)
 	if len(chosen) == 0 {

@@ -46,20 +46,23 @@ Mutating commands:
 - `warning --fingerprint HASH --rule ID --file PATH [--reason TEXT]`:
   persist an ignore decision; `--restore` removes it;
 - `warning --cluster ID --fingerprint HASH...`: apply one human decision to a
-  complete cluster; deterministic clusters additionally require
-  `--deterministic --confirm-deterministic`;
+  complete cluster;
+- `warning --report SCAN_ID [--dry-run] [--restore]`: preview or atomically
+  apply one human decision to every matching cluster in a report;
 - `schedule`: create or update a scheduled check.
 
 Names must be explicit and cannot contain wildcards. A plan expires after 24
-hours. Active Critical findings block apply until every one has a persisted,
-reasoned manual-review decision; active High findings require the explicit
-flag. Callers must preserve the returned transaction ID.
+hours. Active High/Critical findings block apply until ignored by an explicit
+human action. Reasons are optional. `--accept-high-risk`,
+`--deterministic`, and `--confirm-deterministic` remain accepted for backward
+compatibility but do not create a separate decision path. Callers must preserve
+the returned transaction ID.
 
 Managing existing Skills is metadata-only: it snapshots `sources.lock.json`,
 detects sources, hashes the current files and records a `manage` transaction.
 Legacy `adopt` remains an alias. Group mutations snapshot `groups.json` and
 never mutate source provenance or Skill content.
-Finding/cluster ignores are reloaded from local state at apply time. Ignoring requires a
-non-empty reason and creates a transaction record; restored findings immediately
+Finding/cluster ignores are reloaded from local state at apply time. Ignoring
+creates a transaction record and the reason is optional; restored findings immediately
 participate in the gate again. A Codex verdict can never substitute for the
 explicit deterministic confirmation.

@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,6 +154,33 @@ func TestDangerousExecutableIsDeterministicCritical(t *testing.T) {
 	if len(report.Findings) != 1 || report.Findings[0].RuleID != "CSM-FILE-002" ||
 		!report.Findings[0].Deterministic || report.Findings[0].Severity != model.RiskCritical {
 		t.Fatalf("unexpected executable finding: %#v", report.Findings)
+	}
+}
+
+func TestParallelTextScanKeepsDeterministicFindingOrder(t *testing.T) {
+	root := t.TempDir()
+	for index := 0; index < 40; index++ {
+		path := filepath.Join(root, fmt.Sprintf("file-%03d.md", index))
+		if err := os.WriteFile(path, []byte("https://example.test/resource\npassword\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := Scan(root, 100, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Scan(root, 100, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Findings) != len(second.Findings) {
+		t.Fatalf("finding counts differ: %d != %d", len(first.Findings), len(second.Findings))
+	}
+	for index := range first.Findings {
+		left, right := first.Findings[index], second.Findings[index]
+		if left.RuleID != right.RuleID || left.File != right.File || left.Line != right.Line {
+			t.Fatalf("finding order changed at %d: %#v != %#v", index, left, right)
+		}
 	}
 }
 

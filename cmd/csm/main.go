@@ -216,36 +216,72 @@ func warning(m *manager.Manager, args []string) (any, error) {
 	file := fs.String("file", "", "finding file")
 	fileClass := fs.String("file-class", "", "risk cluster file class")
 	deterministic := fs.Bool("deterministic", false, "cluster is a deterministic local baseline")
-	confirmDeterministic := fs.Bool("confirm-deterministic", false, "explicitly confirm manual override of a deterministic baseline")
-	reason := fs.String("reason", "", "ignore reason")
+	confirmDeterministic := fs.Bool("confirm-deterministic", false, "deprecated compatibility flag; human ignore no longer needs extra confirmation")
+	reportID := fs.String("report", "", "apply the decision to every matching cluster in a scan report")
+	reason := fs.String("reason", "", "optional ignore reason")
 	restore := fs.Bool("restore", false, "restore a previously ignored warning")
+	dryRun := fs.Bool("dry-run", false, "show explicit targets without changing state")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
+	}
+	if *reportID != "" {
+		reports, err := m.Reports(500)
+		if err != nil {
+			return nil, err
+		}
+		for _, report := range reports {
+			if report.ID != *reportID {
+				continue
+			}
+			clusters := make([]model.RiskCluster, 0, len(report.Clusters))
+			targets := make([]string, 0, len(report.Clusters))
+			for _, cluster := range report.Clusters {
+				if cluster.Ignored == *restore {
+					clusters = append(clusters, cluster)
+					targets = append(targets, cluster.ID)
+				}
+			}
+			if !*dryRun && len(clusters) > 0 {
+				if err := m.SetRiskClustersIgnored(clusters, !*restore, *reason); err != nil {
+					return nil, err
+				}
+			}
+			return map[string]any{
+				"reportId": *reportID, "clusterIds": targets, "dryRun": *dryRun,
+				"ignored": !*restore, "reason": *reason,
+			}, nil
+		}
+		return nil, fmt.Errorf("scan report not found: %s", *reportID)
 	}
 	if *clusterID != "" {
 		cluster := model.RiskCluster{
 			ID: *clusterID, RuleID: *rule, FileClass: *fileClass, Deterministic: *deterministic,
 			Fingerprints: fingerprints,
 		}
-		if err := m.SetRiskClusterIgnored(cluster, !*restore, *reason, *confirmDeterministic); err != nil {
-			return nil, err
+		if !*dryRun {
+			if err := m.SetRiskClusterIgnored(cluster, !*restore, *reason, *confirmDeterministic); err != nil {
+				return nil, err
+			}
 		}
 		return map[string]any{
 			"clusterId": *clusterID, "fingerprints": fingerprints,
-			"ignored": !*restore, "reason": *reason,
+			"ignored": !*restore, "reason": *reason, "dryRun": *dryRun,
 		}, nil
 	}
 	if len(fingerprints) != 1 {
 		return nil, errors.New("warning requires one --fingerprint or a --cluster with repeatable fingerprints")
 	}
 	finding := model.Finding{Fingerprint: fingerprints[0], RuleID: *rule, File: *file}
-	if err := m.SetFindingIgnored(finding, !*restore, *reason); err != nil {
-		return nil, err
+	if !*dryRun {
+		if err := m.SetFindingIgnored(finding, !*restore, *reason); err != nil {
+			return nil, err
+		}
 	}
 	return map[string]any{
 		"fingerprint": fingerprints[0],
 		"ignored":     !*restore,
 		"reason":      *reason,
+		"dryRun":      *dryRun,
 	}, nil
 }
 
@@ -288,7 +324,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	ref := fs.String("ref", "", "branch, tag, or commit")
 	all := fs.Bool("all", false, "select all discovered skills")
 	apply := fs.Bool("apply", false, "apply the plan")
-	acceptHigh := fs.Bool("accept-high-risk", false, "accept high-risk findings")
+	acceptHigh := fs.Bool("accept-high-risk", false, "deprecated compatibility flag; use warning decisions")
 	planID := fs.String("plan-id", "", "existing plan ID")
 	var selected stringList
 	fs.Var(&selected, "skill", "skill name; repeatable")

@@ -31,8 +31,9 @@ func WriteScan(root string, report model.ScanReport) (string, string, error) {
 	fmt.Fprintf(&b, "- 扫描文件：%d\n", report.FilesScanned)
 	fmt.Fprintf(&b, "- 扫描器：%s\n\n", report.ScannerVersion)
 	if report.CodexReview != nil {
-		fmt.Fprintf(&b, "## Codex 辅助复核\n\n- 状态：%s\n- 模型：%s\n- 推理强度：%s\n- 总结：%s\n\n",
-			report.CodexReview.Status, report.CodexReview.Model, report.CodexReview.ReasoningEffort, report.CodexReview.Summary)
+		fmt.Fprintf(&b, "## Codex 辅助复核\n\n- 状态：%s\n- 模型：%s\n- 推理强度：%s\n- 上下文模式：%s\n- 可读取文件：%d\n- 总结：%s\n\n",
+			report.CodexReview.Status, report.CodexReview.Model, report.CodexReview.ReasoningEffort,
+			report.CodexReview.ContextMode, report.CodexReview.ContextFileCount, report.CodexReview.Summary)
 	}
 	if len(report.Findings) == 0 {
 		b.WriteString("未发现已知风险模式。该结果不构成安全保证。\n")

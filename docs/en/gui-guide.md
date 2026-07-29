@@ -20,9 +20,9 @@ Each source is applied as an independent transaction with its own backup and rol
 
 ## Security Center
 
-Findings show rule, severity, file, line, evidence, explanation, and recommendation. Repeated scans do not inflate the badge: it counts unique active High/Critical findings from the latest effective report per target. Individual warnings can be ignored with a reason and restored later.
+Findings show rule, severity, file, line, evidence, explanation, and recommendation. Repeated scans do not inflate the badge: it counts unique active High/Critical findings from the latest effective report per target. Every severity and deterministic rule can be ignored individually or all at once, without running Codex first or entering a mandatory reason.
 
-Active Critical findings block installation and update. Each Critical finding may be cleared only after manual review and a non-empty audit reason; restoring it immediately reactivates the gate.
+Active High/Critical findings block installation and update. A human ignore action clears the applicable gate; restoring a cluster immediately reactivates it. Optional Codex review reads the complete target directory in a read-only session and treats local rule hits as supplemental leads.
 
 ## History, quarantine, and reports
 

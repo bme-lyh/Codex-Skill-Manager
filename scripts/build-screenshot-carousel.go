@@ -31,12 +31,16 @@ var frames = []string{
 func main() {
 	input := flag.String("input", filepath.FromSlash("docs/images/ui-screens"), "directory containing source PNG screenshots")
 	output := flag.String("output", filepath.FromSlash("docs/images/ui-carousel.gif"), "output GIF path")
-	width := flag.Int("width", 1000, "output width in pixels")
+	width := flag.Int("width", 1440, "output width in pixels")
+	height := flag.Int("height", 900, "output height in pixels")
 	delay := flag.Int("delay", 220, "delay per frame in hundredths of a second")
 	flag.Parse()
 
 	if *width < 320 {
 		fail(fmt.Errorf("width must be at least 320 pixels"))
+	}
+	if *height < 180 {
+		fail(fmt.Errorf("height must be at least 180 pixels"))
 	}
 	if *delay < 20 {
 		fail(fmt.Errorf("delay must be at least 20 hundredths of a second"))
@@ -50,9 +54,8 @@ func main() {
 			fail(err)
 		}
 
-		height := source.Bounds().Dy() * *width / source.Bounds().Dx()
-		resized := resizeNearest(source, *width, height)
-		paletted, err := quantize(resized)
+		frame := composeFrame(source, *width, *height)
+		paletted, err := quantize(frame)
 		if err != nil {
 			fail(fmt.Errorf("quantize %s: %w", sourcePath, err))
 		}
@@ -75,6 +78,25 @@ func main() {
 		fail(fmt.Errorf("encode animation: %w", err))
 	}
 	fmt.Printf("Screenshot carousel created: %s\n", *output)
+}
+
+func composeFrame(source image.Image, width, height int) *image.RGBA {
+	result := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.Draw(result, result.Bounds(), image.NewUniform(image.White), image.Point{}, draw.Src)
+	bounds := source.Bounds()
+	if bounds.Dx() <= width && bounds.Dy() <= height {
+		offset := image.Pt((width-bounds.Dx())/2, (height-bounds.Dy())/2)
+		target := image.Rectangle{Min: offset, Max: offset.Add(bounds.Size())}
+		draw.Draw(result, target, source, bounds.Min, draw.Src)
+		return result
+	}
+	scale := min(float64(width)/float64(bounds.Dx()), float64(height)/float64(bounds.Dy()))
+	resizedWidth := max(1, int(float64(bounds.Dx())*scale))
+	resizedHeight := max(1, int(float64(bounds.Dy())*scale))
+	resized := resizeNearest(source, resizedWidth, resizedHeight)
+	offset := image.Pt((width-resizedWidth)/2, (height-resizedHeight)/2)
+	draw.Draw(result, image.Rectangle{Min: offset, Max: offset.Add(resized.Bounds().Size())}, resized, image.Point{}, draw.Src)
+	return result
 }
 
 func readImage(path string) (image.Image, error) {

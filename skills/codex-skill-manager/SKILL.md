@@ -19,18 +19,18 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    exact confirmed names.
 4. For GitHub or local installation, create a plan first. Show the resolved
    repository commit, discovered skills and scan findings.
-5. Ask for confirmation of the exact selected skill names. If high-risk
-   findings exist, obtain explicit acceptance and pass `--accept-high-risk`.
-   Keep active critical clusters blocked. Allow only cluster overrides that the
-   user has manually reviewed, supplied a non-empty reason for, and recorded in
-   the local transaction journal. Deterministic baselines need an additional
-   explicit human confirmation; Codex review cannot provide it.
+5. Ask for confirmation of the exact selected skill names. Keep active High and
+   Critical clusters blocked until the user explicitly ignores them. Offer one
+   cluster or report-wide human decisions for every severity and deterministic
+   rule. Reasons are optional; do not add a separate High acceptance or
+   deterministic confirmation step.
 6. Apply the plan and return the transaction ID and report location.
 7. For removal, use `csm remove` with explicit names. Explain that content is
    moved to quarantine and can be restored.
 8. Prefer risk-cluster decisions over individual findings. Preserve every
-   member fingerprint and require a reason. Explain that cluster decisions
-   affect current-risk counting. Reload decisions at apply time.
+   member fingerprint and use `warning --report SCAN_ID --dry-run` before a
+   report-wide CLI decision. Explain that cluster decisions affect current-risk
+   counting. Reload decisions at apply time.
 9. Use `group` commands for layout-only organization. Explain that this does
    not alter the source used for updates or security.
 
@@ -45,10 +45,11 @@ transaction IDs, and keep the user informed before any filesystem mutation.
 - Use `github-auth` before diagnosing credential or quota failures. Respect
   `retryAt`, while preserving the last successful update status.
 - Treat optional Codex CLI review as advisory. It must be enabled, authenticated,
-  ephemeral, read-only, schema validated, and limited to the review bundle.
-- If the user chooses the GUI one-click review action, show the selected
-  clusters first. Require a second explicit human confirmation for deterministic
-  baselines and preserve the separate transaction record for every cluster.
+  ephemeral, read-only, schema validated, and rooted at the complete trusted
+  scan target. Treat local rule clusters as supplemental leads.
+- A GUI one-click decision may atomically ignore all active clusters without
+  Codex review or a mandatory reason. Preserve explicit cluster targets and a
+  recovery path in the transaction journal.
 - Use an isolated configuration for tests.
 
 Read [references/cli-contract.md](references/cli-contract.md) before executing

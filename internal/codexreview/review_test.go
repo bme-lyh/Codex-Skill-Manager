@@ -118,3 +118,28 @@ func TestParseModelCatalogRejectsInvalidJSON(t *testing.T) {
 		t.Fatal("expected invalid JSON error")
 	}
 }
+
+func TestCountContextFilesUsesCompleteTargetButSkipsManagerOwnedSystemData(t *testing.T) {
+	root := t.TempDir()
+	for _, relative := range []string{
+		"SKILL.md",
+		filepath.Join("src", "main.go"),
+		filepath.Join(".system", "internal", "SKILL.md"),
+		filepath.Join(".csm-backups", "old", "SKILL.md"),
+	} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count, err := countContextFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("expected complete user target without manager-owned directories, got %d files", count)
+	}
+}

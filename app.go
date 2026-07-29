@@ -160,6 +160,16 @@ func (a *App) SetRiskClusterIgnored(cluster model.RiskCluster, ignored bool, rea
 	return true, nil
 }
 
+func (a *App) SetRiskClustersIgnored(clusters []model.RiskCluster, ignored bool, reason string) (bool, error) {
+	if err := a.ready(); err != nil {
+		return false, err
+	}
+	if err := a.mgr.SetRiskClustersIgnored(clusters, ignored, reason); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (a *App) CheckUpdates() (model.UpdateCheckResult, error) {
 	if err := a.ready(); err != nil {
 		return model.UpdateCheckResult{}, err

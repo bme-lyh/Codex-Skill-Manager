@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,7 +175,7 @@ func TestRiskClusterGroupsSimilarFindingsAndSupportsAuditedManualOverride(t *tes
 	}
 }
 
-func TestCriticalInstallRequiresRecordedManualIgnore(t *testing.T) {
+func TestCriticalInstallAllowsReasonlessHumanIgnore(t *testing.T) {
 	m := newTestManager(t)
 	source := filepath.Join(t.TempDir(), "critical-package", "critical-demo")
 	if err := os.MkdirAll(source, 0o700); err != nil {
@@ -191,15 +192,11 @@ func TestCriticalInstallRequiresRecordedManualIgnore(t *testing.T) {
 	if preview.Scan.ActiveHighestSeverity != model.RiskCritical || len(preview.Scan.Findings) == 0 {
 		t.Fatalf("expected a critical preview, got %#v", preview.Scan)
 	}
-	if _, err := m.ApplyInstall(preview.ID, []string{"critical-demo"}, true); err == nil ||
-		!strings.Contains(err.Error(), "Critical") {
+	if _, err := m.ApplyInstall(preview.ID, []string{"critical-demo"}, true); err == nil {
 		t.Fatalf("active critical finding should block installation: %v", err)
 	}
 	finding := preview.Scan.Findings[0]
-	if err := m.SetFindingIgnored(finding, true, ""); err == nil {
-		t.Fatal("ignoring a finding without a review reason should fail")
-	}
-	if err := m.SetFindingIgnored(finding, true, "Reviewed the fixture and confirmed it is explanatory text."); err != nil {
+	if err := m.SetFindingIgnored(finding, true, ""); err != nil {
 		t.Fatal(err)
 	}
 	reviewedPreview, err := m.PrepareLocal(filepath.Dir(source))
@@ -215,6 +212,34 @@ func TestCriticalInstallRequiresRecordedManualIgnore(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "critical-demo", "SKILL.md")); err != nil {
 		t.Fatalf("reviewed Skill was not installed: %v", err)
+	}
+}
+
+func TestBatchRiskIgnoreAcceptsEverySeverityWithoutReason(t *testing.T) {
+	m := newTestManager(t)
+	fingerprints := func(seed byte) []string {
+		return []string{fmt.Sprintf("%064x", seed)}
+	}
+	clusters := []model.RiskCluster{
+		{ID: "risk-critical", RuleID: "CSM-FILE-002", Severity: model.RiskCritical, Deterministic: true, Fingerprints: fingerprints(0xa)},
+		{ID: "risk-medium", RuleID: "CSM-NET-001", Severity: model.RiskMedium, Fingerprints: fingerprints(0xb)},
+	}
+	if err := m.SetRiskClustersIgnored(clusters, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	ignored, err := m.store.IgnoredFindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ignored) != 2 {
+		t.Fatalf("expected both severities to be ignored, got %#v", ignored)
+	}
+	history, err := m.History(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Type != "ignore-risk-cluster-batch" || len(history[0].Targets) != 2 {
+		t.Fatalf("batch decision was not journaled: %#v", history)
 	}
 }
 
