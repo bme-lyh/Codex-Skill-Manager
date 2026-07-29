@@ -16,8 +16,9 @@ Core packages:
 - `reporting`: Markdown and JSON reader-facing reports;
 - `scheduler`: Windows Task Scheduler integration for checks only;
 - `auth`: GitHub token resolution and Windows Credential Manager storage.
-- `codexreview`: opt-in CLI discovery, auth diagnostics, read-only review
-  execution and JSON-Schema-validated summaries.
+- `codexreview`: opt-in CLI discovery, auth diagnostics, bounded parallel
+  per-Skill review batches, JSONL activity progress, read-only execution and
+  JSON-Schema-validated summaries.
 
 The GUI calls the same manager facade as the CLI. The source lock is the
 portable source of truth; SQLite is operational history. Filesystem changes,

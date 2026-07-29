@@ -1,4 +1,4 @@
-import type { AdoptionPreview, CodexCLIStatus, Dashboard, Finding, InstallPreview, RiskCluster, ScanReport, Transaction, UpdateCheckResult } from "./types";
+import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, InstallPreview, RiskCluster, ScanReport, Transaction, UpdateCheckResult } from "./types";
 import {
   demoCodexStatus,
   demoConfig,
@@ -36,7 +36,7 @@ type Backend = {
   SaveGitHubToken(token: string, username: string): Promise<void>;
   ValidateGitHubCredentials(): Promise<Record<string, any>>;
   GetCodexCLIStatus(): Promise<CodexCLIStatus>;
-  ReviewScanWithCodex(report: ScanReport): Promise<ScanReport>;
+  ReviewScanWithCodex(report: ScanReport, skillNames: string[]): Promise<ScanReport>;
   GetDiagnostics(): Promise<Record<string, any>>;
   ListQuarantine(): Promise<Array<{ skill: string; transactionId: string; path: string }>>;
 };
@@ -63,9 +63,18 @@ function normalizeDashboard(value: Dashboard): Dashboard {
 
 function normalizeScan(value: ScanReport): ScanReport {
   const findings = value?.findings ?? [];
+  const codexReview = value?.codexReview ? {
+    ...value.codexReview,
+    reviews: value.codexReview.reviews ?? [],
+    skillReviews: value.codexReview.skillReviews ?? [],
+    batches: value.codexReview.batches ?? [],
+    totalSkills: value.codexReview.totalSkills ?? value.codexReview.skillReviews?.length ?? 0,
+    durationMillis: value.codexReview.durationMillis ?? 0
+  } : undefined;
   return {
     ...value,
     findings,
+    codexReview,
     clusters: value?.clusters ?? [],
     activeHighestSeverity: value?.activeHighestSeverity ?? value?.highestSeverity ?? "informational",
     activeFindingCount: value?.activeFindingCount ?? findings.filter(f => !f.ignored).length,
@@ -201,10 +210,16 @@ export const api = {
     if (!b) return demoCodexStatus;
     return b.GetCodexCLIStatus();
   },
-  reviewWithCodex: async (report: ScanReport) => {
+  reviewWithCodex: async (report: ScanReport, skillNames: string[] = []) => {
     const b = backend();
     if (!b) throw new Error("桌面后端尚未连接");
-    return normalizeScan(await b.ReviewScanWithCodex(report));
+    return normalizeScan(await b.ReviewScanWithCodex(report, skillNames));
+  },
+  onCodexReviewProgress: (handler: (progress: CodexReviewProgress) => void): (() => void) => {
+    const wailsRuntime = (window as any).runtime;
+    if (typeof wailsRuntime?.EventsOn !== "function") return () => undefined;
+    const unsubscribe = wailsRuntime.EventsOn("codex-review-progress", handler);
+    return typeof unsubscribe === "function" ? unsubscribe : () => undefined;
   },
   diagnostics: async () => {
     const b = backend();

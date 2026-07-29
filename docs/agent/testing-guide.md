@@ -23,8 +23,10 @@ portable archive, and SHA-256 manifest with:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\package-release.ps1 -Version 0.7.2
+  -File .\scripts\package-release.ps1 -Version 0.7.3
 ```
 
 The packager refuses to overwrite an existing output directory. Release assets
-are written under `build/release/<version>` and are not committed.
+are written under `build/release/<version>` and are not committed. The bundled
+Agent Skill must appear exactly once at
+`agent-skill/codex-skill-manager/SKILL.md`.

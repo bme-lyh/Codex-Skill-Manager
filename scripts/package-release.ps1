@@ -58,9 +58,6 @@ function Copy-ReleaseContents {
     $agentSkillRoot = Join-Path $Destination "agent-skill"
     New-Item -ItemType Directory -Path $agentSkillRoot | Out-Null
     $skillSource = Join-Path $projectRoot "skills\codex-skill-manager"
-    foreach ($entry in Get-ChildItem -LiteralPath $skillSource) {
-        Copy-Item -LiteralPath $entry.FullName -Destination $agentSkillRoot -Recurse
-    }
     Copy-Item -LiteralPath $skillSource -Destination (Join-Path $agentSkillRoot "codex-skill-manager") -Recurse
 
     $docsRoot = Join-Path $Destination "docs"

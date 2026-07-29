@@ -7,11 +7,17 @@ import {
   ArrowUpCircle, KeyRound, Stethoscope, Sparkles
 } from "lucide-react";
 import { api } from "./api";
-import type { AdoptionPreview, CodexCLIStatus, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateStatus } from "./types";
+import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateStatus } from "./types";
 
 type Page = "overview" | "skills" | "groups" | "updates" | "security" | "history" | "quarantine" | "reports" | "settings";
 type Operation = { label: string; detail: string; status: "running" | "success" | "error" };
 type RunOperation = <T>(label: string, task: () => Promise<T>, successDetail?: string) => Promise<T | undefined>;
+
+function useCodexProgress() {
+  const [progress, setProgress] = useState<CodexReviewProgress | null>(null);
+  useEffect(() => api.onCodexReviewProgress(setProgress), []);
+  return { progress, clearProgress: () => setProgress(null) };
+}
 
 const nav: Array<{ id: Page; label: string; icon: any }> = [
   { id: "overview", label: "概览", icon: LayoutDashboard },
@@ -592,6 +598,7 @@ function UpdateDialog({ items, close, refresh }: {
   const [codexWorking, setCodexWorking] = useState(false);
   const [progress, setProgress] = useState("");
   const [failures, setFailures] = useState<string[]>([]);
+  const { progress: codexProgress, clearProgress } = useCodexProgress();
   const selectedCount = Object.values(selected).reduce((sum, names) => sum + names.length, 0);
   const hasBlockingWarnings = items.some(({ value }) =>
     ["critical", "high"].includes(scans[value.id].activeHighestSeverity) && (selected[value.id]?.length ?? 0) > 0);
@@ -623,8 +630,9 @@ function UpdateDialog({ items, close, refresh }: {
   };
   const codexReview = async (planID: string) => {
     setCodexWorking(true);
+    clearProgress();
     try {
-      const reviewed = await api.reviewWithCodex(scans[planID]);
+      const reviewed = await api.reviewWithCodex(scans[planID], selected[planID] ?? []);
       setScans(current => ({ ...current, [planID]: reviewed }));
     } catch (error: any) {
       setFailures(current => [`Codex 风险复核失败：${error?.message ?? String(error)}`, ...current]);
@@ -701,6 +709,7 @@ function UpdateDialog({ items, close, refresh }: {
         <ScanSummary report={scan} compact />
         <FindingDetails report={scan} reviewing={reviewing} onToggle={cluster => toggleCluster(value.id, cluster)}
           onCodexReview={() => codexReview(value.id)} codexWorking={codexWorking}
+          codexProgress={codexProgress?.reportId === scan.id ? codexProgress : null}
           onApplyCodexSuggestions={clusters => applyCodexSuggestions(value.id, clusters)}
           onIgnoreAll={clusters => ignoreAll(value.id, clusters)} />
         {blocking && <div className="error-banner inline"><CircleAlert size={17} />
@@ -718,9 +727,10 @@ function UpdateDialog({ items, close, refresh }: {
   </div></div>;
 }
 
-function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codexWorking = false, onApplyCodexSuggestions, onIgnoreAll }: {
+function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codexWorking = false, codexProgress = null, onApplyCodexSuggestions, onIgnoreAll }: {
   report: ScanReport; onToggle?: (cluster: RiskCluster) => void | Promise<void>; reviewing?: string;
   onCodexReview?: () => void | Promise<void>; codexWorking?: boolean;
+  codexProgress?: CodexReviewProgress | null;
   onApplyCodexSuggestions?: (clusters: RiskCluster[]) => void | Promise<void>;
   onIgnoreAll?: (clusters: RiskCluster[]) => void | Promise<void>;
 }) {
@@ -733,9 +743,9 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
   const suggestedClusters = codexSuggestedClusters(report);
   const activeClusters = clusters.filter(cluster => !cluster.ignored);
   const visible = clusters.slice(0, limit);
-  if (!clusters.length) return <div className="scan-clean"><CheckCircle2 size={16} />未发现需要处理的安全警告</div>;
   return <>
-    <RiskOverview report={report} />
+    {clusters.length ? <RiskOverview report={report} /> :
+      <div className="scan-clean"><CheckCircle2 size={16} />本地规则未发现警告，仍可使用 Codex 做完整上下文复核</div>}
     {onIgnoreAll && activeClusters.length > 0 && <div className="manual-review-action"><div>
       <strong>人工决定优先</strong>
       <small>无需 Codex 复核，也无需填写原因；一次忽略当前报告中全部 {activeClusters.length} 个待处理风险簇。</small>
@@ -745,11 +755,12 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
       {reviewing === "manual-batch" ? "正在记录…" : "一键忽略全部警告"}
     </button></div>}
     {onCodexReview && <div className="codex-review-action"><div><strong>需要快速归纳大量警告？</strong>
-      <small>Codex 会在只读模式下检查完整目标目录；本地规则命中仅作为补充线索。</small></div>
+      <small>Codex 会按 Skill 分批复核完整目标目录；本地规则命中仅作为补充线索。</small></div>
       <button className="ghost" disabled={codexWorking} onClick={() => void onCodexReview()}>
         {codexWorking ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
         {codexWorking ? "Codex 正在复核…" : report.codexReview ? "重新用 Codex 复核" : "使用 Codex 辅助复核"}
       </button></div>}
+    {codexWorking && codexProgress && <CodexProgressCard progress={codexProgress} />}
     {report.codexReview && <div className={`codex-review-summary ${report.codexReview.status}`}>
       <Sparkles size={18} /><div><strong>Codex 辅助复核</strong>
         <p>{report.codexReview.summary || report.codexReview.error}</p>
@@ -758,7 +769,7 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
           {report.codexReview.contextMode === "full-target-read-only"
             ? ` 完整目录上下文（${report.codexReview.contextFileCount || 0} 个文件）`
             : " 规则摘要上下文"}</small>
-        {onApplyCodexSuggestions && report.codexReview.status === "completed" && suggestedClusters.length > 0 &&
+        {onApplyCodexSuggestions && ["completed", "partial"].includes(report.codexReview.status) && suggestedClusters.length > 0 &&
           <button className="primary compact codex-apply-suggestions" disabled={reviewing !== ""}
             onClick={() => void onApplyCodexSuggestions(suggestedClusters)}>
             {reviewing === "codex-batch" ? <LoaderCircle className="spin" size={14} /> : <CheckSquare2 size={14} />}
@@ -766,7 +777,8 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
           </button>}
         <small className="codex-baseline-note">Codex 结论仅供参考；所有级别最终均可由人工直接决定。</small></div>
     </div>}
-    <details className="finding-details" open={report.activeHighestSeverity === "critical"}>
+    {!!report.codexReview?.skillReviews?.length && <CodexSkillReviewList report={report} />}
+    {clusters.length > 0 && <details className="finding-details" open={report.activeHighestSeverity === "critical"}>
       <summary>查看 {clusters.length} 个风险簇（已归并 {report.findings.length} 条原始命中）</summary>
       <div>{visible.map(cluster => {
         const codex = codexByCluster.get(cluster.id);
@@ -800,8 +812,77 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
           已显示 {visible.length}/{clusters.length} 个风险簇；完整原始命中仍保存在本地扫描报告中。
         </small>
       </div>
-    </details>
+    </details>}
   </>;
+}
+
+function CodexProgressCard({ progress }: { progress: CodexReviewProgress }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const elapsed = Math.max(0, Math.floor((now - new Date(progress.startedAt).getTime()) / 1000));
+  const percent = progress.totalSkills > 0
+    ? Math.min(100, Math.round(progress.completedSkills / progress.totalSkills * 100))
+    : 0;
+  return <div className="codex-progress-card" role="status" aria-live="polite">
+    <div className="codex-progress-head">
+      <span><LoaderCircle className="spin" size={16} /><strong>{progress.message}</strong></span>
+      <small>{formatElapsed(elapsed)}</small>
+    </div>
+    <div className="codex-progress-track"><i style={{ width: `${percent}%` }} /></div>
+    <div className="codex-progress-meta">
+      <span>{progress.completedSkills}/{progress.totalSkills || "?"} Skills</span>
+      <span>{progress.completedBatch}/{progress.batchCount || "?"} 批次</span>
+      <span>{progress.activityCount} 次分析活动</span>
+    </div>
+    {!!progress.activeBatches?.length ? <div className="codex-progress-batches">
+      {progress.activeBatches.map(batch => <div key={batch.index}><small>第 {batch.index} 批</small>
+        <span>{batch.skillNames.join("、")}</span></div>)}
+    </div> : !!progress.activeSkills.length && <div className="codex-progress-skills">
+      <small>当前 Skills</small>{progress.activeSkills.map(name => <span key={name}>{name}</span>)}
+    </div>}
+  </div>;
+}
+
+function CodexSkillReviewList({ report }: { report: ScanReport }) {
+  const reviews = report.codexReview?.skillReviews ?? [];
+  return <details className="codex-skill-results" open={reviews.length <= 6}>
+    <summary>逐个查看 {reviews.length} 个 Skill 的 Codex 结论</summary>
+    <div className="codex-skill-list">{reviews.map(review => <article key={`${review.skillName}:${review.sourcePath}`}
+      className={`codex-skill-review ${review.verdict}`}>
+      <div className="codex-skill-head"><div><strong>{review.skillName}</strong><code>{review.sourcePath}</code></div>
+        <span className={`codex-verdict ${review.verdict}`}>{codexSkillVerdictLabel(review.verdict)}</span></div>
+      <p>{review.summary}</p>
+      <small>置信度 {Math.round((review.confidence || 0) * 100)}% ·
+        Skill 目录文件 {review.contextFileCount || 0} 个 · 风险簇 {review.clusterIds?.length || 0} 个</small>
+      {review.error && <div className="codex-skill-error">{review.error}</div>}
+      {!!review.concerns?.length && <div className="codex-concern-list">{review.concerns.map((concern, index) =>
+        <div key={`${concern.title}:${index}`}><span className={`severity ${concern.severity}`}>{severityLabel(concern.severity)}</span>
+          <div><strong>{concern.title}</strong><p>{concern.rationale}</p>
+            <small>{concern.recommendation}</small>
+            {!!concern.evidenceFiles?.length && <code>{concern.evidenceFiles.join(" · ")}</code>}</div>
+        </div>)}</div>}
+    </article>)}</div>
+  </details>;
+}
+
+function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes ? `${minutes} 分 ${remainder.toString().padStart(2, "0")} 秒` : `${remainder} 秒`;
+}
+
+function codexSkillVerdictLabel(verdict: string): string {
+  switch (verdict) {
+    case "no-material-risk": return "未见明确风险";
+    case "mostly-contextual": return "主要为上下文内容";
+    case "review-required": return "建议人工关注";
+    case "high-risk": return "高风险";
+    case "insufficient-context": return "上下文不足";
+    default: return verdict || "未知";
+  }
 }
 
 function RiskOverview({ report }: { report: ScanReport }) {
@@ -822,7 +903,9 @@ function RiskOverview({ report }: { report: ScanReport }) {
 function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation }) {
   const [report, setReport] = useState<ScanReport | null>(data.recentReports[0] ?? null);
   const [working, setWorking] = useState(false);
+  const [codexWorking, setCodexWorking] = useState(false);
   const [reviewing, setReviewing] = useState("");
+  const { progress: codexProgress, clearProgress } = useCodexProgress();
   const audit = async () => {
     setWorking(true);
     try {
@@ -857,11 +940,12 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
   };
   const reviewWithCodex = async () => {
     if (!report) return;
-    setWorking(true);
+    setCodexWorking(true);
+    clearProgress();
     try {
       const reviewed = await runOperation("Codex 辅助风险复核", () => api.reviewWithCodex(report), "Codex 风险归纳已完成");
       if (reviewed) { setReport(reviewed); await refresh(); }
-    } finally { setWorking(false); }
+    } finally { setCodexWorking(false); }
   };
   const applyCodexSuggestions = async (clusters: RiskCluster[]) => {
     if (!report || !confirmCodexSuggestions(report, clusters)) return;
@@ -878,16 +962,17 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
   return <div className="security-grid">
     <section className="panel security-summary"><div className="shield"><ShieldCheck size={42} /></div><h2>本地安全基线</h2>
       <p>扫描提示注入、凭据访问、命令执行、网络外泄、批量删除和混淆载荷。</p>
-      <button className="primary" onClick={audit} disabled={working}>{working ? <LoaderCircle className="spin" size={17} /> : <ShieldCheck size={17} />}{working ? "正在扫描…" : "扫描全部 Skills"}</button>
-      <button className="ghost" onClick={reviewWithCodex} disabled={working || !report?.clusters?.length}>
-        {working ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}Codex 辅助复核
+      <button className="primary" onClick={audit} disabled={working || codexWorking}>{working ? <LoaderCircle className="spin" size={17} /> : <ShieldCheck size={17} />}{working ? "正在扫描…" : "扫描全部 Skills"}</button>
+      <button className="ghost" onClick={reviewWithCodex} disabled={working || codexWorking || !report}>
+        {codexWorking ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}{codexWorking ? "Codex 正在复核…" : "Codex 辅助复核"}
       </button>
       <small>扫描只读取本地文件，不上传内容。</small></section>
     <section className="panel security-results"><PanelHead title="最近扫描结果" subtitle={report ? `${report.filesScanned} 个文件 · ${report.activeFindingCount} 个待处理 · ${report.ignoredFindingCount} 个已忽略` : "尚未扫描"} />
       {!report ? <Empty text="运行一次本地安全扫描" /> : <>
         <ScanSummary report={report} />
         <FindingDetails report={report} reviewing={reviewing} onToggle={toggleIgnore}
-          onCodexReview={reviewWithCodex} codexWorking={working}
+          onCodexReview={reviewWithCodex} codexWorking={codexWorking}
+          codexProgress={codexProgress?.reportId === report.id ? codexProgress : null}
           onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
       </>}
     </section>
@@ -962,7 +1047,7 @@ function codexVerdictLabel(verdict: string): string {
 }
 
 function codexSuggestedClusters(report: ScanReport): RiskCluster[] {
-  if (report.codexReview?.status !== "completed") return [];
+  if (!report.codexReview || !["completed", "partial"].includes(report.codexReview.status)) return [];
   const reviews = new Map(report.codexReview.reviews.map(review => [review.clusterId, review]));
   return (report.clusters ?? []).filter(cluster => {
     if (cluster.ignored) return false;
@@ -1188,6 +1273,15 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
           <option value="minimal">最低</option><option value="low">低</option><option value="medium">中（推荐）</option>
           <option value="high">高</option><option value="xhigh">超高</option>
         </select></label>
+        <div className="codex-batch-settings">
+          <label><span>每批 Skills</span><input type="number" min="1" max="12"
+            value={cfg.codexReview.skillsPerBatch || 4}
+            onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, skillsPerBatch: Number(e.target.value) } })} /></label>
+          <label><span>并行批次</span><input type="number" min="1" max="4"
+            value={cfg.codexReview.maxParallelBatches || 2}
+            onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, maxParallelBatches: Number(e.target.value) } })} /></label>
+        </div>
+        <small className="codex-batch-hint">默认每批 4 个 Skill、2 批并行；较小批次更易读，较高并行度可能触发模型限流。</small>
         <div className="credential-actions codex-actions">
           <button className="ghost" onClick={validateCodex}><Stethoscope size={16} />检查 CLI 与登录状态</button>
           <button className="primary compact" onClick={save}><Settings size={15} />保存复核设置</button>
@@ -1235,6 +1329,7 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
   const [reviewing, setReviewing] = useState("");
   const [codexWorking, setCodexWorking] = useState(false);
   const [error, setError] = useState("");
+  const { progress: codexProgress, clearProgress } = useCodexProgress();
   const analyze = async () => {
     setWorking(true); setError("");
     try {
@@ -1290,9 +1385,10 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
   const codexReview = async () => {
     if (!preview) return;
     setCodexWorking(true);
+    clearProgress();
     setError("");
     try {
-      const reviewed = await api.reviewWithCodex(preview.scan);
+      const reviewed = await api.reviewWithCodex(preview.scan, selected);
       setPreview(current => current ? { ...current, scan: reviewed } : current);
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -1336,6 +1432,7 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
         <small>所有级别均在下方概述，可由人工直接忽略单个风险簇或一键忽略全部；无需填写原因。</small></span></div>
       <FindingDetails report={preview.scan} reviewing={reviewing} onToggle={toggleCluster}
         onCodexReview={codexReview} codexWorking={codexWorking}
+        codexProgress={codexProgress?.reportId === preview.scan.id ? codexProgress : null}
         onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
     </div>}
     {error && <div className="error-banner"><CircleAlert size={17} />{error}</div>}

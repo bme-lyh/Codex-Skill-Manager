@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -577,6 +578,19 @@ func TestScanCandidateSkillsReportsConfiguredTotalLimit(t *testing.T) {
 	}, 1, 1<<20)
 	if err == nil || !strings.Contains(err.Error(), "2 files") || !strings.Contains(err.Error(), "limit of 1") {
 		t.Fatalf("unexpected limit error: %v", err)
+	}
+}
+
+func TestReviewScanWithCodexRequiresEnabledConfiguration(t *testing.T) {
+	m := newTestManager(t)
+	_, err := m.ReviewScanWithCodex(
+		context.Background(),
+		model.ScanReport{ID: "scan-disabled"},
+		[]string{"demo"},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "未启用") {
+		t.Fatalf("expected disabled Codex review error, got %v", err)
 	}
 }
 

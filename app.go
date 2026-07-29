@@ -14,6 +14,7 @@ import (
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/manager"
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/scheduler"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
@@ -265,14 +266,16 @@ func (a *App) GetCodexCLIStatus() model.CodexCLIStatus {
 	return a.mgr.CodexCLIStatus(ctx)
 }
 
-func (a *App) ReviewScanWithCodex(report model.ScanReport) (model.ScanReport, error) {
+func (a *App) ReviewScanWithCodex(report model.ScanReport, skillNames []string) (model.ScanReport, error) {
 	if err := a.ready(); err != nil {
 		return model.ScanReport{}, err
 	}
 	timeout := time.Duration(a.mgr.Config.CodexReview.TimeoutSeconds) * time.Second
 	ctx, cancel := context.WithTimeout(a.ctx, timeout)
 	defer cancel()
-	return a.mgr.ReviewScanWithCodex(ctx, report)
+	return a.mgr.ReviewScanWithCodex(ctx, report, skillNames, func(progress model.CodexReviewProgress) {
+		wailsruntime.EventsEmit(a.ctx, "codex-review-progress", progress)
+	})
 }
 
 func (a *App) ListQuarantine() ([]QuarantineItem, error) {

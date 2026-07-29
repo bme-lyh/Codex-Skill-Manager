@@ -39,6 +39,7 @@ func Default() (model.Config, error) {
 		CodexReview: model.CodexReviewConfig{
 			Enabled: false, Model: "default", ReasoningEffort: "medium",
 			TimeoutSeconds: 300, MaxSamplePerRisk: 8,
+			SkillsPerBatch: 4, MaxParallelBatches: 2,
 		},
 	}, nil
 }
@@ -137,6 +138,12 @@ func Validate(cfg model.Config) error {
 	if cfg.CodexReview.MaxSamplePerRisk < 1 || cfg.CodexReview.MaxSamplePerRisk > 20 {
 		return errors.New("codexReview.maxSamplePerRisk must be between 1 and 20")
 	}
+	if cfg.CodexReview.SkillsPerBatch < 1 || cfg.CodexReview.SkillsPerBatch > 12 {
+		return errors.New("codexReview.skillsPerBatch must be between 1 and 12")
+	}
+	if cfg.CodexReview.MaxParallelBatches < 1 || cfg.CodexReview.MaxParallelBatches > 4 {
+		return errors.New("codexReview.maxParallelBatches must be between 1 and 4")
+	}
 	return nil
 }
 
@@ -152,6 +159,12 @@ func normalize(cfg *model.Config) {
 	}
 	if cfg.CodexReview.MaxSamplePerRisk == 0 {
 		cfg.CodexReview.MaxSamplePerRisk = 8
+	}
+	if cfg.CodexReview.SkillsPerBatch == 0 {
+		cfg.CodexReview.SkillsPerBatch = 4
+	}
+	if cfg.CodexReview.MaxParallelBatches == 0 {
+		cfg.CodexReview.MaxParallelBatches = 2
 	}
 }
 

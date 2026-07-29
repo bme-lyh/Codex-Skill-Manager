@@ -31,7 +31,8 @@ before and after every change.
 | Recovery | Journals every mutation and supports rollback or quarantine restore |
 
 Advanced capabilities include immutable GitHub commit resolution, duplicate
-risk clustering, optional full-target read-only Codex CLI review, GitHub rate-limit handling,
+risk clustering, optional full-target read-only Codex CLI review with per-Skill
+results and live batch progress, GitHub rate-limit handling,
 local-change protection, scheduled read-only update checks, and structured JSON
 output for agents and automation.
 
@@ -77,4 +78,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.7.2**. Licensed under the [MIT License](LICENSE).
+Current version: **0.7.3**. Licensed under the [MIT License](LICENSE).
