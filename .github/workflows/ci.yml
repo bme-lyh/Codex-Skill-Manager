@@ -14,18 +14,18 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -58,7 +58,7 @@ jobs:
         run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -s -m -trimpath -platform windows/amd64 -o CodexSkillManager.exe
 
       - name: Upload unsigned Windows binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CodexSkillManager-windows-amd64-unsigned
           path: |
