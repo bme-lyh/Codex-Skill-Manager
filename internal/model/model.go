@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const Version = "0.7.6"
+const Version = "0.7.7"
 
 type RiskSeverity string
 
@@ -39,6 +39,7 @@ type CodexReviewConfig struct {
 	TimeoutSeconds     int    `json:"timeoutSeconds" yaml:"timeoutSeconds"`
 	MaxSamplePerRisk   int    `json:"maxSamplePerRisk" yaml:"maxSamplePerRisk"`
 	MaxParallelBatches int    `json:"maxParallelBatches" yaml:"maxParallelBatches"`
+	OutputLocale       string `json:"-" yaml:"-"`
 }
 
 type Config struct {

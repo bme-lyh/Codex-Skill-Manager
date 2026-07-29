@@ -543,6 +543,7 @@ export const demoDashboard: Dashboard = {
 };
 
 export const demoConfig = {
+  locale: "zh-CN",
   paths: {
     skillsRoot: "C:\\Users\\demo\\.codex\\skills",
     dataRoot: "D:\\CodexSkillManager\\data",

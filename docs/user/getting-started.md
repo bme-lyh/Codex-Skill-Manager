@@ -23,6 +23,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
 `.system` 会显示为只读系统分组。
 
+界面首次启动默认为简体中文。如需 English，打开“设置 → 语言”并选择
+**English**；界面会立即切换并自动保存。
+
 ## 2. 首次管理
 
 当前已知的 CareerForge 和 code-review-graph Skills 可以运行：

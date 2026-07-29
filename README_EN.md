@@ -8,7 +8,7 @@ Codex Skill Manager is a local Windows 10/11 application for downloading, scanni
 
 ## Interface preview
 
-[![Current Codex Skill Manager interface carousel: grouped Skills, batch actions, update status, collapsed Security Center results, grouped Codex review, install preview, history and rollback, quarantine, reports, and settings](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
+[![Current Codex Skill Manager interface preview: grouped Skills, batch actions, update status, Security Center, Codex review, install preview, rollback, reports, and Chinese/English settings](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
 > The animation uses fictional Skills, groups, and paths. It contains no real account or personal information.
 
@@ -27,6 +27,7 @@ This app installs and organizes Skills in one place, checks common risks, and ke
 | Update and remove | Support multi-selection, automatic backups, quarantine, and recovery |
 | Groups | Group automatically or create, rename, and drag your own groups |
 | Existing Skills | Add current Skills to management without moving their files |
+| Interface language | Switch between Simplified Chinese and English; Chinese is the first-run default |
 
 ## Optional Codex review
 
@@ -44,6 +45,7 @@ Reviews consume Codex usage. Time and usage depend on the number and size of Ski
 4. Open **Skills**, select unmanaged items, and choose **Manage**.
 
 The default Skills root is `%USERPROFILE%\.codex\skills`. The `.system` directory is always read-only.
+The interface starts in Simplified Chinese. Open **设置 → 语言**, then choose **English**; the change is immediate and saved automatically.
 
 ### Build from source
 
@@ -74,4 +76,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.7.6**. Licensed under the [MIT License](LICENSE).
+Current version: **0.7.7**. Licensed under the [MIT License](LICENSE).

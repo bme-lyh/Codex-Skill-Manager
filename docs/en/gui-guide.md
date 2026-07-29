@@ -32,6 +32,12 @@ History lists mutations and offers rollback when a backup exists. Quarantine res
 
 ## Settings
 
+Language supports Simplified Chinese and English. Chinese is used on first run
+and for older configurations with no saved language. Choosing a language updates
+the interface immediately, saves it automatically, and restores it on the next
+launch. Paths, rule names, logs, and user-defined Skill or group content remain
+unchanged.
+
 Configure absolute paths, scheduled read-only checks, private GitHub
 credentials, optional Codex review, and diagnostics. When the CLI path is
 blank, the application skips unusable WindowsApps candidates and probes PATH
