@@ -100,7 +100,10 @@ export const demoRiskClusters: RiskCluster[] = [
     affectedFiles: ["scripts/release.ps1", "SKILL.md"],
     fingerprints: networkFindings.map(finding => finding.fingerprint),
     sampleFindings: networkFindings,
-    ignored: false
+    ignored: false,
+    skillName: "release-helper",
+    groupId: "development",
+    groupName: "开发工具"
   },
   {
     id: "cluster-shell",
@@ -115,7 +118,10 @@ export const demoRiskClusters: RiskCluster[] = [
     fingerprints: shellFindings.map(finding => finding.fingerprint),
     sampleFindings: shellFindings,
     ignored: true,
-    ignoreReason: "匿名演示：已核对为预期的本地构建步骤"
+    ignoreReason: "匿名演示：已核对为预期的本地构建步骤",
+    skillName: "release-helper",
+    groupId: "development",
+    groupName: "开发工具"
   }
 ];
 
@@ -126,11 +132,21 @@ export const demoScanReport: ScanReport = {
   activeHighestSeverity: "medium",
   findings: [...networkFindings, ...shellFindings],
   filesScanned: 42,
-  activeFindingCount: networkFindings.length,
-  ignoredFindingCount: shellFindings.length,
+  activeFindingCount: 1,
+  ignoredFindingCount: 1,
   status: "completed",
   completedAt: "2026-07-28T10:22:00Z",
   clusters: demoRiskClusters,
+  skills: [{
+    skillName: "release-helper",
+    sourcePath: "release-helper",
+    groupId: "development",
+    groupName: "开发工具",
+    filesScanned: 42,
+    highestSeverity: "medium",
+    activeFindingCount: 1,
+    ignoredFindingCount: 1
+  }],
   codexReview: {
     id: "demo-codex-review",
     status: "completed",
@@ -146,6 +162,8 @@ export const demoScanReport: ScanReport = {
     durationMillis: 60000,
     batches: [{
       index: 1,
+      groupId: "development",
+      groupName: "开发工具",
       status: "completed",
       skillNames: ["release-helper"],
       startedAt: "2026-07-28T10:21:00Z",
@@ -543,7 +561,6 @@ export const demoConfig = {
     reasoningEffort: "medium",
     timeoutSeconds: 300,
     maxSamplePerRisk: 8,
-    skillsPerBatch: 4,
     maxParallelBatches: 2
   }
 };

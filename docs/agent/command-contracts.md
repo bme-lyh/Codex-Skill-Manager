@@ -11,6 +11,10 @@ Read-only commands:
 - `doctor`, `dashboard`/`discover`, `audit [--skill NAME]`, `check`;
 - `history`, `reports`, `version`.
 
+`audit` without `--skill` explicitly scans every non-system Skill and records
+application group metadata. With `--skill`, it uses the same selective scan path
+for that named Skill.
+
 `check` accepts repeatable `--group` and optional `--force`, then persists and
 returns structured per-source status (`up-to-date`, `update-available`,
 `unsupported`, `rate-limited`, or `error`) plus timestamps, remote Commit,
@@ -23,9 +27,10 @@ current CLI, with catalog failures kept separate from compatibility failures.
 `codex review --report ID [--skill NAME ...]` creates a journaled advisory
 review. Repeated `--skill` values restrict work to trusted Skills discovered
 inside the persisted report target. Omitting the flag reviews all discovered
-Skills. The result is stable per Skill even when batches execute concurrently.
-If at least one batch succeeds, the command returns the partial report; its
-review and journal status are `partial`, with failed batches named explicitly.
+Skills. The result is stable per Skill. All selected Skills in the same application
+group share one review task; only different groups execute concurrently.
+If at least one group succeeds, the command returns the partial report; its
+review and journal status are `partial`, with failed groups named explicitly.
 
 Planning commands:
 

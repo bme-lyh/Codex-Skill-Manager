@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,11 +74,26 @@ func run(args []string) int {
 		fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 		skill := fs.String("skill", "", "skill name")
 		_ = fs.Parse(args[1:])
-		target := ""
 		if *skill != "" {
-			target = filepath.Join(m.Config.Paths.SkillsRoot, *skill)
+			data, err = m.AuditSkills([]string{*skill})
+			break
 		}
-		data, err = m.Audit(target)
+		var dashboard model.Dashboard
+		dashboard, err = m.Dashboard()
+		if err != nil {
+			break
+		}
+		names := make([]string, 0, len(dashboard.Skills))
+		for _, discovered := range dashboard.Skills {
+			if !discovered.System {
+				names = append(names, discovered.Name)
+			}
+		}
+		if len(names) == 0 {
+			data, err = m.Audit("")
+		} else {
+			data, err = m.AuditSkills(names)
+		}
 	case "check":
 		fs := flag.NewFlagSet("check", flag.ContinueOnError)
 		var groups stringList

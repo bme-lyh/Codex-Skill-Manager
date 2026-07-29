@@ -16,10 +16,14 @@ csm --json history
 csm --json codex review --report SCAN_ID --skill SKILL_A --skill SKILL_B
 ```
 
+Without `--skill`, `audit` scans all non-system Skills and preserves their
+application group metadata. Use `--skill NAME` for one explicit Skill.
+
 Codex review is optional and journaled. Repeated `--skill` values restrict the
 review to trusted Skills inside the persisted scan target; omitting them reviews
 all detected Skills. Read `skillReviews` per Skill and inspect `batches` for
-partial failures.
+partial group failures. Selected Skills in the same application group share one
+review task. Local rules are sent only as a compact count overview.
 
 Two-phase GitHub installation:
 

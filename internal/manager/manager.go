@@ -190,6 +190,11 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 		return model.Dashboard{}, err
 	}
 	skills, groups := applyGroupLayout(skills, sourceGroups, layout)
+	securityStates, securityStateErr := m.store.SkillSecurityStates()
+	if securityStateErr != nil {
+		return model.Dashboard{}, securityStateErr
+	}
+	applySkillSecurityState(skills, lock, securityStates)
 	scans, scanErr := m.store.RecentScans(10)
 	if scanErr != nil {
 		return model.Dashboard{}, scanErr
@@ -289,8 +294,31 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 		}
 	}
 	activeRisks := map[string]bool{}
+	reportsByID := map[string]model.ScanReport{}
+	for skillName, state := range securityStates {
+		report, ok := reportsByID[state.ReportID]
+		if !ok {
+			report, err = m.store.Scan(state.ReportID)
+			if err != nil {
+				continue
+			}
+			report = m.decorateScan(report, ignored)
+			reportsByID[state.ReportID] = report
+		}
+		for _, cluster := range report.Clusters {
+			if cluster.SkillName != "" && !strings.EqualFold(cluster.SkillName, skillName) {
+				continue
+			}
+			if !cluster.Ignored && (cluster.Severity == model.RiskHigh || cluster.Severity == model.RiskCritical) {
+				activeRisks[skillName+"\x00"+cluster.ID] = true
+			}
+		}
+	}
 	for _, report := range latestScans {
 		if ensureWithinOrEqual(m.Config.Paths.SkillsRoot, report.Target) != nil {
+			continue
+		}
+		if len(report.Skills) > 0 {
 			continue
 		}
 		for _, cluster := range report.Clusters {
@@ -604,9 +632,111 @@ func (m *Manager) Audit(target string) (model.ScanReport, error) {
 		return model.ScanReport{}, ignoreErr
 	}
 	report = m.decorateScan(report, ignored)
+	summarizeScanSkills(&report)
 	_ = m.store.SaveScan(report)
 	m.recordScan(report)
 	return report, err
+}
+
+func (m *Manager) AuditSkills(names []string) (model.ScanReport, error) {
+	names = uniqueNonEmpty(names)
+	if len(names) == 0 {
+		return model.ScanReport{}, errors.New("at least one explicit Skill is required")
+	}
+	lock, err := m.store.LoadLock()
+	if err != nil {
+		return model.ScanReport{}, err
+	}
+	skills, sourceGroups, _, err := inventory.Discover(m.Config.Paths.SkillsRoot, lock)
+	if err != nil {
+		return model.ScanReport{}, err
+	}
+	layout, err := m.store.LoadGroupLayout()
+	if err != nil {
+		return model.ScanReport{}, err
+	}
+	skills, _ = applyGroupLayout(skills, sourceGroups, layout)
+	byName := make(map[string]model.Skill, len(skills))
+	for _, skill := range skills {
+		if !skill.System {
+			byName[skill.Name] = skill
+		}
+	}
+	selected := make([]model.Skill, 0, len(names))
+	for _, name := range names {
+		skill, ok := byName[name]
+		if !ok {
+			return model.ScanReport{}, fmt.Errorf("Skill not found or not selectable: %s", name)
+		}
+		selected = append(selected, skill)
+	}
+	sort.Slice(selected, func(i, j int) bool {
+		if selected[i].GroupName == selected[j].GroupName {
+			return selected[i].Name < selected[j].Name
+		}
+		return selected[i].GroupName < selected[j].GroupName
+	})
+
+	now := time.Now().UTC()
+	report := model.ScanReport{
+		ID: "scan-" + now.Format("20060102T150405.000000000"), Target: m.Config.Paths.SkillsRoot,
+		StartedAt: now, HighestSeverity: model.RiskInfo, ActiveHighestSeverity: model.RiskInfo,
+		Findings: []model.Finding{}, Skills: []model.ScanSkillSummary{},
+		Status: "passed", ScannerVersion: scanner.Version,
+	}
+	remaining := m.Config.MaxFiles
+	for _, skill := range selected {
+		part, scanErr := scanner.Scan(skill.Path, remaining, m.Config.MaxFileBytes)
+		if scanErr != nil {
+			report.Status = "failed"
+			report.CompletedAt = time.Now().UTC()
+			_ = m.store.SaveScan(report)
+			m.recordScan(report)
+			return report, fmt.Errorf("scan %s: %w", skill.Name, scanErr)
+		}
+		relative, relErr := filepath.Rel(m.Config.Paths.SkillsRoot, skill.Path)
+		if relErr != nil || relative == "." || strings.HasPrefix(relative, "..") || filepath.IsAbs(relative) {
+			return model.ScanReport{}, fmt.Errorf("invalid Skill path: %s", skill.Path)
+		}
+		sourcePath := filepath.ToSlash(relative)
+		for _, finding := range part.Findings {
+			finding.File = filepath.ToSlash(filepath.Join(sourcePath, filepath.FromSlash(finding.File)))
+			finding.SkillName, finding.GroupID, finding.GroupName = skill.Name, skill.GroupID, skill.GroupName
+			report.Findings = append(report.Findings, finding)
+		}
+		report.FilesScanned += part.FilesScanned
+		report.Skills = append(report.Skills, model.ScanSkillSummary{
+			SkillName: skill.Name, SourcePath: sourcePath, GroupID: skill.GroupID,
+			GroupName: skill.GroupName, FilesScanned: part.FilesScanned,
+			HighestSeverity: highestFindingSeverity(part.Findings, false),
+		})
+		remaining = m.Config.MaxFiles - report.FilesScanned
+		if remaining < 0 {
+			return model.ScanReport{}, fmt.Errorf("selected Skills exceed file count limit %d", m.Config.MaxFiles)
+		}
+	}
+	finishCandidateScan(&report)
+	ignored, err := m.store.IgnoredFindings()
+	if err != nil {
+		return model.ScanReport{}, err
+	}
+	report = m.decorateScan(report, ignored)
+	summarizeScanSkills(&report)
+	if err := m.store.SaveScan(report); err != nil {
+		return model.ScanReport{}, err
+	}
+	states := make([]model.SkillSecurityState, 0, len(selected))
+	for _, skill := range selected {
+		states = append(states, model.SkillSecurityState{
+			SkillName: skill.Name, ContentHash: skillContentHash(skill.Files),
+			ReportID: report.ID, CheckedAt: report.CompletedAt,
+		})
+	}
+	if err := m.store.SaveSkillSecurityStates(states); err != nil {
+		return model.ScanReport{}, err
+	}
+	m.recordScan(report)
+	return report, nil
 }
 
 func (m *Manager) SetFindingIgnored(finding model.Finding, ignored bool, reason string) error {
@@ -734,11 +864,13 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 		}
 	}
 	report, scanErr := scanCandidateSkills(root, candidates, m.Config.MaxFiles, m.Config.MaxFileBytes)
+	annotateCandidateScan(&report, candidates, "github:"+strings.ToLower(repo.FullName), repo.FullName)
 	ignored, ignoreErr := m.store.IgnoredFindings()
 	if ignoreErr != nil {
 		return model.InstallPreview{}, ignoreErr
 	}
 	report = m.decorateScan(report, ignored)
+	summarizeScanSkills(&report)
 	_ = m.store.SaveScan(report)
 	m.recordScan(report)
 	if scanErr != nil {
@@ -776,15 +908,19 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 	if len(candidates) == 0 {
 		return model.InstallPreview{}, errors.New("no valid SKILL.md directories found")
 	}
-	report, err := scanner.Scan(abs, m.Config.MaxFiles, m.Config.MaxFileBytes)
+	report, err := scanCandidateSkills(abs, candidates, m.Config.MaxFiles, m.Config.MaxFileBytes)
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
+	annotateCandidateScan(
+		&report, candidates, "local:"+strings.ToLower(filepath.Clean(abs)), filepath.Base(abs),
+	)
 	ignored, ignoreErr := m.store.IgnoredFindings()
 	if ignoreErr != nil {
 		return model.InstallPreview{}, ignoreErr
 	}
 	report = m.decorateScan(report, ignored)
+	summarizeScanSkills(&report)
 	_ = m.store.SaveScan(report)
 	m.recordScan(report)
 	id := "plan-" + time.Now().UTC().Format("20060102T150405.000000000")
@@ -849,6 +985,7 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 		}
 		for _, finding := range report.Findings {
 			finding.File = filepath.ToSlash(filepath.Join(name, filepath.FromSlash(finding.File)))
+			finding.SkillName = name
 			preview.Scan.Findings = append(preview.Scan.Findings, finding)
 		}
 		preview.Scan.FilesScanned += report.FilesScanned
@@ -865,6 +1002,16 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 		skill.SourceEvidence = source.Evidence
 		preview.Skills = append(preview.Skills, skill)
 		preview.Sources = append(preview.Sources, source)
+		preview.Scan.Skills = append(preview.Scan.Skills, model.ScanSkillSummary{
+			SkillName: name, SourcePath: name, GroupID: source.GroupID, GroupName: source.GroupName,
+			FilesScanned: report.FilesScanned, HighestSeverity: report.HighestSeverity,
+		})
+		for index := range preview.Scan.Findings {
+			if preview.Scan.Findings[index].SkillName == name {
+				preview.Scan.Findings[index].GroupID = source.GroupID
+				preview.Scan.Findings[index].GroupName = source.GroupName
+			}
+		}
 	}
 	preview.Scan.CompletedAt = time.Now().UTC()
 	preview.Scan.HighestSeverity = highestFindingSeverity(preview.Scan.Findings, false)
@@ -876,6 +1023,7 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 		return model.AdoptionPreview{}, ignoreErr
 	}
 	preview.Scan = m.decorateScan(preview.Scan, ignored)
+	summarizeScanSkills(&preview.Scan)
 	_ = m.store.SaveScan(preview.Scan)
 	m.recordScan(preview.Scan)
 	m.adoptions[preview.ID] = preview
@@ -930,6 +1078,7 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 	if err := m.snapshotLock(tx.ID); err != nil {
 		return m.fail(tx, err)
 	}
+	securityStates := []model.SkillSecurityState{}
 	for _, name := range selected {
 		if _, managed := findManaged(lock, name); managed {
 			return m.fail(tx, fmt.Errorf("%s is already managed", name))
@@ -968,6 +1117,13 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 		}
 		pkg.UpdatedAt = time.Now().UTC()
 		lock.Packages[packageID] = pkg
+		securityStates = append(securityStates, model.SkillSecurityState{
+			SkillName: name, ContentHash: skillContentHash(files),
+			ReportID: preview.Scan.ID, CheckedAt: scanCheckedAt(preview.Scan),
+		})
+	}
+	if err := m.store.SaveSkillSecurityStates(securityStates); err != nil {
+		return m.fail(tx, err)
 	}
 	if err := m.store.SaveLock(lock); err != nil {
 		return m.fail(tx, err)
@@ -1033,6 +1189,7 @@ func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.
 	}
 	touched := []string{}
 	backups := map[string]string{}
+	securityStates := []model.SkillSecurityState{}
 	provider := preview.Repository.Provider
 	if provider == "" {
 		provider = "github"
@@ -1107,10 +1264,17 @@ func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.
 			Pinned:         preview.Repository.ResolvedRef != preview.Repository.DefaultBranch,
 			LastScanReport: preview.Scan.ID,
 		}
+		securityStates = append(securityStates, model.SkillSecurityState{
+			SkillName: c.Name, ContentHash: skillContentHash(files),
+			ReportID: preview.Scan.ID, CheckedAt: scanCheckedAt(preview.Scan),
+		})
 	}
 	pkg.UpdatedAt = time.Now().UTC()
 	pkg.ResolvedCommit = preview.Repository.CommitSHA
 	lock.Packages[pkgID] = pkg
+	if err := m.store.SaveSkillSecurityStates(securityStates); err != nil {
+		return m.failInstall(tx, touched, backups, err)
+	}
 	if err := m.store.SaveLock(lock); err != nil {
 		return m.failInstall(tx, touched, backups, err)
 	}
@@ -1344,6 +1508,38 @@ func finishCandidateScan(report *model.ScanReport) {
 		report.Status = "findings"
 	}
 	report.CompletedAt = time.Now().UTC()
+}
+
+func annotateCandidateScan(
+	report *model.ScanReport,
+	candidates []model.CandidateSkill,
+	groupID string,
+	groupName string,
+) {
+	report.Skills = make([]model.ScanSkillSummary, 0, len(candidates))
+	for _, candidate := range candidates {
+		report.Skills = append(report.Skills, model.ScanSkillSummary{
+			SkillName: candidate.Name, SourcePath: filepath.ToSlash(candidate.SourcePath),
+			GroupID: groupID, GroupName: groupName, FilesScanned: len(candidate.Files),
+			HighestSeverity: model.RiskInfo,
+		})
+	}
+	for index := range report.Findings {
+		finding := &report.Findings[index]
+		bestName, bestLength := "", -1
+		path := strings.Trim(filepath.ToSlash(finding.File), "/")
+		for _, candidate := range candidates {
+			prefix := strings.Trim(filepath.ToSlash(candidate.SourcePath), "/")
+			matches := prefix == "" || prefix == "." || path == prefix || strings.HasPrefix(path, prefix+"/")
+			if matches && len(prefix) > bestLength {
+				bestName, bestLength = candidate.Name, len(prefix)
+			}
+		}
+		if bestName == "" && len(candidates) == 1 {
+			bestName = candidates[0].Name
+		}
+		finding.SkillName, finding.GroupID, finding.GroupName = bestName, groupID, groupName
+	}
 }
 
 func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
@@ -1855,6 +2051,9 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 	if report.Findings == nil {
 		report.Findings = []model.Finding{}
 	}
+	if report.Skills == nil {
+		report.Skills = []model.ScanSkillSummary{}
+	}
 	type clusterBuild struct {
 		cluster model.RiskCluster
 		files   map[string]bool
@@ -1886,9 +2085,13 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 		if finding.RuleID == "CSM-FS-001" || finding.RuleID == "CSM-FILE-002" || finding.RuleID == "CSM-DEL-001" {
 			finding.Deterministic = true
 		}
-		clusterIdentity := strings.ToLower(strings.Join([]string{
+		clusterParts := []string{
 			finding.RuleID, finding.Category, finding.FileClass, fmt.Sprintf("%t", finding.Deterministic),
-		}, "\x00"))
+		}
+		if finding.SkillName != "" || finding.GroupID != "" {
+			clusterParts = append([]string{finding.GroupID, finding.SkillName}, clusterParts...)
+		}
+		clusterIdentity := strings.ToLower(strings.Join(clusterParts, "\x00"))
 		clusterHash := sha256.Sum256([]byte(clusterIdentity))
 		finding.ClusterID = fmt.Sprintf("risk-%x", clusterHash[:12])
 		finding.Ignored = false
@@ -1905,6 +2108,7 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 					Severity: finding.Severity, Category: finding.Category, FileClass: finding.FileClass,
 					Deterministic: finding.Deterministic, AffectedFiles: []string{},
 					Fingerprints: []string{}, SampleFindings: []model.Finding{},
+					SkillName: finding.SkillName, GroupID: finding.GroupID, GroupName: finding.GroupName,
 				},
 				files: map[string]bool{},
 			}
@@ -1948,6 +2152,12 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 		report.Clusters = append(report.Clusters, build.cluster)
 	}
 	sort.Slice(report.Clusters, func(i, j int) bool {
+		if report.Clusters[i].GroupName != report.Clusters[j].GroupName {
+			return report.Clusters[i].GroupName < report.Clusters[j].GroupName
+		}
+		if report.Clusters[i].SkillName != report.Clusters[j].SkillName {
+			return report.Clusters[i].SkillName < report.Clusters[j].SkillName
+		}
 		if report.Clusters[i].Severity != report.Clusters[j].Severity {
 			return riskRank(report.Clusters[i].Severity) > riskRank(report.Clusters[j].Severity)
 		}
@@ -2071,6 +2281,97 @@ func uniqueNonEmpty(in []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func applySkillSecurityState(
+	skills []model.Skill,
+	lock model.SourcesLock,
+	states map[string]model.SkillSecurityState,
+) {
+	legacy := map[string]struct {
+		reportID string
+		checked  time.Time
+	}{}
+	for _, pkg := range lock.Packages {
+		checked := pkg.UpdatedAt
+		if checked.IsZero() {
+			checked = pkg.InstalledAt
+		}
+		for name, skill := range pkg.Skills {
+			if skill.LastScanReport != "" {
+				legacy[name] = struct {
+					reportID string
+					checked  time.Time
+				}{skill.LastScanReport, checked}
+			}
+		}
+	}
+	for index := range skills {
+		skill := &skills[index]
+		if skill.System {
+			continue
+		}
+		currentHash := skillContentHash(skill.Files)
+		if state, ok := states[skill.Name]; ok {
+			checkedAt := state.CheckedAt
+			skill.LastSecurityScan = &checkedAt
+			skill.SecurityChanged = state.ContentHash != currentHash
+			if skill.SecurityChanged {
+				skill.SecurityStatus = "changed"
+			} else {
+				skill.SecurityStatus = "checked"
+			}
+			continue
+		}
+		if previous, ok := legacy[skill.Name]; ok && !skill.LocalModified {
+			checkedAt := previous.checked
+			skill.LastSecurityScan = &checkedAt
+			skill.SecurityStatus = "checked"
+			continue
+		}
+		skill.SecurityStatus = "not-scanned"
+	}
+}
+
+func skillContentHash(files []model.FileRecord) string {
+	hash := sha256.New()
+	for _, file := range files {
+		_, _ = io.WriteString(hash, file.Path)
+		_, _ = io.WriteString(hash, "\x00")
+		_, _ = io.WriteString(hash, file.SHA256)
+		_, _ = io.WriteString(hash, "\x00")
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
+func summarizeScanSkills(report *model.ScanReport) {
+	for index := range report.Skills {
+		summary := &report.Skills[index]
+		summary.HighestSeverity = model.RiskInfo
+		for _, cluster := range report.Clusters {
+			if cluster.SkillName != summary.SkillName {
+				continue
+			}
+			if riskRank(cluster.Severity) > riskRank(summary.HighestSeverity) {
+				summary.HighestSeverity = cluster.Severity
+			}
+			if cluster.Ignored {
+				summary.IgnoredFindingCount++
+			} else {
+				summary.ActiveFindingCount++
+			}
+		}
+	}
+}
+
+func scanCheckedAt(report model.ScanReport) time.Time {
+	if !report.CompletedAt.IsZero() {
+		return report.CompletedAt
+	}
+	if !report.StartedAt.IsZero() {
+		return report.StartedAt
+	}
+	return time.Now().UTC()
 }
 
 func existingMappings(root string, mappings map[string]string) bool {

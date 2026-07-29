@@ -734,7 +734,6 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
   onApplyCodexSuggestions?: (clusters: RiskCluster[]) => void | Promise<void>;
   onIgnoreAll?: (clusters: RiskCluster[]) => void | Promise<void>;
 }) {
-  const [limit, setLimit] = useState(50);
   const clusters = [...(report.clusters ?? [])].sort((a, b) => {
     if (a.ignored !== b.ignored) return a.ignored ? 1 : -1;
     return severityRank(b.severity) - severityRank(a.severity);
@@ -742,7 +741,6 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
   const codexByCluster = new Map((report.codexReview?.reviews ?? []).map(review => [review.clusterId, review]));
   const suggestedClusters = codexSuggestedClusters(report);
   const activeClusters = clusters.filter(cluster => !cluster.ignored);
-  const visible = clusters.slice(0, limit);
   return <>
     {clusters.length ? <RiskOverview report={report} /> :
       <div className="scan-clean"><CheckCircle2 size={16} />本地规则未发现警告，仍可使用 Codex 做完整上下文复核</div>}
@@ -755,7 +753,7 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
       {reviewing === "manual-batch" ? "正在记录…" : "一键忽略全部警告"}
     </button></div>}
     {onCodexReview && <div className="codex-review-action"><div><strong>需要快速归纳大量警告？</strong>
-      <small>Codex 会按 Skill 分批复核完整目标目录；本地规则命中仅作为补充线索。</small></div>
+      <small>Codex 会按分组复核完整上下文；本地规则只提供简短概览。</small></div>
       <button className="ghost" disabled={codexWorking} onClick={() => void onCodexReview()}>
         {codexWorking ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
         {codexWorking ? "Codex 正在复核…" : report.codexReview ? "重新用 Codex 复核" : "使用 Codex 辅助复核"}
@@ -778,42 +776,79 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
         <small className="codex-baseline-note">Codex 结论仅供参考；所有级别最终均可由人工直接决定。</small></div>
     </div>}
     {!!report.codexReview?.skillReviews?.length && <CodexSkillReviewList report={report} />}
-    {clusters.length > 0 && <details className="finding-details" open={report.activeHighestSeverity === "critical"}>
-      <summary>查看 {clusters.length} 个风险簇（已归并 {report.findings.length} 条原始命中）</summary>
-      <div>{visible.map(cluster => {
-        const codex = codexByCluster.get(cluster.id);
-        return <article key={cluster.id} className={cluster.ignored ? "ignored" : ""}>
-        <span className={`severity ${cluster.ignored ? "ignored" : cluster.severity}`}>
-          {cluster.ignored ? "已忽略" : severityLabel(cluster.severity)}
-        </span>
-        <div><strong>{cluster.title}{cluster.deterministic && <em className="hard-baseline">确定性规则</em>}</strong>
-          <small>{cluster.ruleId} · {fileClassLabel(cluster.fileClass)} · {cluster.findingCount} 条命中 · {cluster.affectedFiles.length} 个文件</small>
-          {cluster.sampleFindings[0] && <p>{cluster.sampleFindings[0].explanation}</p>}
-          <details className="cluster-evidence"><summary>查看代表性证据与文件</summary>
-            {cluster.sampleFindings.map(finding => <code key={finding.fingerprint}>
-              {finding.file}:{finding.line || 1}　{finding.evidence || "文件级风险"}
-            </code>)}
-          </details>
-          {codex && <div className="codex-cluster"><Sparkles size={14} /><span><b>Codex：{codexVerdictLabel(codex.verdict)}</b>
-            <small>{codex.rationale}</small><small>{codex.recommendation}</small></span></div>}
-          {cluster.ignoreReason && <p className="ignore-reason"><b>人工核查记录：</b>{cluster.ignoreReason}</p>}</div>
-        {onToggle && <button className="ghost finding-review" disabled={reviewing !== ""}
-          onClick={() => void onToggle(cluster)}>
-          {reviewing === cluster.id ? <LoaderCircle className="spin" size={14} /> :
-            cluster.ignored ? <RotateCcw size={14} /> : <ShieldCheck size={14} />}
-          {cluster.ignored ? "恢复风险簇" : "一键忽略此簇"}
-        </button>}
-      </article>})}
-        {clusters.length > visible.length && <button className="ghost finding-load-more"
-          onClick={() => setLimit(current => Math.min(current + 50, clusters.length))}>
-          再显示 {Math.min(50, clusters.length - visible.length)} 个风险簇
-        </button>}
-        <small className="finding-limit-note">
-          已显示 {visible.length}/{clusters.length} 个风险簇；完整原始命中仍保存在本地扫描报告中。
-        </small>
-      </div>
-    </details>}
+    {clusters.length > 0 && <GroupedRiskDetails report={report} clusters={clusters}
+      codexByCluster={codexByCluster} reviewing={reviewing} onToggle={onToggle} />}
   </>;
+}
+
+function GroupedRiskDetails({ report, clusters, codexByCluster, reviewing, onToggle }: {
+  report: ScanReport;
+  clusters: RiskCluster[];
+  codexByCluster: Map<string, NonNullable<ScanReport["codexReview"]>["reviews"][number]>;
+  reviewing: string;
+  onToggle?: (cluster: RiskCluster) => void | Promise<void>;
+}) {
+  const summaries = report.skills?.length ? report.skills : Array.from(new Map(clusters.map(cluster => {
+    const skillName = cluster.skillName || "未识别 Skill";
+    return [skillName, {
+      skillName, sourcePath: skillName, groupId: cluster.groupId || "ungrouped",
+      groupName: cluster.groupName || "未分组", filesScanned: 0,
+      highestSeverity: cluster.severity, activeFindingCount: 0, ignoredFindingCount: 0
+    }];
+  })).values());
+  const groups = new Map<string, { name: string; skills: typeof summaries }>();
+  for (const skill of summaries) {
+    const key = skill.groupId || skill.groupName || "ungrouped";
+    const group = groups.get(key) ?? { name: skill.groupName || "未分组", skills: [] };
+    group.skills.push(skill);
+    groups.set(key, group);
+  }
+  return <div className="grouped-risks">
+    {[...groups.entries()].map(([groupId, group]) => {
+      const groupClusters = clusters.filter(cluster => (cluster.groupId || "ungrouped") === groupId ||
+        (!cluster.groupId && group.skills.some(skill => skill.skillName === cluster.skillName)));
+      const active = groupClusters.filter(cluster => !cluster.ignored).length;
+      return <section key={groupId} className="risk-group">
+        <header><div><strong>{group.name}</strong>
+          <small>{group.skills.length} 个 Skill · {active} 个待处理警告 · {groupClusters.length - active} 个已忽略</small></div>
+          <span className={`badge ${active ? "red" : "green"}`}>{active ? "需要核查" : "已处理"}</span></header>
+        <div className="risk-group-skills">{group.skills.map(skill => {
+          const skillClusters = groupClusters.filter(cluster => cluster.skillName === skill.skillName ||
+            (!cluster.skillName && group.skills.length === 1));
+          const skillActive = skillClusters.filter(cluster => !cluster.ignored).length;
+          return <details key={`${groupId}:${skill.skillName}`} className="risk-skill" open={skillActive > 0}>
+            <summary><span><strong>{skill.skillName}</strong><small>{skill.sourcePath}</small></span>
+              <span>{skillActive} 待处理 / {skillClusters.length} 总计</span></summary>
+            <div className="finding-details">{skillClusters.length ? skillClusters.map(cluster => {
+              const codex = codexByCluster.get(cluster.id);
+              return <article key={cluster.id} className={cluster.ignored ? "ignored" : ""}>
+                <span className={`severity ${cluster.ignored ? "ignored" : cluster.severity}`}>
+                  {cluster.ignored ? "已忽略" : severityLabel(cluster.severity)}
+                </span>
+                <div><strong>{cluster.title}{cluster.deterministic && <em className="hard-baseline">确定性规则</em>}</strong>
+                  <small>{cluster.ruleId} · {fileClassLabel(cluster.fileClass)} · {cluster.findingCount} 条命中 · {cluster.affectedFiles.length} 个文件</small>
+                  {cluster.sampleFindings[0] && <p>{cluster.sampleFindings[0].explanation}</p>}
+                  <details className="cluster-evidence"><summary>查看代表性证据与文件</summary>
+                    {cluster.sampleFindings.map(finding => <code key={finding.fingerprint}>
+                      {finding.file}:{finding.line || 1}　{finding.evidence || "文件级风险"}
+                    </code>)}
+                  </details>
+                  {codex && <div className="codex-cluster"><Sparkles size={14} /><span><b>Codex：{codexVerdictLabel(codex.verdict)}</b>
+                    <small>{codex.rationale}</small><small>{codex.recommendation}</small></span></div>}
+                  {cluster.ignoreReason && <p className="ignore-reason"><b>人工核查记录：</b>{cluster.ignoreReason}</p>}</div>
+                {onToggle && <button className="ghost finding-review" disabled={reviewing !== ""}
+                  onClick={() => void onToggle(cluster)}>
+                  {reviewing === cluster.id ? <LoaderCircle className="spin" size={14} /> :
+                    cluster.ignored ? <RotateCcw size={14} /> : <ShieldCheck size={14} />}
+                  {cluster.ignored ? "恢复" : "忽略"}
+                </button>}
+              </article>;
+            }) : <Empty text="这个 Skill 没有规则警告" />}</div>
+          </details>;
+        })}</div>
+      </section>;
+    })}
+  </div>;
 }
 
 function CodexProgressCard({ progress }: { progress: CodexReviewProgress }) {
@@ -834,11 +869,11 @@ function CodexProgressCard({ progress }: { progress: CodexReviewProgress }) {
     <div className="codex-progress-track"><i style={{ width: `${percent}%` }} /></div>
     <div className="codex-progress-meta">
       <span>{progress.completedSkills}/{progress.totalSkills || "?"} Skills</span>
-      <span>{progress.completedBatch}/{progress.batchCount || "?"} 批次</span>
+      <span>{progress.completedBatch}/{progress.batchCount || "?"} 分组</span>
       <span>{progress.activityCount} 次分析活动</span>
     </div>
     {!!progress.activeBatches?.length ? <div className="codex-progress-batches">
-      {progress.activeBatches.map(batch => <div key={batch.index}><small>第 {batch.index} 批</small>
+      {progress.activeBatches.map(batch => <div key={batch.index}><small>{batch.groupName || `分组 ${batch.index}`}</small>
         <span>{batch.skillNames.join("、")}</span></div>)}
     </div> : !!progress.activeSkills.length && <div className="codex-progress-skills">
       <small>当前 Skills</small>{progress.activeSkills.map(name => <span key={name}>{name}</span>)}
@@ -848,9 +883,17 @@ function CodexProgressCard({ progress }: { progress: CodexReviewProgress }) {
 
 function CodexSkillReviewList({ report }: { report: ScanReport }) {
   const reviews = report.codexReview?.skillReviews ?? [];
+  const groupBySkill = new Map((report.skills ?? []).map(skill => [skill.skillName, skill.groupName || "未分组"]));
+  const groups = new Map<string, typeof reviews>();
+  for (const review of reviews) {
+    const group = groupBySkill.get(review.skillName) || "未分组";
+    groups.set(group, [...(groups.get(group) ?? []), review]);
+  }
   return <details className="codex-skill-results" open={reviews.length <= 6}>
-    <summary>逐个查看 {reviews.length} 个 Skill 的 Codex 结论</summary>
-    <div className="codex-skill-list">{reviews.map(review => <article key={`${review.skillName}:${review.sourcePath}`}
+    <summary>按分组查看 {reviews.length} 个 Skill 的 Codex 结论</summary>
+    {[...groups.entries()].map(([group, groupReviews]) => <section key={group} className="codex-result-group">
+      <h4>{group}<small>{groupReviews.length} 个 Skill</small></h4>
+      <div className="codex-skill-list">{groupReviews.map(review => <article key={`${review.skillName}:${review.sourcePath}`}
       className={`codex-skill-review ${review.verdict}`}>
       <div className="codex-skill-head"><div><strong>{review.skillName}</strong><code>{review.sourcePath}</code></div>
         <span className={`codex-verdict ${review.verdict}`}>{codexSkillVerdictLabel(review.verdict)}</span></div>
@@ -864,7 +907,7 @@ function CodexSkillReviewList({ report }: { report: ScanReport }) {
             <small>{concern.recommendation}</small>
             {!!concern.evidenceFiles?.length && <code>{concern.evidenceFiles.join(" · ")}</code>}</div>
         </div>)}</div>}
-    </article>)}</div>
+    </article>)}</div></section>)}
   </details>;
 }
 
@@ -886,17 +929,15 @@ function codexSkillVerdictLabel(verdict: string): string {
 }
 
 function RiskOverview({ report }: { report: ScanReport }) {
-  const levels: Array<ScanReport["activeHighestSeverity"]> = ["critical", "high", "medium", "low", "informational"];
+  const skills = report.skills ?? [];
+  const groupCount = new Set(skills.map(skill => skill.groupId)).size;
+  const affectedSkills = new Set((report.clusters ?? [])
+    .filter(cluster => !cluster.ignored).map(cluster => cluster.skillName)).size;
   return <div className="risk-overview" aria-label="风险概述">
-    {levels.map(level => {
-      const all = (report.clusters ?? []).filter(cluster => cluster.severity === level);
-      const active = all.filter(cluster => !cluster.ignored).length;
-      return <div key={level} className={all.length ? "" : "empty-risk"}>
-        <span className={`severity ${level}`}>{severityLabel(level)}</span>
-        <strong>{all.length}</strong>
-        <small>{active ? `${active} 待核查` : all.length ? "已全部处理" : "无命中"}</small>
-      </div>;
-    })}
+    <div><span>分组</span><strong>{groupCount}</strong><small>本次检查</small></div>
+    <div><span>Skills</span><strong>{skills.length}</strong><small>{affectedSkills} 个需要关注</small></div>
+    <div><span>待处理</span><strong>{report.activeFindingCount}</strong><small>按 Skill 归类</small></div>
+    <div><span>已忽略</span><strong>{report.ignoredFindingCount}</strong><small>人工决定</small></div>
   </div>;
 }
 
@@ -905,14 +946,35 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
   const [working, setWorking] = useState(false);
   const [codexWorking, setCodexWorking] = useState(false);
   const [reviewing, setReviewing] = useState("");
+  const selectable = data.skills.filter(skill => !skill.system);
+  const recommendedNames = () => selectable.filter(skill =>
+    !isSecurityCurrent(skill)).map(skill => skill.name);
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(() => new Set(recommendedNames()));
   const { progress: codexProgress, clearProgress } = useCodexProgress();
   const audit = async () => {
+    const names = [...selectedSkills];
+    if (!names.length) return;
     setWorking(true);
     try {
-      const scanned = await runOperation("扫描全部个人 Skills", () => api.audit(""), "安全扫描已完成");
-      if (scanned) { setReport(scanned); await refresh(); }
+      const scanned = await runOperation(
+        `扫描 ${names.length} 个 Skills`, () => api.auditSkills(names), "安全扫描已完成"
+      );
+      if (scanned) {
+        setReport(scanned);
+        setSelectedSkills(new Set());
+        await refresh();
+      }
     } finally { setWorking(false); }
   };
+  const toggleSkill = (name: string) => setSelectedSkills(current => {
+    const next = new Set(current);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
+  const selectAll = () => setSelectedSkills(new Set(selectable.map(skill => skill.name)));
+  const invertSelection = () => setSelectedSkills(new Set(selectable
+    .filter(skill => !selectedSkills.has(skill.name)).map(skill => skill.name)));
+  const selectRecommended = () => setSelectedSkills(new Set(recommendedNames()));
   const toggleIgnore = async (cluster: RiskCluster) => {
     setReviewing(cluster.id);
     const changed = await runOperation(
@@ -943,7 +1005,11 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     setCodexWorking(true);
     clearProgress();
     try {
-      const reviewed = await runOperation("Codex 辅助风险复核", () => api.reviewWithCodex(report), "Codex 风险归纳已完成");
+      const reviewed = await runOperation(
+        "Codex 辅助风险复核",
+        () => api.reviewWithCodex(report, (report.skills ?? []).map(skill => skill.skillName)),
+        "Codex 风险归纳已完成"
+      );
       if (reviewed) { setReport(reviewed); await refresh(); }
     } finally { setCodexWorking(false); }
   };
@@ -959,14 +1025,49 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
       setReviewing("");
     }
   };
+  const groups = data.groups.map(group => ({
+    ...group,
+    skills: selectable.filter(skill => skill.groupId === group.id)
+  })).filter(group => group.skills.length > 0);
   return <div className="security-grid">
     <section className="panel security-summary"><div className="shield"><ShieldCheck size={42} /></div><h2>本地安全基线</h2>
       <p>扫描提示注入、凭据访问、命令执行、网络外泄、批量删除和混淆载荷。</p>
-      <button className="primary" onClick={audit} disabled={working || codexWorking}>{working ? <LoaderCircle className="spin" size={17} /> : <ShieldCheck size={17} />}{working ? "正在扫描…" : "扫描全部 Skills"}</button>
+      <button className="primary" onClick={audit} disabled={working || codexWorking || selectedSkills.size === 0}>
+        {working ? <LoaderCircle className="spin" size={17} /> : <ShieldCheck size={17} />}
+        {working ? "正在扫描…" : `扫描选中的 ${selectedSkills.size} 个`}
+      </button>
       <button className="ghost" onClick={reviewWithCodex} disabled={working || codexWorking || !report}>
         {codexWorking ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}{codexWorking ? "Codex 正在复核…" : "Codex 辅助复核"}
       </button>
       <small>扫描只读取本地文件，不上传内容。</small></section>
+    <section className="panel security-queue"><PanelHead title="选择要检查的 Skills"
+      subtitle="没有检查记录或内容已变化的 Skill 会默认选中；已检查且未变化的 Skill 默认跳过。" />
+      <div className="selection-tools">
+        <button className="ghost compact" onClick={selectRecommended}>恢复推荐</button>
+        <button className="ghost compact" onClick={selectAll}>全选</button>
+        <button className="ghost compact" onClick={invertSelection}>反选</button>
+        <button className="ghost compact" onClick={() => setSelectedSkills(new Set())}>清空</button>
+        <small>已选 {selectedSkills.size}/{selectable.length}</small>
+      </div>
+      <div className="security-skill-groups">{groups.map(group => {
+        const selectedCount = group.skills.filter(skill => selectedSkills.has(skill.name)).length;
+        return <details key={group.id} open={selectedCount > 0}>
+          <summary><span><strong>{group.name}</strong><small>{group.skills.length} 个 Skill</small></span>
+            <b>{selectedCount} 个已选</b></summary>
+          <div>{group.skills.map(skill => <label key={skill.name} className="security-skill-option">
+            <input type="checkbox" checked={selectedSkills.has(skill.name)} onChange={() => toggleSkill(skill.name)} />
+            <span><strong>{skill.name}</strong><small>
+              {isSecurityCurrent(skill)
+                ? `已检查${skill.lastSecurityScan ? ` · ${new Date(skill.lastSecurityScan).toLocaleString("zh-CN")}` : ""}`
+                : skill.securityChanged ? "内容已变化，需要重新检查" : "尚未检查"}
+            </small></span>
+            <em className={isSecurityCurrent(skill) ? "checked" : "pending"}>
+              {isSecurityCurrent(skill) ? "可跳过" : "建议检查"}
+            </em>
+          </label>)}</div>
+        </details>;
+      })}</div>
+    </section>
     <section className="panel security-results"><PanelHead title="最近扫描结果" subtitle={report ? `${report.filesScanned} 个文件 · ${report.activeFindingCount} 个待处理 · ${report.ignoredFindingCount} 个已忽略` : "尚未扫描"} />
       {!report ? <Empty text="运行一次本地安全扫描" /> : <>
         <ScanSummary report={report} />
@@ -979,11 +1080,17 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
   </div>;
 }
 
+function isSecurityCurrent(skill: Skill): boolean {
+  return !skill.securityChanged && (skill.securityStatus === "checked" || skill.securityStatus === "安全");
+}
+
 function ScanSummary({ report, compact = false }: { report: ScanReport; compact?: boolean }) {
+  const groupCount = new Set((report.skills ?? []).map(skill => skill.groupId)).size;
+  const skillCount = report.skills?.length ?? 0;
   return <div className={`scan-summary ${compact ? "compact" : ""}`}>
     <span className={`severity ${report.activeHighestSeverity}`}>{severityLabel(report.activeHighestSeverity)}</span>
     <div><strong>{report.activeFindingCount === 0 ? "没有待处理警告" : `${report.activeFindingCount} 个警告需要处理`}</strong>
-      <small>{report.clusters?.length || 0} 个风险簇，归并自 {report.findings.length} 条命中；已人工处理 {report.ignoredFindingCount} 个簇。</small></div>
+      <small>本次检查 {groupCount || "未知"} 个分组、{skillCount || "未知"} 个 Skill；已人工处理 {report.ignoredFindingCount} 个警告。</small></div>
   </div>;
 }
 
@@ -1274,14 +1381,11 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
           <option value="high">高</option><option value="xhigh">超高</option>
         </select></label>
         <div className="codex-batch-settings">
-          <label><span>每批 Skills</span><input type="number" min="1" max="12"
-            value={cfg.codexReview.skillsPerBatch || 4}
-            onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, skillsPerBatch: Number(e.target.value) } })} /></label>
-          <label><span>并行批次</span><input type="number" min="1" max="4"
+          <label><span>同时复核的分组</span><input type="number" min="1" max="4"
             value={cfg.codexReview.maxParallelBatches || 2}
             onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, maxParallelBatches: Number(e.target.value) } })} /></label>
         </div>
-        <small className="codex-batch-hint">默认每批 4 个 Skill、2 批并行；较小批次更易读，较高并行度可能触发模型限流。</small>
+        <small className="codex-batch-hint">同一分组内的 Skill 始终一起复核，默认可同时处理 2 个分组。并行过高可能触发模型限流。</small>
         <div className="credential-actions codex-actions">
           <button className="ghost" onClick={validateCodex}><Stethoscope size={16} />检查 CLI 与登录状态</button>
           <button className="primary compact" onClick={save}><Settings size={15} />保存复核设置</button>

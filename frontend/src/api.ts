@@ -21,6 +21,7 @@ type Backend = {
   PrepareLocal(path: string): Promise<InstallPreview>;
   ApplyInstall(plan: string, skills: string[], acceptHighRisk: boolean): Promise<Transaction>;
   AuditSkill(name: string): Promise<ScanReport>;
+  AuditSkills(names: string[]): Promise<ScanReport>;
   SetFindingIgnored(finding: Finding, ignored: boolean, reason: string): Promise<boolean>;
   SetRiskClusterIgnored(cluster: RiskCluster, ignored: boolean, reason: string, confirmDeterministic: boolean): Promise<boolean>;
   SetRiskClustersIgnored(clusters: RiskCluster[], ignored: boolean, reason: string): Promise<boolean>;
@@ -76,6 +77,7 @@ function normalizeScan(value: ScanReport): ScanReport {
     findings,
     codexReview,
     clusters: value?.clusters ?? [],
+    skills: value?.skills ?? [],
     activeHighestSeverity: value?.activeHighestSeverity ?? value?.highestSeverity ?? "informational",
     activeFindingCount: value?.activeFindingCount ?? findings.filter(f => !f.ignored).length,
     ignoredFindingCount: value?.ignoredFindingCount ?? findings.filter(f => f.ignored).length
@@ -137,6 +139,11 @@ export const api = {
     const b = backend();
     if (!b) return demoScanReport;
     return normalizeScan(await b.AuditSkill(name));
+  },
+  auditSkills: async (names: string[]) => {
+    const b = backend();
+    if (!b) return demoScanReport;
+    return normalizeScan(await b.AuditSkills(names));
   },
   setFindingIgnored: async (finding: Finding, ignored: boolean, reason = "") => {
     const b = backend();

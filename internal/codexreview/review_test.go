@@ -167,7 +167,10 @@ func TestDiscoverReviewSkillsFiltersRequestedAndAssignsClusters(t *testing.T) {
 	clusters := []model.RiskCluster{{
 		ID: "risk-beta", AffectedFiles: []string{"beta/scripts/run.ps1"},
 	}}
-	skills, err := discoverReviewSkills(root, clusters, []string{"beta"})
+	summaries := []model.ScanSkillSummary{{
+		SkillName: "beta", SourcePath: "beta", GroupID: "research", GroupName: "研究",
+	}}
+	skills, err := discoverReviewSkills(root, summaries, clusters, []string{"beta"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +180,9 @@ func TestDiscoverReviewSkillsFiltersRequestedAndAssignsClusters(t *testing.T) {
 	if len(skills[0].Clusters) != 1 || skills[0].Clusters[0].ID != "risk-beta" {
 		t.Fatalf("expected beta cluster assignment, got %#v", skills[0].Clusters)
 	}
+	if skills[0].GroupID != "research" || skills[0].GroupName != "研究" {
+		t.Fatalf("expected persisted group assignment, got %#v", skills[0])
+	}
 }
 
 func TestDiscoverReviewSkillsRejectsUnknownRequestedSkill(t *testing.T) {
@@ -184,19 +190,29 @@ func TestDiscoverReviewSkillsRejectsUnknownRequestedSkill(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("---\nname: known\ndescription: fixture\n---\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := discoverReviewSkills(root, nil, []string{"missing"}); err == nil {
+	if _, err := discoverReviewSkills(root, nil, nil, []string{"missing"}); err == nil {
 		t.Fatal("expected unknown requested Skill to fail")
 	}
 }
 
-func TestSplitReviewSkillsUsesBoundedStableBatches(t *testing.T) {
-	skills := []reviewSkill{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}}
-	batches := splitReviewSkills(skills, 2)
-	if len(batches) != 3 {
-		t.Fatalf("expected three batches, got %d", len(batches))
+func TestGroupReviewSkillsKeepsCompleteGroupsTogether(t *testing.T) {
+	skills := []reviewSkill{
+		{Name: "b", GroupID: "research", GroupName: "研究"},
+		{Name: "a", GroupID: "research", GroupName: "研究"},
+		{Name: "c", GroupID: "development", GroupName: "开发"},
 	}
-	if got := reviewSkillNames(batches[1]); !slices.Equal(got, []string{"c", "d"}) {
-		t.Fatalf("unexpected stable batch: %v", got)
+	batches := groupReviewSkills(skills)
+	if len(batches) != 2 {
+		t.Fatalf("expected two group batches, got %d", len(batches))
+	}
+	var research reviewBatch
+	for _, batch := range batches {
+		if batch.GroupID == "research" {
+			research = batch
+		}
+	}
+	if got := reviewSkillNames(research.Skills); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("expected complete stable research group, got %v", got)
 	}
 }
 
@@ -275,7 +291,9 @@ exit /b 0
 		schemaPath,
 		0,
 		1,
-		[]reviewSkill{{Name: "alpha", SourcePath: ".", FileCount: 1}},
+		reviewBatch{GroupID: "group", GroupName: "Group", Skills: []reviewSkill{{
+			Name: "alpha", SourcePath: ".", FileCount: 1,
+		}}},
 		func() { activity++ },
 	)
 	if err != nil {
@@ -294,10 +312,12 @@ func TestProgressTrackerPreservesParallelBatchGroups(t *testing.T) {
 	tracker := &progressTracker{
 		progress: func(progress model.CodexReviewProgress) { latest = progress },
 		reviewID: "review", reportID: "report", startedAt: time.Now().UTC(),
-		batchCount: 2, totalSkills: 3, active: map[int][]string{},
+		batchCount: 2, totalSkills: 3, active: map[int]model.CodexActiveBatch{},
 	}
-	tracker.startBatch(1, []string{"gamma"})
-	tracker.startBatch(0, []string{"alpha", "beta"})
+	tracker.startBatch(1, reviewBatch{GroupID: "g2", GroupName: "第二组", Skills: []reviewSkill{{Name: "gamma"}}})
+	tracker.startBatch(0, reviewBatch{
+		GroupID: "g1", GroupName: "第一组", Skills: []reviewSkill{{Name: "alpha"}, {Name: "beta"}},
+	})
 	if len(latest.ActiveBatches) != 2 || latest.ActiveBatches[0].Index != 1 ||
 		!slices.Equal(latest.ActiveBatches[0].SkillNames, []string{"alpha", "beta"}) ||
 		latest.ActiveBatches[1].Index != 2 {
@@ -305,7 +325,7 @@ func TestProgressTrackerPreservesParallelBatchGroups(t *testing.T) {
 	}
 }
 
-func TestCompactReviewSkillsOmitsFingerprintsAndCapsFileLists(t *testing.T) {
+func TestCompactReviewSkillsUsesOverviewWithoutEvidenceOrFilePaths(t *testing.T) {
 	files := make([]string, 60)
 	for index := range files {
 		files[index] = fmt.Sprintf("src/file-%02d.go", index)
@@ -323,11 +343,13 @@ func TestCompactReviewSkillsOmitsFingerprintsAndCapsFileLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "fingerprint") {
-		t.Fatalf("compact prompt must omit fingerprints: %s", data)
+	payload := string(data)
+	if strings.Contains(payload, "fingerprint") || strings.Contains(payload, "src/main.go") ||
+		strings.Contains(payload, "file-00.go") || strings.Contains(payload, "fixture") {
+		t.Fatalf("compact prompt must omit fingerprints, evidence, and file paths: %s", data)
 	}
-	if len(compact[0].RiskClusters[0].AffectedFiles) != 50 {
-		t.Fatalf("expected affected file cap, got %d", len(compact[0].RiskClusters[0].AffectedFiles))
+	if len(compact[0].RiskOverview) != 1 || compact[0].RiskOverview[0].AffectedFileCount != 60 {
+		t.Fatalf("expected count-only risk overview, got %#v", compact[0].RiskOverview)
 	}
 }
 

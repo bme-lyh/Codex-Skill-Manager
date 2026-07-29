@@ -20,7 +20,9 @@ Each source is applied as an independent transaction with its own backup and rol
 
 ## Security Center
 
-Findings show rule, severity, file, line, evidence, explanation, and recommendation. Repeated scans do not inflate the badge: it counts unique active High/Critical findings from the latest effective report per target. Every severity and deterministic rule can be ignored individually or all at once, without running Codex first or entering a mandatory reason.
+Skills with no trusted scan record or changed content are selected by default. Checked and unchanged Skills are skipped by default, but can be added with checkboxes, Select all, or Invert. Results and counts follow Group → Skill → Warning. Each warning shows its rule, severity, evidence, explanation, and recommendation.
+
+Repeated scans do not inflate the badge: it counts unique active High/Critical findings from the latest effective report per target. Every severity and deterministic rule can be ignored individually or all at once, without running Codex first or entering a mandatory reason.
 
 Active High/Critical findings block installation and update. A human ignore action clears the applicable gate; restoring a cluster immediately reactivates it. Optional Codex review reads the complete target directory in a read-only session and treats local rule hits as supplemental leads.
 
@@ -37,9 +39,11 @@ plus the current user's npm directory for a working independent CLI. It checks
 required capabilities instead of pinning a CLI version and refreshes status
 when focus returns after browser authentication. Once authenticated, the model
 picker loads the current CLI's visible model catalog instead of using a
-hard-coded list. Reviews are split into bounded parallel batches and return a
-separate structured summary for every Skill. Live progress shows active Skills,
-completed batches, analysis activity and elapsed time. Background CLI probes run
+hard-coded list. Each application group is one review task, so Skills in the same
+group keep shared context. Different groups may run in parallel. Local rule input
+is a count-only overview; Codex reads evidence from the repository. Reviews return
+a separate summary for every Skill, with live group and Skill progress. Codex review
+requires an installed, signed-in Codex CLI and consumes account usage. Background CLI probes run
 without flashing console windows. Tokens
 are stored in Windows Credential Manager and are never written to logs or
 reports.

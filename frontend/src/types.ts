@@ -28,6 +28,8 @@ export interface Skill {
   sourceRepository?: string;
   sourcePath?: string;
   files?: Array<{ path: string; size: number; sha256: string; kind: string }>;
+  lastSecurityScan?: string;
+  securityChanged?: boolean;
 }
 
 export interface Group {
@@ -59,6 +61,9 @@ export interface Finding {
   category: string;
   clusterId: string;
   deterministic: boolean;
+  skillName?: string;
+  groupId?: string;
+  groupName?: string;
 }
 
 export interface RiskCluster {
@@ -75,6 +80,9 @@ export interface RiskCluster {
   sampleFindings: Finding[];
   ignored: boolean;
   ignoreReason?: string;
+  skillName?: string;
+  groupId?: string;
+  groupName?: string;
 }
 
 export interface CodexClusterReview {
@@ -111,6 +119,8 @@ export interface CodexSkillReview {
 
 export interface CodexReviewBatch {
   index: number;
+  groupId?: string;
+  groupName?: string;
   status: "queued" | "running" | "completed" | "failed";
   skillNames: string[];
   startedAt?: string;
@@ -128,7 +138,7 @@ export interface CodexReviewProgress {
   totalSkills: number;
   completedSkills: number;
   activeSkills: string[];
-  activeBatches: Array<{ index: number; skillNames: string[] }>;
+  activeBatches: Array<{ index: number; groupId?: string; groupName?: string; skillNames: string[] }>;
   activityCount: number;
   startedAt: string;
   updatedAt: string;
@@ -188,6 +198,18 @@ export interface ScanReport {
   completedAt: string;
   clusters: RiskCluster[];
   codexReview?: CodexReviewResult;
+  skills?: ScanSkillSummary[];
+}
+
+export interface ScanSkillSummary {
+  skillName: string;
+  sourcePath: string;
+  groupId: string;
+  groupName: string;
+  filesScanned: number;
+  highestSeverity: Severity;
+  activeFindingCount: number;
+  ignoredFindingCount: number;
 }
 
 export interface Transaction {

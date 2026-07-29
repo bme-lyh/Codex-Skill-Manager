@@ -6,35 +6,33 @@ Codex Skill Manager is a local Windows 10/11 application for downloading, scanni
 
 [Latest release](https://github.com/bme-lyh/Codex-Skill-Manager/releases/latest) · [Getting started](docs/en/getting-started.md) · [GUI guide](docs/en/gui-guide.md) · [Security](SECURITY_EN.md) · [中文](README.md)
 
-## Interface carousel
+## Interface preview
 
 [![Animated carousel of key Codex Skill Manager screens and operation states: grouped Skills, batch selection, group relations, updates, risk clusters, Codex review, install preview, history and rollback, quarantine, reports, and settings](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
-> The 1440×900 GIF automatically cycles through 12 key states. These screenshots use an isolated anonymous demo environment with three example groups and fictional Skills. They do not read real Skills, GitHub credentials, Codex sign-in data, personal directories, or operation logs. Example paths use the `demo` user.
+> The animation uses fictional Skills, groups, and paths. It contains no real account or personal information.
 
 ## Purpose
 
-Copying a Skill directly into `.codex/skills` is easy, but it loses source,
-version, risk, and recovery information. This project provides a clear workflow
-before and after every change.
+Skills change how Codex works. Manual copying is easy, but later it may be hard to tell where a Skill came from, whether it changed, or how to recover it.
+
+This app installs and organizes Skills in one place, checks common risks, and keeps recovery data before updates or removal.
 
 ## Core features
 
 | Feature | What it does |
 |---|---|
-| Risk scanning | Scans actual Skill files before installation or update and explains severity, evidence, and affected locations |
-| Download and install | Supports public/private GitHub repositories, repository paths, `SKILL.md` links, and local directories |
-| Update | Checks remote commits, supports single or batch selection, and backs up before replacement |
-| Uninstall | Moves only explicitly selected Skills to quarantine instead of permanently deleting them |
-| Group management | Groups by source automatically and supports creating, renaming, and dragging groups |
-| Existing Skills | Detects and manages Skills already present without moving their files |
-| Recovery | Journals every mutation and supports rollback or quarantine restore |
+| Install | Install one or more Skills from public/private GitHub repositories or local folders |
+| Risk checks | Show common risks and related files before installation, updates, or manual review |
+| Update and remove | Support multi-selection, automatic backups, quarantine, and recovery |
+| Groups | Group automatically or create, rename, and drag your own groups |
+| Existing Skills | Add current Skills to management without moving their files |
 
-Advanced capabilities include immutable GitHub commit resolution, duplicate
-risk clustering, optional full-target read-only Codex CLI review with per-Skill
-results and live batch progress, GitHub rate-limit handling,
-local-change protection, scheduled read-only update checks, and structured JSON
-output for agents and automation.
+## Optional Codex review
+
+Codex review is off by default. To use it, install and sign in to **Codex CLI**, enable the feature in Settings, and make sure your Codex account has available usage.
+
+Reviews consume Codex usage. Time and usage depend on the number and size of Skills, the selected model, and reasoning effort. The app reviews one group at a time, shows live progress, and gives a short result for each Skill. All local checks and management features still work without Codex review.
 
 ## Quick start
 
@@ -58,15 +56,13 @@ pnpm --dir frontend install
 
 Outputs are written to `build\bin`. The GUI must be built through Wails; plain `go build` omits required desktop build tags.
 
-## Safety model
+## Safety and recovery
 
-- Repository content is untrusted and never executed.
-- GitHub refs are pinned before a plan is created.
-- Only actual Skill installation targets affect the update gate.
-- Active High/Critical findings block writes by default. Every severity uses the same human decision flow: ignore one cluster or all active clusters in one action, with an optional reason and no extra deterministic-risk confirmation.
-- Local changes are preserved unless replacement is explicitly approved.
-- Every mutation has explicit targets, backup/quarantine behavior, a journal, structured output, and a recovery path.
-- Cloud or LLM scanning remains opt-in.
+- Downloaded content is not executed automatically.
+- The app shows targets and risks before changing files.
+- Updates create backups, and removed Skills go to quarantine for recovery.
+- Local changes are not replaced without clear approval.
+- Codex review is optional; the default checks stay local.
 
 A clean static scan is not proof of safety. See the [security policy](SECURITY_EN.md) for limitations and vulnerability reporting.
 
@@ -78,4 +74,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.7.3**. Licensed under the [MIT License](LICENSE).
+Current version: **0.7.4**. Licensed under the [MIT License](LICENSE).

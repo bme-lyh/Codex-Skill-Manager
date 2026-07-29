@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const Version = "0.7.3"
+const Version = "0.7.4"
 
 type RiskSeverity string
 
@@ -38,7 +38,6 @@ type CodexReviewConfig struct {
 	ReasoningEffort    string `json:"reasoningEffort" yaml:"reasoningEffort"`
 	TimeoutSeconds     int    `json:"timeoutSeconds" yaml:"timeoutSeconds"`
 	MaxSamplePerRisk   int    `json:"maxSamplePerRisk" yaml:"maxSamplePerRisk"`
-	SkillsPerBatch     int    `json:"skillsPerBatch" yaml:"skillsPerBatch"`
 	MaxParallelBatches int    `json:"maxParallelBatches" yaml:"maxParallelBatches"`
 }
 
@@ -84,6 +83,8 @@ type Skill struct {
 	Dependencies     []string     `json:"dependencies,omitempty"`
 	Relationships    []Relation   `json:"relationships,omitempty"`
 	LastChecked      *time.Time   `json:"lastChecked,omitempty"`
+	LastSecurityScan *time.Time   `json:"lastSecurityScan,omitempty"`
+	SecurityChanged  bool         `json:"securityChanged"`
 }
 
 type Group struct {
@@ -154,6 +155,9 @@ type Finding struct {
 	Category       string       `json:"category"`
 	ClusterID      string       `json:"clusterId"`
 	Deterministic  bool         `json:"deterministic"`
+	SkillName      string       `json:"skillName,omitempty"`
+	GroupID        string       `json:"groupId,omitempty"`
+	GroupName      string       `json:"groupName,omitempty"`
 }
 
 type RiskCluster struct {
@@ -170,6 +174,9 @@ type RiskCluster struct {
 	SampleFindings []Finding    `json:"sampleFindings"`
 	Ignored        bool         `json:"ignored"`
 	IgnoreReason   string       `json:"ignoreReason,omitempty"`
+	SkillName      string       `json:"skillName,omitempty"`
+	GroupID        string       `json:"groupId,omitempty"`
+	GroupName      string       `json:"groupName,omitempty"`
 }
 
 type CodexClusterReview struct {
@@ -206,6 +213,8 @@ type CodexSkillReview struct {
 
 type CodexReviewBatch struct {
 	Index       int       `json:"index"`
+	GroupID     string    `json:"groupId"`
+	GroupName   string    `json:"groupName"`
 	Status      string    `json:"status"`
 	SkillNames  []string  `json:"skillNames"`
 	StartedAt   time.Time `json:"startedAt,omitempty"`
@@ -231,6 +240,8 @@ type CodexReviewProgress struct {
 
 type CodexActiveBatch struct {
 	Index      int      `json:"index"`
+	GroupID    string   `json:"groupId"`
+	GroupName  string   `json:"groupName"`
 	SkillNames []string `json:"skillNames"`
 }
 
@@ -268,6 +279,25 @@ type ScanReport struct {
 	ScannerVersion        string             `json:"scannerVersion"`
 	Clusters              []RiskCluster      `json:"clusters"`
 	CodexReview           *CodexReviewResult `json:"codexReview,omitempty"`
+	Skills                []ScanSkillSummary `json:"skills"`
+}
+
+type ScanSkillSummary struct {
+	SkillName           string       `json:"skillName"`
+	SourcePath          string       `json:"sourcePath"`
+	GroupID             string       `json:"groupId"`
+	GroupName           string       `json:"groupName"`
+	FilesScanned        int          `json:"filesScanned"`
+	HighestSeverity     RiskSeverity `json:"highestSeverity"`
+	ActiveFindingCount  int          `json:"activeFindingCount"`
+	IgnoredFindingCount int          `json:"ignoredFindingCount"`
+}
+
+type SkillSecurityState struct {
+	SkillName   string    `json:"skillName"`
+	ContentHash string    `json:"contentHash"`
+	ReportID    string    `json:"reportId"`
+	CheckedAt   time.Time `json:"checkedAt"`
 }
 
 type PackageLock struct {

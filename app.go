@@ -134,11 +134,17 @@ func (a *App) AuditSkill(name string) (model.ScanReport, error) {
 	if err := a.ready(); err != nil {
 		return model.ScanReport{}, err
 	}
-	target := ""
-	if name != "" {
-		target = filepath.Join(a.mgr.Config.Paths.SkillsRoot, name)
+	if strings.TrimSpace(name) == "" {
+		return a.mgr.Audit("")
 	}
-	return a.mgr.Audit(target)
+	return a.mgr.AuditSkills([]string{name})
+}
+
+func (a *App) AuditSkills(names []string) (model.ScanReport, error) {
+	if err := a.ready(); err != nil {
+		return model.ScanReport{}, err
+	}
+	return a.mgr.AuditSkills(names)
 }
 
 func (a *App) SetFindingIgnored(finding model.Finding, ignored bool, reason string) (bool, error) {
