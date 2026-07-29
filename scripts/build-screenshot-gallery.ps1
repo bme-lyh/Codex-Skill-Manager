@@ -18,7 +18,8 @@ $screens = @(
     @{ File = "history.png"; Label = "History & Rollback" },
     @{ File = "quarantine.png"; Label = "Quarantine" },
     @{ File = "reports.png"; Label = "Reports" },
-    @{ File = "settings.png"; Label = "Settings" }
+    @{ File = "settings.png"; Label = "Settings (Chinese)" },
+    @{ File = "settings-en.png"; Label = "Settings (English)" }
 )
 
 $columns = 4

@@ -15,7 +15,7 @@ Codex Skill Manager 是面向 Windows 10/11 的本地 Skills 管理工具。它�
 
 ## 界面展示
 
-[![Codex Skill Manager 当前界面轮播：多分组 Skills、批量操作、更新状态、安全中心默认折叠、按分组查看 Codex 复核、安装预览、历史回滚、隔离、报告和设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
+[![Codex Skill Manager 当前界面展示：多分组 Skills、批量操作、更新状态、安全中心、Codex 复核、安装预览、历史回滚、报告以及中英文设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
 > 动图展示主要界面。里面使用的分组、Skill 和路径都是示例，不包含真实账号或个人信息。
 
@@ -43,6 +43,7 @@ flowchart LR
 | 更新与卸载 | 支持多选操作；更新前自动备份，卸载后可以恢复 |
 | 分组整理 | 自动分组，也可以新建、改名和拖动分组 |
 | 已有 Skills | 找出当前目录里的 Skills，并在不移动文件的情况下加入管理 |
+| 界面语言 | 支持简体中文和 English；首次运行默认中文 |
 
 ## 使用 Codex 风险复核
 
@@ -64,6 +65,7 @@ Codex 风险复核是可选功能，默认关闭。启用前需要：
 4. 第一次打开后，进入 **Skills** 页，选择“未管理”的项目，点击 **管理**。
 
 应用默认读取 `%USERPROFILE%\.codex\skills`。`.system` 只显示、不修改。
+界面默认使用简体中文，可在 **设置 → 语言** 中立即切换为 English；选择会自动保存。
 
 ### 方式二：从源码构建
 
@@ -96,7 +98,7 @@ pnpm --dir frontend install
 
 ## 项目状态
 
-当前版本为 **0.7.6**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
+当前版本为 **0.7.7**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
 
 欢迎提交问题和改进建议。参与前请阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
 

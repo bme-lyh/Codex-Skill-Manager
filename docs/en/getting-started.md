@@ -9,6 +9,9 @@
 
 Portable releases contain `portable.marker` and store configuration and runtime state under the release directory. Standard installations store application state under `%USERPROFILE%\.codex\skill-manager`.
 
+The first-run interface is Simplified Chinese. Open **设置 → 语言** and choose
+**English** to switch immediately; the selection is saved automatically.
+
 ## Manage existing Skills
 
 Open **Skills**, select unmanaged items, and click **Manage**. The read-only preview shows detected repositories, source paths, proposed groups, confidence, and scan results. Confirming the plan records provenance and hashes; it does not move or rewrite Skill content.

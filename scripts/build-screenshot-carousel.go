@@ -26,6 +26,7 @@ var frames = []string{
 	"quarantine.png",
 	"reports.png",
 	"settings.png",
+	"settings-en.png",
 }
 
 func main() {

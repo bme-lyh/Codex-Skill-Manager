@@ -107,6 +107,11 @@ func Validate(cfg model.Config) error {
 	if cfg.SchemaVersion != 1 {
 		return fmt.Errorf("unsupported config schema: %d", cfg.SchemaVersion)
 	}
+	switch cfg.Locale {
+	case "zh-CN", "en-US":
+	default:
+		return errors.New("locale must be zh-CN or en-US")
+	}
 	for label, p := range map[string]string{
 		"skillsRoot": cfg.Paths.SkillsRoot, "dataRoot": cfg.Paths.DataRoot,
 		"logsRoot":    cfg.Paths.LogsRoot,
@@ -145,6 +150,9 @@ func Validate(cfg model.Config) error {
 }
 
 func normalize(cfg *model.Config) {
+	if strings.TrimSpace(cfg.Locale) == "" {
+		cfg.Locale = "zh-CN"
+	}
 	if strings.TrimSpace(cfg.CodexReview.Model) == "" {
 		cfg.CodexReview.Model = "default"
 	}

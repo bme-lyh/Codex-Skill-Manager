@@ -16,10 +16,13 @@ class AppErrorBoundary extends React.Component<React.PropsWithChildren, { error:
 
   render() {
     if (this.state.error) {
+      const english = document.documentElement.lang === "en-US";
       return (
         <main style={{ padding: 32, fontFamily: "Segoe UI, sans-serif", color: "#172033" }}>
-          <h1>界面加载失败</h1>
-          <p>请重新启动应用；如果问题持续存在，请将下面的信息用于诊断：</p>
+          <h1>{english ? "Interface failed to load" : "界面加载失败"}</h1>
+          <p>{english
+            ? "Restart the application. If the problem continues, use the details below for diagnosis:"
+            : "请重新启动应用；如果问题持续存在，请将下面的信息用于诊断："}</p>
           <pre style={{ whiteSpace: "pre-wrap", padding: 16, background: "#eef2f8", borderRadius: 10 }}>
             {this.state.error}
           </pre>

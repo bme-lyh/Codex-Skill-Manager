@@ -229,7 +229,7 @@ func TestValidateBatchOutputKeepsOnlyTrustedSkillsAndClusters(t *testing.T) {
 		},
 		{SkillName: "invented", SourcePath: "elsewhere"},
 	}}
-	reviews := validateBatchOutput(batch, generated)
+	reviews := validateBatchOutput(batch, generated, "zh-CN")
 	if len(reviews) != 1 || reviews[0].SkillName != "alpha" {
 		t.Fatalf("expected only trusted Skill output, got %#v", reviews)
 	}
@@ -255,7 +255,7 @@ func TestValidateGeneratedBatchRequiresEverySkillConclusion(t *testing.T) {
 
 func TestUserFacingBatchErrorSummarizesModelRefreshFailure(t *testing.T) {
 	err := errors.New("Codex CLI failed to refresh available models: timeout waiting for child process to exit")
-	message := userFacingBatchError(err)
+	message := userFacingBatchError(err, "zh-CN")
 	if !strings.Contains(message, "刷新模型目录") || len(message) > 180 {
 		t.Fatalf("expected concise model refresh guidance, got %q", message)
 	}
@@ -437,6 +437,24 @@ func TestProgressTrackerPreservesParallelBatchGroups(t *testing.T) {
 	}
 	if latest.Sequence <= firstSequence {
 		t.Fatalf("progress sequence must increase monotonically: %d <= %d", latest.Sequence, firstSequence)
+	}
+}
+
+func TestSummarizeSkillReviewsUsesConfiguredLocale(t *testing.T) {
+	reviews := []model.CodexSkillReview{
+		{Verdict: "review-required"},
+		{Verdict: "no-material-risk"},
+	}
+	english, verdict := summarizeSkillReviews(reviews, "en-US")
+	if verdict != "review-required" {
+		t.Fatalf("unexpected verdict: %q", verdict)
+	}
+	if !strings.Contains(english, "Reviewed 2 Skills individually") {
+		t.Fatalf("expected English summary, got %q", english)
+	}
+	chinese, _ := summarizeSkillReviews(reviews, "zh-CN")
+	if !strings.Contains(chinese, "已分别复核 2 个 Skill") {
+		t.Fatalf("expected Chinese summary, got %q", chinese)
 	}
 }
 

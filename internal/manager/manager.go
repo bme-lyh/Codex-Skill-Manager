@@ -130,6 +130,7 @@ func (m *Manager) ReviewScanWithCodex(
 	}
 	report = m.decorateScan(persisted, ignored)
 	cfg := m.Config.CodexReview
+	cfg.OutputLocale = m.Config.Locale
 	stagingRoot := m.Config.Paths.StagingRoot
 	tx := model.Transaction{
 		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
