@@ -104,32 +104,43 @@ func (m *Manager) CodexCLIStatus(ctx context.Context) model.CodexCLIStatus {
 	return codexreview.Status(ctx, m.Config.CodexReview.CLIPath)
 }
 
-func (m *Manager) ReviewScanWithCodex(ctx context.Context, report model.ScanReport) (model.ScanReport, error) {
+func (m *Manager) ReviewScanWithCodex(
+	ctx context.Context,
+	report model.ScanReport,
+	requestedSkills []string,
+	progress codexreview.ProgressFunc,
+) (model.ScanReport, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if !m.Config.CodexReview.Enabled {
+		m.mu.Unlock()
 		return report, errors.New("Codex 辅助复核未启用；请先在设置中启用")
 	}
 	persisted, err := m.store.Scan(report.ID)
 	if err != nil {
+		m.mu.Unlock()
 		return report, fmt.Errorf("无法读取可信扫描报告：%w", err)
 	}
 	ignored, err := m.store.IgnoredFindings()
 	if err != nil {
+		m.mu.Unlock()
 		return report, err
 	}
 	report = m.decorateScan(persisted, ignored)
-	if len(report.Clusters) == 0 {
-		return report, errors.New("可信扫描报告没有可复核的风险簇")
-	}
+	cfg := m.Config.CodexReview
+	stagingRoot := m.Config.Paths.StagingRoot
 	tx := model.Transaction{
 		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
 		Type: "codex-risk-review", Status: "running",
 		Targets: []string{report.ID}, StartedAt: time.Now().UTC(),
 	}
 	_ = m.store.SaveTransaction(tx)
-	review, err := codexreview.Review(ctx, m.Config.CodexReview, report, m.Config.Paths.StagingRoot)
+	m.mu.Unlock()
+
+	review, err := codexreview.Review(ctx, cfg, report, stagingRoot, requestedSkills, progress)
 	report.CodexReview = &review
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	_ = m.store.SaveScan(report)
 	m.recordScan(report)
 	if err != nil {
@@ -137,6 +148,10 @@ func (m *Manager) ReviewScanWithCodex(ctx context.Context, report model.ScanRepo
 		return report, failErr
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
+	if review.Status == "partial" {
+		tx.Status = "partial"
+		tx.Error = review.Error
+	}
 	_ = m.store.SaveTransaction(tx)
 	m.recordTransaction(tx)
 	return report, nil

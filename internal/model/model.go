@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const Version = "0.7.2"
+const Version = "0.7.3"
 
 type RiskSeverity string
 
@@ -32,12 +32,14 @@ type Schedule struct {
 }
 
 type CodexReviewConfig struct {
-	Enabled          bool   `json:"enabled" yaml:"enabled"`
-	CLIPath          string `json:"cliPath,omitempty" yaml:"cliPath,omitempty"`
-	Model            string `json:"model" yaml:"model"`
-	ReasoningEffort  string `json:"reasoningEffort" yaml:"reasoningEffort"`
-	TimeoutSeconds   int    `json:"timeoutSeconds" yaml:"timeoutSeconds"`
-	MaxSamplePerRisk int    `json:"maxSamplePerRisk" yaml:"maxSamplePerRisk"`
+	Enabled            bool   `json:"enabled" yaml:"enabled"`
+	CLIPath            string `json:"cliPath,omitempty" yaml:"cliPath,omitempty"`
+	Model              string `json:"model" yaml:"model"`
+	ReasoningEffort    string `json:"reasoningEffort" yaml:"reasoningEffort"`
+	TimeoutSeconds     int    `json:"timeoutSeconds" yaml:"timeoutSeconds"`
+	MaxSamplePerRisk   int    `json:"maxSamplePerRisk" yaml:"maxSamplePerRisk"`
+	SkillsPerBatch     int    `json:"skillsPerBatch" yaml:"skillsPerBatch"`
+	MaxParallelBatches int    `json:"maxParallelBatches" yaml:"maxParallelBatches"`
 }
 
 type Config struct {
@@ -179,6 +181,59 @@ type CodexClusterReview struct {
 	Recommendation    string       `json:"recommendation"`
 }
 
+type CodexConcern struct {
+	Title          string       `json:"title"`
+	Severity       RiskSeverity `json:"severity"`
+	Confidence     float64      `json:"confidence"`
+	EvidenceFiles  []string     `json:"evidenceFiles"`
+	Rationale      string       `json:"rationale"`
+	Recommendation string       `json:"recommendation"`
+}
+
+type CodexSkillReview struct {
+	SkillName        string               `json:"skillName"`
+	SourcePath       string               `json:"sourcePath"`
+	Status           string               `json:"status"`
+	Verdict          string               `json:"verdict"`
+	Summary          string               `json:"summary"`
+	Confidence       float64              `json:"confidence"`
+	ContextFileCount int                  `json:"contextFileCount"`
+	ClusterIDs       []string             `json:"clusterIds"`
+	Concerns         []CodexConcern       `json:"concerns"`
+	ClusterReviews   []CodexClusterReview `json:"clusterReviews"`
+	Error            string               `json:"error,omitempty"`
+}
+
+type CodexReviewBatch struct {
+	Index       int       `json:"index"`
+	Status      string    `json:"status"`
+	SkillNames  []string  `json:"skillNames"`
+	StartedAt   time.Time `json:"startedAt,omitempty"`
+	CompletedAt time.Time `json:"completedAt,omitempty"`
+	Error       string    `json:"error,omitempty"`
+}
+
+type CodexReviewProgress struct {
+	ReviewID        string             `json:"reviewId"`
+	ReportID        string             `json:"reportId"`
+	Phase           string             `json:"phase"`
+	Message         string             `json:"message"`
+	BatchCount      int                `json:"batchCount"`
+	CompletedBatch  int                `json:"completedBatch"`
+	TotalSkills     int                `json:"totalSkills"`
+	CompletedSkills int                `json:"completedSkills"`
+	ActiveSkills    []string           `json:"activeSkills"`
+	ActiveBatches   []CodexActiveBatch `json:"activeBatches"`
+	ActivityCount   int                `json:"activityCount"`
+	StartedAt       time.Time          `json:"startedAt"`
+	UpdatedAt       time.Time          `json:"updatedAt"`
+}
+
+type CodexActiveBatch struct {
+	Index      int      `json:"index"`
+	SkillNames []string `json:"skillNames"`
+}
+
 type CodexReviewResult struct {
 	ID               string               `json:"id"`
 	Status           string               `json:"status"`
@@ -191,6 +246,10 @@ type CodexReviewResult struct {
 	StartedAt        time.Time            `json:"startedAt"`
 	CompletedAt      time.Time            `json:"completedAt,omitempty"`
 	Reviews          []CodexClusterReview `json:"reviews"`
+	SkillReviews     []CodexSkillReview   `json:"skillReviews"`
+	Batches          []CodexReviewBatch   `json:"batches"`
+	TotalSkills      int                  `json:"totalSkills"`
+	DurationMillis   int64                `json:"durationMillis"`
 	Error            string               `json:"error,omitempty"`
 }
 

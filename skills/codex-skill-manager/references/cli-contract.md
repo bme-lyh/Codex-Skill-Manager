@@ -13,7 +13,13 @@ csm --json dashboard
 csm --json audit
 csm --json check
 csm --json history
+csm --json codex review --report SCAN_ID --skill SKILL_A --skill SKILL_B
 ```
+
+Codex review is optional and journaled. Repeated `--skill` values restrict the
+review to trusted Skills inside the persisted scan target; omitting them reviews
+all detected Skills. Read `skillReviews` per Skill and inspect `batches` for
+partial failures.
 
 Two-phase GitHub installation:
 

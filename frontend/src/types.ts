@@ -86,9 +86,57 @@ export interface CodexClusterReview {
   recommendation: string;
 }
 
+export interface CodexConcern {
+  title: string;
+  severity: Severity;
+  confidence: number;
+  evidenceFiles: string[];
+  rationale: string;
+  recommendation: string;
+}
+
+export interface CodexSkillReview {
+  skillName: string;
+  sourcePath: string;
+  status: "completed" | "failed";
+  verdict: string;
+  summary: string;
+  confidence: number;
+  contextFileCount: number;
+  clusterIds: string[];
+  concerns: CodexConcern[];
+  clusterReviews: CodexClusterReview[];
+  error?: string;
+}
+
+export interface CodexReviewBatch {
+  index: number;
+  status: "queued" | "running" | "completed" | "failed";
+  skillNames: string[];
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface CodexReviewProgress {
+  reviewId: string;
+  reportId: string;
+  phase: "preparing" | "queued" | "reviewing" | "completed" | "partial" | "failed";
+  message: string;
+  batchCount: number;
+  completedBatch: number;
+  totalSkills: number;
+  completedSkills: number;
+  activeSkills: string[];
+  activeBatches: Array<{ index: number; skillNames: string[] }>;
+  activityCount: number;
+  startedAt: string;
+  updatedAt: string;
+}
+
 export interface CodexReviewResult {
   id: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "partial" | "failed";
   summary: string;
   overallVerdict: string;
   model: string;
@@ -98,6 +146,10 @@ export interface CodexReviewResult {
   startedAt: string;
   completedAt?: string;
   reviews: CodexClusterReview[];
+  skillReviews: CodexSkillReview[];
+  batches: CodexReviewBatch[];
+  totalSkills: number;
+  durationMillis: number;
   error?: string;
 }
 

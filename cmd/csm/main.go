@@ -296,6 +296,8 @@ func codexCommand(m *manager.Manager, args []string) (any, error) {
 	}
 	fs := flag.NewFlagSet("codex review", flag.ContinueOnError)
 	reportID := fs.String("report", "", "scan report ID")
+	var skills stringList
+	fs.Var(&skills, "skill", "Skill name to review (repeatable; defaults to all detected Skills)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return nil, err
 	}
@@ -312,7 +314,7 @@ func codexCommand(m *manager.Manager, args []string) (any, error) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.Config.CodexReview.TimeoutSeconds)*time.Second)
 		defer cancel()
-		return m.ReviewScanWithCodex(ctx, report)
+		return m.ReviewScanWithCodex(ctx, report, skills, nil)
 	}
 	return nil, fmt.Errorf("scan report not found: %s", *reportID)
 }
@@ -451,7 +453,7 @@ func printHelp() {
   check                 检查 GitHub 更新；支持 --group 与 --force
   github-auth           验证 GitHub 凭据并显示 API 限额
   codex status          检查 Codex CLI 与登录状态
-  codex review          对指定 --report 运行可选语义复核
+  codex review          对指定 --report 运行可选语义复核；支持重复 --skill
   update --group ID     为一个来源创建安全更新计划
   install               从 GitHub URL 或本地目录创建安装计划
   remove NAME [...]     移动一个或多个 Skill 到隔离区

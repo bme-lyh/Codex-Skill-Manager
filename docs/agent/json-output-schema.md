@@ -25,7 +25,12 @@ Scan findings include `title`, `fingerprint`, `ignored`, `fileClass`,
 retain raw findings and expose user-facing `clusters`; active/ignored counts are
 cluster counts. Optional `codexReview` data is advisory and schema validated;
 `contextMode: "full-target-read-only"` and `contextFileCount` prove which
-repository context was available to the review.
+repository context was available to the review. `skillReviews` contains one
+stable entry per requested Skill with `summary`, `verdict`, `confidence`,
+`concerns`, `clusterIds` and validated `clusterReviews`. `batches` records
+queued/completed/failed work units; `totalSkills` and `durationMillis` support
+progress and performance reporting. The legacy flat `reviews` collection is
+retained for cluster-oriented consumers.
 Dashboard `riskCount` is the number of unique, active High/Critical clusters
 from the latest in-scope report per target.
 

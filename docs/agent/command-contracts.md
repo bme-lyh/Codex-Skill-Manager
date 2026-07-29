@@ -20,7 +20,12 @@ per-Skill current Commits, and explicit outdated Skill names.
 returns authentication plus capability-based compatibility without a version pin;
 after authentication it also returns the visible model catalog reported by the
 current CLI, with catalog failures kept separate from compatibility failures.
-`codex review --report ID` creates a journaled advisory review.
+`codex review --report ID [--skill NAME ...]` creates a journaled advisory
+review. Repeated `--skill` values restrict work to trusted Skills discovered
+inside the persisted report target. Omitting the flag reviews all discovered
+Skills. The result is stable per Skill even when batches execute concurrently.
+If at least one batch succeeds, the command returns the partial report; its
+review and journal status are `partial`, with failed batches named explicitly.
 
 Planning commands:
 

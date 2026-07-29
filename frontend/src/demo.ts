@@ -142,6 +142,34 @@ export const demoScanReport: ScanReport = {
     contextFileCount: 128,
     startedAt: "2026-07-28T10:21:00Z",
     completedAt: "2026-07-28T10:22:00Z",
+    totalSkills: 1,
+    durationMillis: 60000,
+    batches: [{
+      index: 1,
+      status: "completed",
+      skillNames: ["release-helper"],
+      startedAt: "2026-07-28T10:21:00Z",
+      completedAt: "2026-07-28T10:22:00Z"
+    }],
+    skillReviews: [{
+      skillName: "release-helper",
+      sourcePath: ".",
+      status: "completed",
+      verdict: "review-required",
+      summary: "发布操作与 Skill 目标一致，但应人工确认网络目标和命令参数均保持在预期范围内。",
+      confidence: 0.9,
+      contextFileCount: 42,
+      clusterIds: ["cluster-network", "cluster-shell"],
+      concerns: [{
+        title: "发布阶段包含网络请求",
+        severity: "medium",
+        confidence: 0.87,
+        evidenceFiles: ["SKILL.md", "scripts/release.ps1"],
+        rationale: "网络行为符合发布用途，但目标地址和上传范围需要人工确认。",
+        recommendation: "仅允许访问预期的 GitHub API 地址。"
+      }],
+      clusterReviews: []
+    }],
     reviews: [
       {
         clusterId: "cluster-network",
@@ -514,7 +542,9 @@ export const demoConfig = {
     model: "gpt-5.6",
     reasoningEffort: "medium",
     timeoutSeconds: 300,
-    maxSamplePerRisk: 8
+    maxSamplePerRisk: 8,
+    skillsPerBatch: 4,
+    maxParallelBatches: 2
   }
 };
 

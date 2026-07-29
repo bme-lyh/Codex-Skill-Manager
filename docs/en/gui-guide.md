@@ -37,6 +37,9 @@ plus the current user's npm directory for a working independent CLI. It checks
 required capabilities instead of pinning a CLI version and refreshes status
 when focus returns after browser authentication. Once authenticated, the model
 picker loads the current CLI's visible model catalog instead of using a
-hard-coded list. Background CLI probes run without flashing console windows. Tokens
+hard-coded list. Reviews are split into bounded parallel batches and return a
+separate structured summary for every Skill. Live progress shows active Skills,
+completed batches, analysis activity and elapsed time. Background CLI probes run
+without flashing console windows. Tokens
 are stored in Windows Credential Manager and are never written to logs or
 reports.

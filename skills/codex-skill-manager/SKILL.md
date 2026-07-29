@@ -33,6 +33,10 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    counting. Reload decisions at apply time.
 9. Use `group` commands for layout-only organization. Explain that this does
    not alter the source used for updates or security.
+10. When optional Codex review is requested, repeat `--skill` for the exact
+    selected Skills when possible. Present the stable per-Skill summaries,
+    concerns and batch failures separately; do not collapse them into a single
+    repository verdict.
 
 ## Safety rules
 
@@ -46,7 +50,8 @@ transaction IDs, and keep the user informed before any filesystem mutation.
   `retryAt`, while preserving the last successful update status.
 - Treat optional Codex CLI review as advisory. It must be enabled, authenticated,
   ephemeral, read-only, schema validated, and rooted at the complete trusted
-  scan target. Treat local rule clusters as supplemental leads.
+  scan target. Treat local rule clusters as supplemental leads. Preserve
+  `skillReviews`, batch status and partial results.
 - A GUI one-click decision may atomically ignore all active clusters without
   Codex review or a mandatory reason. Preserve explicit cluster targets and a
   recovery path in the transaction journal.
