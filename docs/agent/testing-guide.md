@@ -13,6 +13,18 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -s -m -trimpath
 ```
 
 End-to-end coverage should exercise local preview/apply, conflict handling,
-high-risk approval, multi-skill rollback, quarantine/restore, update checks and
-report creation. GitHub tests should use a public fixture for preview only and
-must not depend on the repository default branch remaining unchanged.
+single and batch warning decisions, multi-skill rollback, quarantine/restore,
+update checks and report creation. GitHub tests should use a public fixture for
+preview only and must not depend on the repository default branch remaining
+unchanged.
+
+After the versioned binaries pass validation, create the standard archive,
+portable archive, and SHA-256 manifest with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\package-release.ps1 -Version 0.7.2
+```
+
+The packager refuses to overwrite an existing output directory. Release assets
+are written under `build/release/<version>` and are not committed.

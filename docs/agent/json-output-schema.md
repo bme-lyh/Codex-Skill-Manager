@@ -23,7 +23,9 @@ Agent clients may safely iterate them.
 Scan findings include `title`, `fingerprint`, `ignored`, `fileClass`,
 `category`, `clusterId`, `deterministic` and optional `ignoreReason`. Reports
 retain raw findings and expose user-facing `clusters`; active/ignored counts are
-cluster counts. Optional `codexReview` data is advisory and schema validated.
+cluster counts. Optional `codexReview` data is advisory and schema validated;
+`contextMode: "full-target-read-only"` and `contextFileCount` prove which
+repository context was available to the review.
 Dashboard `riskCount` is the number of unique, active High/Critical clusters
 from the latest in-scope report per target.
 

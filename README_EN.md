@@ -10,7 +10,7 @@ Codex Skill Manager is a local Windows 10/11 application for downloading, scanni
 
 [![Animated carousel of key Codex Skill Manager screens and operation states: grouped Skills, batch selection, group relations, updates, risk clusters, Codex review, install preview, history and rollback, quarantine, reports, and settings](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
-> The GIF automatically cycles through 12 key states. These screenshots use an isolated anonymous demo environment with three example groups and fictional Skills. They do not read real Skills, GitHub credentials, Codex sign-in data, personal directories, or operation logs. Example paths use the `demo` user.
+> The 1440×900 GIF automatically cycles through 12 key states. These screenshots use an isolated anonymous demo environment with three example groups and fictional Skills. They do not read real Skills, GitHub credentials, Codex sign-in data, personal directories, or operation logs. Example paths use the `demo` user.
 
 ## Purpose
 
@@ -31,7 +31,7 @@ before and after every change.
 | Recovery | Journals every mutation and supports rollback or quarantine restore |
 
 Advanced capabilities include immutable GitHub commit resolution, duplicate
-risk clustering, optional read-only Codex CLI review, GitHub rate-limit handling,
+risk clustering, optional full-target read-only Codex CLI review, GitHub rate-limit handling,
 local-change protection, scheduled read-only update checks, and structured JSON
 output for agents and automation.
 
@@ -62,7 +62,7 @@ Outputs are written to `build\bin`. The GUI must be built through Wails; plain `
 - Repository content is untrusted and never executed.
 - GitHub refs are pinned before a plan is created.
 - Only actual Skill installation targets affect the update gate.
-- High findings require explicit acceptance. Critical clusters block by default and require a recorded human decision; deterministic baselines need an additional manual confirmation, and Codex cannot issue that override.
+- Active High/Critical findings block writes by default. Every severity uses the same human decision flow: ignore one cluster or all active clusters in one action, with an optional reason and no extra deterministic-risk confirmation.
 - Local changes are preserved unless replacement is explicitly approved.
 - Every mutation has explicit targets, backup/quarantine behavior, a journal, structured output, and a recovery path.
 - Cloud or LLM scanning remains opt-in.
@@ -77,4 +77,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.7.1**. Licensed under the [MIT License](LICENSE).
+Current version: **0.7.2**. Licensed under the [MIT License](LICENSE).

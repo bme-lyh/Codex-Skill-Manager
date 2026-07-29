@@ -275,6 +275,27 @@ function AdoptionDialog({ preview, close, refresh, runOperation, onCompleted }: 
 }) {
   const [selected, setSelected] = useState(preview.skills.map(skill => skill.name));
   const [working, setWorking] = useState(false);
+  const [reviewing, setReviewing] = useState("");
+  const [scan, setScan] = useState(preview.scan);
+  const toggleCluster = async (cluster: RiskCluster) => {
+    setReviewing(cluster.id);
+    try {
+      await api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true);
+      setScan(current => updateClusterState(current, cluster.id, !cluster.ignored, ""));
+    } finally {
+      setReviewing("");
+    }
+  };
+  const ignoreAll = async (clusters: RiskCluster[]) => {
+    if (!clusters.length) return;
+    setReviewing("manual-batch");
+    try {
+      await api.setRiskClustersIgnored(clusters, true, "");
+      setScan(current => updateClustersState(current, clusters, true, ""));
+    } finally {
+      setReviewing("");
+    }
+  };
   const apply = async () => {
     setWorking(true);
     try {
@@ -296,9 +317,10 @@ function AdoptionDialog({ preview, close, refresh, runOperation, onCompleted }: 
         </> : <code>{skill.path}</code>; })()}
       </span>
     </label>)}</div>
-    <ScanSummary report={preview.scan} compact />
+    <ScanSummary report={scan} compact />
+    <FindingDetails report={scan} reviewing={reviewing} onToggle={toggleCluster} onIgnoreAll={ignoreAll} />
     <div className="modal-actions"><button className="ghost" onClick={close}>取消</button>
-      <button className="primary" disabled={working || selected.length === 0} onClick={apply}>
+      <button className="primary" disabled={working || reviewing !== "" || selected.length === 0} onClick={apply}>
         {working ? <LoaderCircle className="spin" size={17} /> : <CheckCircle2 size={17} />}{working ? "正在管理…" : "确认管理"}
       </button></div>
   </div></div>;
@@ -568,24 +590,33 @@ function UpdateDialog({ items, close, refresh }: {
   const [working, setWorking] = useState(false);
   const [reviewing, setReviewing] = useState("");
   const [codexWorking, setCodexWorking] = useState(false);
-  const [acceptHighRisk, setAcceptHighRisk] = useState(false);
   const [progress, setProgress] = useState("");
   const [failures, setFailures] = useState<string[]>([]);
   const selectedCount = Object.values(selected).reduce((sum, names) => sum + names.length, 0);
-  const hasCritical = items.some(({ value }) => scans[value.id].activeHighestSeverity === "critical" && (selected[value.id]?.length ?? 0) > 0);
-  const hasHigh = items.some(({ value }) => scans[value.id].activeHighestSeverity === "high" && (selected[value.id]?.length ?? 0) > 0);
+  const hasBlockingWarnings = items.some(({ value }) =>
+    ["critical", "high"].includes(scans[value.id].activeHighestSeverity) && (selected[value.id]?.length ?? 0) > 0);
   const toggleCluster = async (planID: string, cluster: RiskCluster) => {
-    const decision = cluster.ignored ? { reason: "", confirmed: false } : requireClusterReview(cluster);
-    if (!cluster.ignored && decision === null) return;
     setReviewing(cluster.id);
     try {
-      await api.setRiskClusterIgnored(cluster, !cluster.ignored, decision?.reason || "", decision?.confirmed || false);
+      await api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true);
       setScans(current => ({
         ...current,
-        [planID]: updateClusterState(current[planID], cluster.id, !cluster.ignored, decision?.reason || "")
+        [planID]: updateClusterState(current[planID], cluster.id, !cluster.ignored, "")
       }));
     } catch (error: any) {
       setFailures(current => [`风险核查记录失败：${error?.message ?? String(error)}`, ...current]);
+    } finally {
+      setReviewing("");
+    }
+  };
+  const ignoreAll = async (planID: string, clusters: RiskCluster[]) => {
+    if (!clusters.length) return;
+    setReviewing("manual-batch");
+    try {
+      await api.setRiskClustersIgnored(clusters, true, "");
+      setScans(current => ({ ...current, [planID]: updateClustersState(current[planID], clusters, true, "") }));
+    } catch (error: any) {
+      setFailures(current => [`一键忽略失败：${error?.message ?? String(error)}`, ...current]);
     } finally {
       setReviewing("");
     }
@@ -605,22 +636,12 @@ function UpdateDialog({ items, close, refresh }: {
     const scan = scans[planID];
     if (!confirmCodexSuggestions(scan, clusters)) return;
     setReviewing("codex-batch");
-    const errors: string[] = [];
-    let next = scan;
     try {
-      for (const cluster of clusters) {
-        try {
-          const reason = codexSuggestionReason(scan, cluster);
-          await api.setRiskClusterIgnored(cluster, true, reason, cluster.deterministic);
-          next = updateClusterState(next, cluster.id, true, reason);
-        } catch (error: any) {
-          errors.push(`${cluster.title || cluster.ruleId}：${error?.message ?? String(error)}`);
-        }
-      }
-      setScans(current => ({ ...current, [planID]: next }));
-      if (errors.length) {
-        setFailures(current => [`一键审核有 ${errors.length} 个风险簇未能保存：${errors.join("；")}`, ...current]);
-      }
+      const reason = codexBatchReason(scan, clusters);
+      await api.setRiskClustersIgnored(clusters, true, reason);
+      setScans(current => ({ ...current, [planID]: updateClustersState(scan, clusters, true, reason) }));
+    } catch (error: any) {
+      setFailures(current => [`Codex 建议采纳失败：${error?.message ?? String(error)}`, ...current]);
     } finally {
       setReviewing("");
     }
@@ -638,7 +659,7 @@ function UpdateDialog({ items, close, refresh }: {
         attempted++;
         setProgress(`正在更新 ${group.name}（${attempted}/${targets.length}）`);
         try {
-          await api.apply(value.id, selected[value.id], acceptHighRisk);
+          await api.apply(value.id, selected[value.id], false);
           succeeded.push(value.id);
         } catch (error: any) {
           errors.push(`${group.name}：${error?.message ?? String(error)}`);
@@ -662,7 +683,7 @@ function UpdateDialog({ items, close, refresh }: {
     <div className="update-plan-list">{items.map(({ group, value }) => {
       const names = selected[value.id] ?? [];
       const scan = scans[value.id];
-      const critical = scan.activeHighestSeverity === "critical";
+      const blocking = ["critical", "high"].includes(scan.activeHighestSeverity);
       return <section className="update-plan" key={value.id}>
         <div className="repo-summary update-repo"><FolderGit2 size={24} /><div><strong>{group.name}</strong>
           <span>{value.repository.resolvedRef} · Commit {value.repository.commitSha.slice(0, 12)} · 仅扫描本次写入的 {scan.filesScanned} 个文件</span></div>
@@ -680,28 +701,28 @@ function UpdateDialog({ items, close, refresh }: {
         <ScanSummary report={scan} compact />
         <FindingDetails report={scan} reviewing={reviewing} onToggle={cluster => toggleCluster(value.id, cluster)}
           onCodexReview={() => codexReview(value.id)} codexWorking={codexWorking}
-          onApplyCodexSuggestions={clusters => applyCodexSuggestions(value.id, clusters)} />
-        {critical && <div className="error-banner inline"><CircleAlert size={17} />
-          仍有未核查的严重风险。请展开明细，逐条核查并填写忽略原因；处理完成前不会执行更新。</div>}
+          onApplyCodexSuggestions={clusters => applyCodexSuggestions(value.id, clusters)}
+          onIgnoreAll={clusters => ignoreAll(value.id, clusters)} />
+        {blocking && <div className="error-banner inline"><CircleAlert size={17} />
+          仍有未忽略的高风险或严重风险。可以直接使用“一键忽略全部警告”；处理完成前不会执行更新。</div>}
       </section>;
     })}</div>
-    {hasHigh && <label className="risk-accept"><input type="checkbox" checked={acceptHighRisk} onChange={event => setAcceptHighRisk(event.target.checked)} />
-      <span><strong>我已审查并接受本次高风险发现</strong><small>未勾选时不会执行更新。</small></span></label>}
     {progress && <div className="batch-progress"><LoaderCircle className="spin" size={17} /><span>{progress}</span></div>}
     {failures.length > 0 && <div className="prepare-failures"><CircleAlert size={17} /><div><strong>部分来源更新失败，已完成的来源仍可单独回滚</strong>
       {failures.map(message => <small key={message}>{message}</small>)}</div></div>}
     <div className="modal-actions"><button className="ghost" onClick={close}>取消</button>
-      <button className="primary" disabled={working || reviewing !== "" || hasCritical || (hasHigh && !acceptHighRisk) || selectedCount === 0} onClick={apply}>
+      <button className="primary" disabled={working || reviewing !== "" || hasBlockingWarnings || selectedCount === 0} onClick={apply}>
         {working ? <LoaderCircle className="spin" size={17} /> : <ArrowUpCircle size={17} />}
         {working ? "正在更新…" : `更新选中的 ${selectedCount} 个`}
       </button></div>
   </div></div>;
 }
 
-function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codexWorking = false, onApplyCodexSuggestions }: {
+function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codexWorking = false, onApplyCodexSuggestions, onIgnoreAll }: {
   report: ScanReport; onToggle?: (cluster: RiskCluster) => void | Promise<void>; reviewing?: string;
   onCodexReview?: () => void | Promise<void>; codexWorking?: boolean;
   onApplyCodexSuggestions?: (clusters: RiskCluster[]) => void | Promise<void>;
+  onIgnoreAll?: (clusters: RiskCluster[]) => void | Promise<void>;
 }) {
   const [limit, setLimit] = useState(50);
   const clusters = [...(report.clusters ?? [])].sort((a, b) => {
@@ -710,13 +731,21 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
   });
   const codexByCluster = new Map((report.codexReview?.reviews ?? []).map(review => [review.clusterId, review]));
   const suggestedClusters = codexSuggestedClusters(report);
-  const suggestedDeterministic = suggestedClusters.filter(cluster => cluster.deterministic).length;
+  const activeClusters = clusters.filter(cluster => !cluster.ignored);
   const visible = clusters.slice(0, limit);
   if (!clusters.length) return <div className="scan-clean"><CheckCircle2 size={16} />未发现需要处理的安全警告</div>;
   return <>
     <RiskOverview report={report} />
+    {onIgnoreAll && activeClusters.length > 0 && <div className="manual-review-action"><div>
+      <strong>人工决定优先</strong>
+      <small>无需 Codex 复核，也无需填写原因；一次忽略当前报告中全部 {activeClusters.length} 个待处理风险簇。</small>
+    </div><button className="primary compact" disabled={reviewing !== "" || codexWorking}
+      onClick={() => void onIgnoreAll(activeClusters)}>
+      {reviewing === "manual-batch" ? <LoaderCircle className="spin" size={14} /> : <CheckSquare2 size={14} />}
+      {reviewing === "manual-batch" ? "正在记录…" : "一键忽略全部警告"}
+    </button></div>}
     {onCodexReview && <div className="codex-review-action"><div><strong>需要快速归纳大量警告？</strong>
-      <small>Codex 只读复核会按上下文归纳风险，但不会替您覆盖本地安全底线。</small></div>
+      <small>Codex 会在只读模式下检查完整目标目录；本地规则命中仅作为补充线索。</small></div>
       <button className="ghost" disabled={codexWorking} onClick={() => void onCodexReview()}>
         {codexWorking ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
         {codexWorking ? "Codex 正在复核…" : report.codexReview ? "重新用 Codex 复核" : "使用 Codex 辅助复核"}
@@ -725,16 +754,17 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
       <Sparkles size={18} /><div><strong>Codex 辅助复核</strong>
         <p>{report.codexReview.summary || report.codexReview.error}</p>
         <small>{report.codexReview.model === "default" ? "Codex 默认先进模型" : report.codexReview.model} ·
-          推理强度 {report.codexReview.reasoningEffort}</small>
+          推理强度 {report.codexReview.reasoningEffort} ·
+          {report.codexReview.contextMode === "full-target-read-only"
+            ? ` 完整目录上下文（${report.codexReview.contextFileCount || 0} 个文件）`
+            : " 规则摘要上下文"}</small>
         {onApplyCodexSuggestions && report.codexReview.status === "completed" && suggestedClusters.length > 0 &&
           <button className="primary compact codex-apply-suggestions" disabled={reviewing !== ""}
             onClick={() => void onApplyCodexSuggestions(suggestedClusters)}>
             {reviewing === "codex-batch" ? <LoaderCircle className="spin" size={14} /> : <CheckSquare2 size={14} />}
             {reviewing === "codex-batch" ? "正在记录…" : `一键采纳 ${suggestedClusters.length} 个建议`}
           </button>}
-        {suggestedDeterministic > 0 && <small className="codex-baseline-note">
-          其中 {suggestedDeterministic} 个涉及本地安全底线，执行时会要求二次人工确认。
-        </small>}</div>
+        <small className="codex-baseline-note">Codex 结论仅供参考；所有级别最终均可由人工直接决定。</small></div>
     </div>}
     <details className="finding-details" open={report.activeHighestSeverity === "critical"}>
       <summary>查看 {clusters.length} 个风险簇（已归并 {report.findings.length} 条原始命中）</summary>
@@ -744,7 +774,7 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
         <span className={`severity ${cluster.ignored ? "ignored" : cluster.severity}`}>
           {cluster.ignored ? "已忽略" : severityLabel(cluster.severity)}
         </span>
-        <div><strong>{cluster.title}{cluster.deterministic && <em className="hard-baseline">本地安全底线</em>}</strong>
+        <div><strong>{cluster.title}{cluster.deterministic && <em className="hard-baseline">确定性规则</em>}</strong>
           <small>{cluster.ruleId} · {fileClassLabel(cluster.fileClass)} · {cluster.findingCount} 条命中 · {cluster.affectedFiles.length} 个文件</small>
           {cluster.sampleFindings[0] && <p>{cluster.sampleFindings[0].explanation}</p>}
           <details className="cluster-evidence"><summary>查看代表性证据与文件</summary>
@@ -759,7 +789,7 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
           onClick={() => void onToggle(cluster)}>
           {reviewing === cluster.id ? <LoaderCircle className="spin" size={14} /> :
             cluster.ignored ? <RotateCcw size={14} /> : <ShieldCheck size={14} />}
-          {cluster.ignored ? "恢复风险簇" : "人工核查此簇"}
+          {cluster.ignored ? "恢复风险簇" : "一键忽略此簇"}
         </button>}
       </article>})}
         {clusters.length > visible.length && <button className="ghost finding-load-more"
@@ -801,17 +831,28 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     } finally { setWorking(false); }
   };
   const toggleIgnore = async (cluster: RiskCluster) => {
-    const decision = cluster.ignored ? { reason: "", confirmed: false } : requireClusterReview(cluster);
-    if (!cluster.ignored && decision === null) return;
     setReviewing(cluster.id);
     const changed = await runOperation(
       cluster.ignored ? "恢复风险簇" : "记录风险簇人工决定",
-      () => api.setRiskClusterIgnored(cluster, !cluster.ignored, decision?.reason || "", decision?.confirmed || false),
+      () => api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true),
       cluster.ignored ? "风险簇已恢复" : "风险簇已按人工决定忽略"
     );
     setReviewing("");
     if (!changed) return;
-    setReport(current => current ? updateClusterState(current, cluster.id, !cluster.ignored, decision?.reason || "") : current);
+    setReport(current => current ? updateClusterState(current, cluster.id, !cluster.ignored, "") : current);
+    await refresh();
+  };
+  const ignoreAll = async (clusters: RiskCluster[]) => {
+    if (!report || !clusters.length) return;
+    setReviewing("manual-batch");
+    const changed = await runOperation(
+      "一键忽略全部安全警告",
+      () => api.setRiskClustersIgnored(clusters, true, ""),
+      `已忽略 ${clusters.length} 个待处理风险簇`
+    );
+    setReviewing("");
+    if (!changed) return;
+    setReport(current => current ? updateClustersState(current, clusters, true, "") : current);
     await refresh();
   };
   const reviewWithCodex = async () => {
@@ -825,21 +866,11 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
   const applyCodexSuggestions = async (clusters: RiskCluster[]) => {
     if (!report || !confirmCodexSuggestions(report, clusters)) return;
     setReviewing("codex-batch");
-    let next = report;
-    const errors: string[] = [];
     try {
-      for (const cluster of clusters) {
-        try {
-          const reason = codexSuggestionReason(report, cluster);
-          await api.setRiskClusterIgnored(cluster, true, reason, cluster.deterministic);
-          next = updateClusterState(next, cluster.id, true, reason);
-        } catch (error: any) {
-          errors.push(`${cluster.title || cluster.ruleId}：${error?.message ?? String(error)}`);
-        }
-      }
-      setReport(next);
+      const reason = codexBatchReason(report, clusters);
+      await api.setRiskClustersIgnored(clusters, true, reason);
+      setReport(updateClustersState(report, clusters, true, reason));
       await refresh();
-      if (errors.length) window.alert(`一键审核部分完成，以下风险簇未能保存：\n\n${errors.join("\n")}`);
     } finally {
       setReviewing("");
     }
@@ -857,7 +888,7 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
         <ScanSummary report={report} />
         <FindingDetails report={report} reviewing={reviewing} onToggle={toggleIgnore}
           onCodexReview={reviewWithCodex} codexWorking={working}
-          onApplyCodexSuggestions={applyCodexSuggestions} />
+          onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
       </>}
     </section>
   </div>;
@@ -890,6 +921,15 @@ function updateClusterState(report: ScanReport, clusterId: string, ignored: bool
   };
 }
 
+function updateClustersState(report: ScanReport, clusters: RiskCluster[], ignored: boolean, reason: string): ScanReport {
+  const ids = new Set(clusters.map(cluster => cluster.id));
+  let next = report;
+  for (const cluster of report.clusters) {
+    if (ids.has(cluster.id)) next = updateClusterState(next, cluster.id, ignored, reason);
+  }
+  return next;
+}
+
 function highestSeverity(findings: Array<{ severity: Finding["severity"] }>): ScanReport["activeHighestSeverity"] {
   const order: ScanReport["activeHighestSeverity"][] = ["informational", "low", "medium", "high", "critical"];
   let highest: ScanReport["activeHighestSeverity"] = "informational";
@@ -901,27 +941,6 @@ function highestSeverity(findings: Array<{ severity: Finding["severity"] }>): Sc
 
 function severityRank(severity: Finding["severity"]): number {
   return ["informational", "low", "medium", "high", "critical"].indexOf(severity);
-}
-
-function requireClusterReview(cluster: RiskCluster): { reason: string; confirmed: boolean } | null {
-  const entered = window.prompt(
-    `核查“${cluster.title || cluster.ruleId}”风险簇后，请填写人工决定原因。该决定将应用到 ${cluster.findingCount} 条同类命中并写入本地审计日志：`,
-    ""
-  );
-  if (entered === null) return null;
-  const reason = entered.trim();
-  if (!reason) {
-    window.alert("人工决定原因不能为空。请说明核查结论后再继续。");
-    return null;
-  }
-  let confirmed = false;
-  if (cluster.deterministic) {
-    confirmed = window.confirm(
-      "这是本地确定性安全底线。Codex 无权放行。\n\n确认您已经检查代表性证据，并以人工权限覆盖默认阻止吗？"
-    );
-    if (!confirmed) return null;
-  }
-  return { reason, confirmed };
 }
 
 function fileClassLabel(fileClass: string): string {
@@ -953,24 +972,13 @@ function codexSuggestedClusters(report: ScanReport): RiskCluster[] {
   });
 }
 
-function codexSuggestionReason(report: ScanReport, cluster: RiskCluster): string {
-  const review = report.codexReview?.reviews.find(item => item.clusterId === cluster.id);
-  const verdict = review ? codexVerdictLabel(review.verdict) : "建议可忽略";
-  const confidence = review ? `，置信度 ${Math.round(review.confidence * 100)}%` : "";
-  return `人工一键采纳 Codex 复核结论（${verdict}${confidence}）：${review?.rationale || review?.recommendation || "已查看复核结果并确认"}`;
+function codexBatchReason(report: ScanReport, clusters: RiskCluster[]): string {
+  const model = report.codexReview?.model || "Codex";
+  return `人工一键采纳 ${model} 的完整上下文复核建议（${clusters.length} 个风险簇）`;
 }
 
-function confirmCodexSuggestions(report: ScanReport, clusters: RiskCluster[]): boolean {
-  const preview = clusters.slice(0, 8).map(cluster => `• ${cluster.title || cluster.ruleId}`).join("\n");
-  const more = clusters.length > 8 ? `\n…另有 ${clusters.length - 8} 个` : "";
-  if (!window.confirm(
-    `将按已显示的 Codex 复核结果，一次性把以下 ${clusters.length} 个风险簇记录为“人工审核后忽略”：\n\n${preview}${more}\n\n每个决定都会写入本地事务日志，并可逐簇恢复。是否继续？`
-  )) return false;
-  const deterministic = clusters.filter(cluster => cluster.deterministic);
-  if (!deterministic.length) return true;
-  return window.confirm(
-    `其中 ${deterministic.length} 个属于本地确定性安全底线。\n\n根据“人工权限高于安全底线”的设置，只有本次由您明确确认后才会覆盖默认阻止。Codex 本身没有放行权限。\n\n确认批量覆盖这些底线吗？`
-  );
+function confirmCodexSuggestions(_report: ScanReport, clusters: RiskCluster[]): boolean {
+  return clusters.length > 0;
 }
 
 function severityLabel(severity: ScanReport["activeHighestSeverity"]) {
@@ -1227,7 +1235,6 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
   const [reviewing, setReviewing] = useState("");
   const [codexWorking, setCodexWorking] = useState(false);
   const [error, setError] = useState("");
-  const [acceptHighRisk, setAcceptHighRisk] = useState(false);
   const analyze = async () => {
     setWorking(true); setError("");
     try {
@@ -1244,22 +1251,35 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
     setWorking(true); setError("");
     try {
       const result = await runOperation("安装选中的 Skills",
-        () => api.apply(preview.id, selected, acceptHighRisk), "Skills 已安装并完成备份记录");
+        () => api.apply(preview.id, selected, false), "Skills 已安装并完成备份记录");
       if (result) { await refresh(); close(); }
     }
     catch (e: any) { setError(e?.message ?? String(e)); } finally { setWorking(false); }
   };
   const toggleCluster = async (cluster: RiskCluster) => {
     if (!preview) return;
-    const decision = cluster.ignored ? { reason: "", confirmed: false } : requireClusterReview(cluster);
-    if (!cluster.ignored && decision === null) return;
     setReviewing(cluster.id);
     setError("");
     try {
-      await api.setRiskClusterIgnored(cluster, !cluster.ignored, decision?.reason || "", decision?.confirmed || false);
+      await api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true);
       setPreview(current => current ? {
         ...current,
-        scan: updateClusterState(current.scan, cluster.id, !cluster.ignored, decision?.reason || "")
+        scan: updateClusterState(current.scan, cluster.id, !cluster.ignored, "")
+      } : current);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setReviewing("");
+    }
+  };
+  const ignoreAll = async (clusters: RiskCluster[]) => {
+    if (!preview || !clusters.length) return;
+    setReviewing("manual-batch");
+    setError("");
+    try {
+      await api.setRiskClustersIgnored(clusters, true, "");
+      setPreview(current => current ? {
+        ...current, scan: updateClustersState(current.scan, clusters, true, "")
       } : current);
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -1284,20 +1304,14 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
     if (!preview || !confirmCodexSuggestions(preview.scan, clusters)) return;
     setReviewing("codex-batch");
     setError("");
-    let next = preview.scan;
-    const errors: string[] = [];
     try {
-      for (const cluster of clusters) {
-        try {
-          const reason = codexSuggestionReason(preview.scan, cluster);
-          await api.setRiskClusterIgnored(cluster, true, reason, cluster.deterministic);
-          next = updateClusterState(next, cluster.id, true, reason);
-        } catch (e: any) {
-          errors.push(`${cluster.title || cluster.ruleId}：${e?.message ?? String(e)}`);
-        }
-      }
-      setPreview(current => current ? { ...current, scan: next } : current);
-      if (errors.length) setError(`一键审核部分完成：${errors.join("；")}`);
+      const reason = codexBatchReason(preview.scan, clusters);
+      await api.setRiskClustersIgnored(clusters, true, reason);
+      setPreview(current => current ? {
+        ...current, scan: updateClustersState(current.scan, clusters, true, reason)
+      } : current);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
     } finally {
       setReviewing("");
     }
@@ -1319,18 +1333,15 @@ function InstallDialog({ close, refresh, runOperation }: { close: () => void; re
         onChange={() => setSelected(selected.includes(s.name) ? selected.filter(n => n !== s.name) : [...selected, s.name])} />
         <span><strong>{s.name}</strong><small>{s.description}</small><code>{s.sourcePath}</code></span></label>)}</div>
       <div className="notice"><ShieldAlert size={20} /><span><strong>{preview.scan.findings.length} 个原始安全发现，{preview.scan.activeFindingCount} 个待核查</strong>
-        <small>所有级别均在下方概述。Critical 必须逐条核查并记录忽略原因，处理完毕后才可安装。</small></span></div>
+        <small>所有级别均在下方概述，可由人工直接忽略单个风险簇或一键忽略全部；无需填写原因。</small></span></div>
       <FindingDetails report={preview.scan} reviewing={reviewing} onToggle={toggleCluster}
         onCodexReview={codexReview} codexWorking={codexWorking}
-        onApplyCodexSuggestions={applyCodexSuggestions} />
-      {preview.scan.activeHighestSeverity === "high" && <label className="risk-accept"><input type="checkbox" checked={acceptHighRisk} onChange={event => setAcceptHighRisk(event.target.checked)} />
-        <span><strong>我已审查并接受本次高风险发现</strong><small>未勾选时不会执行安装。</small></span></label>}
+        onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
     </div>}
     {error && <div className="error-banner"><CircleAlert size={17} />{error}</div>}
     <div className="modal-actions"><button className="ghost" onClick={preview ? () => setPreview(null) : close}>{preview ? "返回" : "取消"}</button>
       <button className="primary" disabled={working || (!preview && !source) || (!!preview && (!selected.length ||
-        reviewing !== "" || preview.scan.activeHighestSeverity === "critical" ||
-        (preview.scan.activeHighestSeverity === "high" && !acceptHighRisk)))} onClick={preview ? apply : analyze}>
+        reviewing !== "" || ["critical", "high"].includes(preview.scan.activeHighestSeverity)))} onClick={preview ? apply : analyze}>
         {working ? <LoaderCircle className="spin" size={17} /> : preview ? <Download size={17} /> : <Search size={17} />}
         {working ? (preview ? "正在安装…" : "正在分析…") : preview ? "确认安装" : "分析来源"}</button></div>
   </div></div>;

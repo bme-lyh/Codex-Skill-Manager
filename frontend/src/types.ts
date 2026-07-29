@@ -93,6 +93,8 @@ export interface CodexReviewResult {
   overallVerdict: string;
   model: string;
   reasoningEffort: string;
+  contextMode?: string;
+  contextFileCount?: number;
   startedAt: string;
   completedAt?: string;
   reviews: CodexClusterReview[];

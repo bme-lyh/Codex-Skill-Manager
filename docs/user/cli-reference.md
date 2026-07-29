@@ -90,9 +90,8 @@ csm install --plan-id PLAN `
   --apply
 ```
 
-High 风险需要额外指定 `--accept-high-risk`。Critical 风险默认阻止；从计划或报告中
-取得风险簇后，使用 `warning` 记录非空核查原因，全部 Critical 风险簇处理完成后才能
-应用计划。
+High/Critical 风险默认阻止写入。`--accept-high-risk` 仅为旧脚本保留，不再单独放行
+High 风险；请使用统一的 `warning` 人工决定。原因可选。
 
 ## 隔离卸载
 
@@ -121,18 +120,26 @@ csm schedule --enabled=true --frequency=weekly --at=09:00
 从 `csm reports --json` 取得 finding 的 `fingerprint`、`ruleId` 和 `file` 后：
 
 ```powershell
-csm warning --fingerprint HASH --rule CSM-INJ-001 --file "skill/SKILL.md" --reason "已核对为教学示例"
+csm warning --fingerprint HASH --rule CSM-INJ-001 --file "skill/SKILL.md"
 csm warning --fingerprint HASH --rule CSM-INJ-001 --file "skill/SKILL.md" --restore
 ```
 
-忽略时 `--reason` 不能为空；恢复警告不需要原因。所有决定都会进入本地事务日志。
+`--reason` 可选。所有决定都会进入本地事务日志。
 
 风险中心推荐按簇操作：
 
 ```powershell
 csm warning --cluster RISK_ID --rule CSM-NET-001 --file-class documentation `
-  --fingerprint HASH1 --fingerprint HASH2 --reason "已核对为文档引用"
+  --fingerprint HASH1 --fingerprint HASH2
 ```
 
-确定性底线必须额外提供 `--deterministic --confirm-deterministic`。人工确认具有最高
-决定权，但 Codex 复核结果不能代替这个参数。
+一次预览或处理报告中的全部匹配风险簇：
+
+```powershell
+csm warning --report SCAN_ID --dry-run
+csm warning --report SCAN_ID
+csm warning --report SCAN_ID --restore
+```
+
+所有级别和确定性规则使用同一命令；`--confirm-deterministic` 仅为旧脚本兼容保留。
+`--dry-run` 会返回明确的风险簇目标而不修改状态。

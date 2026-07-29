@@ -25,5 +25,8 @@ lock updates and reports are tied together by transaction IDs.
 
 Scanner findings remain immutable evidence. The manager decorates them into
 stable clusters by rule, category and file class. A human cluster decision
-expands to every member fingerprint. Deterministic overrides require a distinct
-confirmation and approval record; model output is always advisory.
+expands to every member fingerprint. Multi-cluster decisions use one SQLite
+transaction and one journal entry. Reasons are optional, deterministic rules use
+the same human action as every other severity, and model output is always
+advisory. Codex review runs with the complete target as its read-only working
+directory; static clusters are leads rather than the complete review payload.

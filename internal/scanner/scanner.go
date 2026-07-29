@@ -6,15 +6,28 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
 )
 
-const Version = "1.0.0"
+const Version = "1.1.0"
+
+type textFile struct {
+	path string
+	rel  string
+}
+
+type textScanResult struct {
+	index    int
+	findings []model.Finding
+	err      error
+}
 
 type rule struct {
 	id, title, explanation, recommendation string
@@ -67,6 +80,7 @@ func scan(root string, maxFiles int, maxFileBytes int64, skipRootInternals bool)
 		Target: root, StartedAt: now, ScannerVersion: Version, Status: "passed",
 		HighestSeverity: model.RiskInfo, Findings: []model.Finding{},
 	}
+	textFiles := make([]textFile, 0)
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -111,7 +125,7 @@ func scan(root string, maxFiles int, maxFileBytes int64, skipRootInternals bool)
 				RuleID: "CSM-FILE-002", Title: "危险可执行文件", Severity: model.RiskCritical,
 				Confidence: 1, File: filepath.ToSlash(rel), Evidence: ext,
 				Explanation:    "Skill 中包含可直接执行或加载的二进制、脚本启动器或快捷方式，本地静态扫描无法证明其行为安全。",
-				Recommendation: "移除该文件并改用可审查的源代码；此安全底线不能被忽略。",
+				Recommendation: "优先移除该文件并改用可审查的源代码；若确认保留，由使用者明确执行人工忽略。",
 			})
 			return nil
 		}
@@ -121,12 +135,29 @@ func scan(root string, maxFiles int, maxFileBytes int64, skipRootInternals bool)
 		if info.Size() == 0 || info.Size() > 4<<20 || !isTextExt(ext) {
 			return nil
 		}
-		return scanText(path, filepath.ToSlash(rel), &report)
+		textFiles = append(textFiles, textFile{path: path, rel: filepath.ToSlash(rel)})
+		return nil
 	})
+	if err == nil {
+		findings, scanErr := scanTextFiles(textFiles)
+		if scanErr != nil {
+			err = scanErr
+		} else {
+			for _, finding := range findings {
+				addFinding(&report, finding)
+			}
+		}
+	}
 	report.CompletedAt = time.Now().UTC()
 	sort.Slice(report.Findings, func(i, j int) bool {
 		if report.Findings[i].Severity == report.Findings[j].Severity {
-			return report.Findings[i].File < report.Findings[j].File
+			if report.Findings[i].File != report.Findings[j].File {
+				return report.Findings[i].File < report.Findings[j].File
+			}
+			if report.Findings[i].Line != report.Findings[j].Line {
+				return report.Findings[i].Line < report.Findings[j].Line
+			}
+			return report.Findings[i].RuleID < report.Findings[j].RuleID
 		}
 		return severityRank(report.Findings[i].Severity) > severityRank(report.Findings[j].Severity)
 	})
@@ -136,12 +167,64 @@ func scan(root string, maxFiles int, maxFileBytes int64, skipRootInternals bool)
 	return report, err
 }
 
-func scanText(path, rel string, report *model.ScanReport) error {
+func scanTextFiles(files []textFile) ([]model.Finding, error) {
+	if len(files) == 0 {
+		return []model.Finding{}, nil
+	}
+	workerCount := runtime.GOMAXPROCS(0)
+	if workerCount < 2 {
+		workerCount = 2
+	}
+	if workerCount > 8 {
+		workerCount = 8
+	}
+	if workerCount > len(files) {
+		workerCount = len(files)
+	}
+	jobs := make(chan int)
+	results := make(chan textScanResult, len(files))
+	var workers sync.WaitGroup
+	for worker := 0; worker < workerCount; worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				findings, err := scanText(files[index].path, files[index].rel)
+				results <- textScanResult{index: index, findings: findings, err: err}
+			}
+		}()
+	}
+	go func() {
+		for index := range files {
+			jobs <- index
+		}
+		close(jobs)
+		workers.Wait()
+		close(results)
+	}()
+
+	ordered := make([][]model.Finding, len(files))
+	var firstErr error
+	for result := range results {
+		if result.err != nil && firstErr == nil {
+			firstErr = result.err
+		}
+		ordered[result.index] = result.findings
+	}
+	findings := make([]model.Finding, 0)
+	for _, fileFindings := range ordered {
+		findings = append(findings, fileFindings...)
+	}
+	return findings, firstErr
+}
+
+func scanText(path, rel string) ([]model.Finding, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
+	findings := make([]model.Finding, 0)
 	s := bufio.NewScanner(f)
 	s.Buffer(make([]byte, 64<<10), 4<<20)
 	lineNo := 0
@@ -149,7 +232,7 @@ func scanText(path, rel string, report *model.ScanReport) error {
 		lineNo++
 		line := s.Text()
 		if !utf8.ValidString(line) {
-			addFinding(report, model.Finding{RuleID: "CSM-ENC-001", Title: "文本编码异常", Severity: model.RiskHigh, Confidence: .9, File: rel, Line: lineNo, Explanation: "文本不是有效 UTF-8，可能导致审查内容与实际执行内容不一致，也可能用于隐藏载荷。", Recommendation: "转换为可审查编码并重新扫描"})
+			findings = append(findings, model.Finding{RuleID: "CSM-ENC-001", Title: "文本编码异常", Severity: model.RiskHigh, Confidence: .9, File: rel, Line: lineNo, Explanation: "文本不是有效 UTF-8，可能导致审查内容与实际执行内容不一致，也可能用于隐藏载荷。", Recommendation: "转换为可审查编码并重新扫描"})
 			continue
 		}
 		for _, r := range rules {
@@ -157,14 +240,14 @@ func scanText(path, rel string, report *model.ScanReport) error {
 			if match == "" {
 				continue
 			}
-			addFinding(report, model.Finding{
+			findings = append(findings, model.Finding{
 				RuleID: r.id, Title: r.title, Severity: r.severity, Confidence: r.confidence,
 				File: rel, Line: lineNo, Evidence: truncate(match, 180),
 				Explanation: r.explanation, Recommendation: r.recommendation,
 			})
 		}
 	}
-	return s.Err()
+	return findings, s.Err()
 }
 
 func isTextExt(ext string) bool {

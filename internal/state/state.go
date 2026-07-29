@@ -289,6 +289,18 @@ func (s *Store) RecentScans(limit int) ([]model.ScanReport, error) {
 	return out, rows.Err()
 }
 
+func (s *Store) Scan(id string) (model.ScanReport, error) {
+	var raw string
+	if err := s.db.QueryRow(`SELECT payload_json FROM scan_reports WHERE id=?`, id).Scan(&raw); err != nil {
+		return model.ScanReport{}, err
+	}
+	var report model.ScanReport
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		return model.ScanReport{}, err
+	}
+	return report, nil
+}
+
 func (s *Store) LatestScansByTarget() ([]model.ScanReport, error) {
 	rows, err := s.db.Query(`SELECT payload_json FROM scan_reports ORDER BY created_at DESC`)
 	if err != nil {
@@ -346,32 +358,42 @@ ON CONFLICT(fingerprint) DO UPDATE SET reason=excluded.reason`,
 }
 
 func (s *Store) SetClusterIgnored(cluster model.RiskCluster, ignored bool, reason string) error {
-	if cluster.ID == "" || len(cluster.Fingerprints) == 0 {
-		return errors.New("risk cluster and findings are required")
+	return s.SetClustersIgnored([]model.RiskCluster{cluster}, ignored, reason)
+}
+
+func (s *Store) SetClustersIgnored(clusters []model.RiskCluster, ignored bool, reason string) error {
+	if len(clusters) == 0 {
+		return errors.New("at least one risk cluster is required")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	for _, fingerprint := range cluster.Fingerprints {
-		if fingerprint == "" {
+	for _, cluster := range clusters {
+		if cluster.ID == "" || len(cluster.Fingerprints) == 0 {
 			_ = tx.Rollback()
-			return errors.New("finding fingerprint is required")
+			return errors.New("risk cluster and findings are required")
 		}
-		if !ignored {
-			if _, err = tx.Exec(`DELETE FROM finding_ignores WHERE fingerprint=?`, fingerprint); err != nil {
+		for _, fingerprint := range cluster.Fingerprints {
+			if fingerprint == "" {
 				_ = tx.Rollback()
-				return err
+				return errors.New("finding fingerprint is required")
 			}
-			continue
-		}
-		if _, err = tx.Exec(`
+			if !ignored {
+				if _, err = tx.Exec(`DELETE FROM finding_ignores WHERE fingerprint=?`, fingerprint); err != nil {
+					_ = tx.Rollback()
+					return err
+				}
+				continue
+			}
+			if _, err = tx.Exec(`
 INSERT INTO finding_ignores(fingerprint,rule_id,file,reason,created_at)
 VALUES(?,?,?,?,?)
 ON CONFLICT(fingerprint) DO UPDATE SET reason=excluded.reason`,
-			fingerprint, cluster.RuleID, cluster.FileClass, reason, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-			_ = tx.Rollback()
-			return err
+				fingerprint, cluster.RuleID, cluster.FileClass, reason, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
 		}
 	}
 	return tx.Commit()

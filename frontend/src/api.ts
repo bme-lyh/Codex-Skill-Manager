@@ -23,6 +23,7 @@ type Backend = {
   AuditSkill(name: string): Promise<ScanReport>;
   SetFindingIgnored(finding: Finding, ignored: boolean, reason: string): Promise<boolean>;
   SetRiskClusterIgnored(cluster: RiskCluster, ignored: boolean, reason: string, confirmDeterministic: boolean): Promise<boolean>;
+  SetRiskClustersIgnored(clusters: RiskCluster[], ignored: boolean, reason: string): Promise<boolean>;
   CheckUpdates(): Promise<UpdateCheckResult>;
   CheckUpdatesSelected(groupIds: string[], force: boolean): Promise<UpdateCheckResult>;
   PrepareUpdate(groupId: string): Promise<InstallPreview>;
@@ -137,6 +138,11 @@ export const api = {
     const b = backend();
     if (!b) throw new Error("桌面后端尚未连接");
     return b.SetRiskClusterIgnored(cluster, ignored, reason, confirmDeterministic);
+  },
+  setRiskClustersIgnored: async (clusters: RiskCluster[], ignored: boolean, reason = "") => {
+    const b = backend();
+    if (!b) throw new Error("桌面后端尚未连接");
+    return b.SetRiskClustersIgnored(clusters, ignored, reason);
   },
   check: async () => {
     const b = backend();
