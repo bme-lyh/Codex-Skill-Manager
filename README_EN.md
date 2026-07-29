@@ -41,7 +41,7 @@ Reviews consume Codex usage. Time and usage depend on the number and size of Ski
 1. Download the Windows archive from **GitHub Releases**.
 2. Extract it to a stable directory.
 3. Run `CodexSkillManager.exe`.
-4. Open **Skills**, select unmanaged items, and choose **Analyze and manage**.
+4. Open **Skills**, select unmanaged items, and choose **Manage**.
 
 The default Skills root is `%USERPROFILE%\.codex\skills`. The `.system` directory is always read-only.
 
@@ -74,4 +74,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.7.5**. Licensed under the [MIT License](LICENSE).
+Current version: **0.7.6**. Licensed under the [MIT License](LICENSE).

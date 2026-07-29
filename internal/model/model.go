@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const Version = "0.7.5"
+const Version = "0.7.6"
 
 type RiskSeverity string
 
