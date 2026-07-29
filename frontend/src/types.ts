@@ -122,6 +122,7 @@ export interface CodexReviewBatch {
   groupId?: string;
   groupName?: string;
   status: "queued" | "running" | "completed" | "failed";
+  attempts?: number;
   skillNames: string[];
   startedAt?: string;
   completedAt?: string;
@@ -131,6 +132,7 @@ export interface CodexReviewBatch {
 export interface CodexReviewProgress {
   reviewId: string;
   reportId: string;
+  sequence: number;
   phase: "preparing" | "queued" | "reviewing" | "completed" | "partial" | "failed";
   message: string;
   batchCount: number;

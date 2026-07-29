@@ -23,7 +23,8 @@ Codex review is optional and journaled. Repeated `--skill` values restrict the
 review to trusted Skills inside the persisted scan target; omitting them reviews
 all detected Skills. Read `skillReviews` per Skill and inspect `batches` for
 partial group failures. Selected Skills in the same application group share one
-review task. Local rules are sent only as a compact count overview.
+review task. Groups are serial by default, and a failed or incomplete group is
+retried once. Local rules are sent only as a compact count overview.
 
 Two-phase GitHub installation:
 

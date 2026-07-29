@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const Version = "0.7.4"
+const Version = "0.7.5"
 
 type RiskSeverity string
 
@@ -216,6 +216,7 @@ type CodexReviewBatch struct {
 	GroupID     string    `json:"groupId"`
 	GroupName   string    `json:"groupName"`
 	Status      string    `json:"status"`
+	Attempts    int       `json:"attempts"`
 	SkillNames  []string  `json:"skillNames"`
 	StartedAt   time.Time `json:"startedAt,omitempty"`
 	CompletedAt time.Time `json:"completedAt,omitempty"`
@@ -225,6 +226,7 @@ type CodexReviewBatch struct {
 type CodexReviewProgress struct {
 	ReviewID        string             `json:"reviewId"`
 	ReportID        string             `json:"reportId"`
+	Sequence        uint64             `json:"sequence"`
 	Phase           string             `json:"phase"`
 	Message         string             `json:"message"`
 	BatchCount      int                `json:"batchCount"`

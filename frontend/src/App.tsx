@@ -15,7 +15,13 @@ type RunOperation = <T>(label: string, task: () => Promise<T>, successDetail?: s
 
 function useCodexProgress() {
   const [progress, setProgress] = useState<CodexReviewProgress | null>(null);
-  useEffect(() => api.onCodexReviewProgress(setProgress), []);
+  useEffect(() => api.onCodexReviewProgress(next => setProgress(current => {
+    if (!current) return next;
+    if (current.reviewId === next.reviewId && next.sequence <= current.sequence) return current;
+    if (current.reviewId !== next.reviewId &&
+      new Date(next.startedAt).getTime() < new Date(current.startedAt).getTime()) return current;
+    return next;
+  })), []);
   return { progress, clearProgress: () => setProgress(null) };
 }
 
@@ -109,7 +115,9 @@ export default function App() {
             {page === "skills" && <SkillsPage data={data} selected={selected} setSelected={setSelected} refresh={refresh} runOperation={runOperation} />}
             {page === "groups" && <GroupsPage data={data} refresh={refresh} runOperation={runOperation} />}
             {page === "updates" && <UpdatesPage data={data} refresh={refresh} runOperation={runOperation} />}
-            {page === "security" && <SecurityPage data={data} refresh={refresh} runOperation={runOperation} />}
+            <div className="persistent-page" hidden={page !== "security"}>
+              <SecurityPage data={data} refresh={refresh} runOperation={runOperation} />
+            </div>
             {page === "history" && <HistoryPage data={data} refresh={refresh} runOperation={runOperation} />}
             {page === "quarantine" && <QuarantinePage refresh={refresh} runOperation={runOperation} />}
             {page === "reports" && <ReportsPage data={data} />}
@@ -808,15 +816,15 @@ function GroupedRiskDetails({ report, clusters, codexByCluster, reviewing, onTog
       const groupClusters = clusters.filter(cluster => (cluster.groupId || "ungrouped") === groupId ||
         (!cluster.groupId && group.skills.some(skill => skill.skillName === cluster.skillName)));
       const active = groupClusters.filter(cluster => !cluster.ignored).length;
-      return <section key={groupId} className="risk-group">
-        <header><div><strong>{group.name}</strong>
+      return <details key={groupId} className="risk-group">
+        <summary className="risk-group-summary"><div><strong>{group.name}</strong>
           <small>{group.skills.length} 个 Skill · {active} 个待处理警告 · {groupClusters.length - active} 个已忽略</small></div>
-          <span className={`badge ${active ? "red" : "green"}`}>{active ? "需要核查" : "已处理"}</span></header>
+          <span className={`badge ${active ? "red" : "green"}`}>{active ? "需要核查" : "已处理"}</span></summary>
         <div className="risk-group-skills">{group.skills.map(skill => {
           const skillClusters = groupClusters.filter(cluster => cluster.skillName === skill.skillName ||
             (!cluster.skillName && group.skills.length === 1));
           const skillActive = skillClusters.filter(cluster => !cluster.ignored).length;
-          return <details key={`${groupId}:${skill.skillName}`} className="risk-skill" open={skillActive > 0}>
+          return <details key={`${groupId}:${skill.skillName}`} className="risk-skill">
             <summary><span><strong>{skill.skillName}</strong><small>{skill.sourcePath}</small></span>
               <span>{skillActive} 待处理 / {skillClusters.length} 总计</span></summary>
             <div className="finding-details">{skillClusters.length ? skillClusters.map(cluster => {
@@ -846,7 +854,7 @@ function GroupedRiskDetails({ report, clusters, codexByCluster, reviewing, onTog
             }) : <Empty text="这个 Skill 没有规则警告" />}</div>
           </details>;
         })}</div>
-      </section>;
+      </details>;
     })}
   </div>;
 }
@@ -889,7 +897,7 @@ function CodexSkillReviewList({ report }: { report: ScanReport }) {
     const group = groupBySkill.get(review.skillName) || "未分组";
     groups.set(group, [...(groups.get(group) ?? []), review]);
   }
-  return <details className="codex-skill-results" open={reviews.length <= 6}>
+  return <details className="codex-skill-results">
     <summary>按分组查看 {reviews.length} 个 Skill 的 Codex 结论</summary>
     {[...groups.entries()].map(([group, groupReviews]) => <section key={group} className="codex-result-group">
       <h4>{group}<small>{groupReviews.length} 个 Skill</small></h4>
@@ -951,6 +959,10 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     !isSecurityCurrent(skill)).map(skill => skill.name);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(() => new Set(recommendedNames()));
   const { progress: codexProgress, clearProgress } = useCodexProgress();
+  useEffect(() => {
+    const latest = data.recentReports[0] ?? null;
+    if (!working && !codexWorking && latest?.id !== report?.id) setReport(latest);
+  }, [data.recentReports, working, codexWorking, report?.id]);
   const audit = async () => {
     const names = [...selectedSkills];
     if (!names.length) return;
@@ -1036,10 +1048,7 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
         {working ? <LoaderCircle className="spin" size={17} /> : <ShieldCheck size={17} />}
         {working ? "正在扫描…" : `扫描选中的 ${selectedSkills.size} 个`}
       </button>
-      <button className="ghost" onClick={reviewWithCodex} disabled={working || codexWorking || !report}>
-        {codexWorking ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}{codexWorking ? "Codex 正在复核…" : "Codex 辅助复核"}
-      </button>
-      <small>扫描只读取本地文件，不上传内容。</small></section>
+      <small>扫描只读取本地文件，不上传内容；Codex 复核入口位于最近扫描结果中。</small></section>
     <section className="panel security-queue"><PanelHead title="选择要检查的 Skills"
       subtitle="没有检查记录或内容已变化的 Skill 会默认选中；已检查且未变化的 Skill 默认跳过。" />
       <div className="selection-tools">
@@ -1071,10 +1080,12 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     <section className="panel security-results"><PanelHead title="最近扫描结果" subtitle={report ? `${report.filesScanned} 个文件 · ${report.activeFindingCount} 个待处理 · ${report.ignoredFindingCount} 个已忽略` : "尚未扫描"} />
       {!report ? <Empty text="运行一次本地安全扫描" /> : <>
         <ScanSummary report={report} />
-        <FindingDetails report={report} reviewing={reviewing} onToggle={toggleIgnore}
-          onCodexReview={reviewWithCodex} codexWorking={codexWorking}
-          codexProgress={codexProgress?.reportId === report.id ? codexProgress : null}
-          onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
+        <div className="security-report-details">
+          <FindingDetails report={report} reviewing={reviewing} onToggle={toggleIgnore}
+            onCodexReview={reviewWithCodex} codexWorking={codexWorking}
+            codexProgress={codexProgress?.reportId === report.id ? codexProgress : null}
+            onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
+        </div>
       </>}
     </section>
   </div>;
@@ -1382,10 +1393,10 @@ function SettingsPage({ refresh, runOperation }: { refresh: () => Promise<void>;
         </select></label>
         <div className="codex-batch-settings">
           <label><span>同时复核的分组</span><input type="number" min="1" max="4"
-            value={cfg.codexReview.maxParallelBatches || 2}
+            value={cfg.codexReview.maxParallelBatches || 1}
             onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, maxParallelBatches: Number(e.target.value) } })} /></label>
         </div>
-        <small className="codex-batch-hint">同一分组内的 Skill 始终一起复核，默认可同时处理 2 个分组。并行过高可能触发模型限流。</small>
+        <small className="codex-batch-hint">同一分组内的 Skill 始终一起复核。默认串行处理；提高并发可能造成 Codex CLI 模型刷新竞争或限流。</small>
         <div className="credential-actions codex-actions">
           <button className="ghost" onClick={validateCodex}><Stethoscope size={16} />检查 CLI 与登录状态</button>
           <button className="primary compact" onClick={save}><Settings size={15} />保存复核设置</button>

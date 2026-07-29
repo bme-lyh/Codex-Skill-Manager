@@ -32,7 +32,7 @@ This app installs and organizes Skills in one place, checks common risks, and ke
 
 Codex review is off by default. To use it, install and sign in to **Codex CLI**, enable the feature in Settings, and make sure your Codex account has available usage.
 
-Reviews consume Codex usage. Time and usage depend on the number and size of Skills, the selected model, and reasoning effort. The app reviews one group at a time, shows live progress, and gives a short result for each Skill. All local checks and management features still work without Codex review.
+Reviews consume Codex usage. Time and usage depend on the number and size of Skills, the selected model, and reasoning effort. The app reviews one group at a time, retries a failed group once, and keeps progress and results when you switch pages. All local checks and management features still work without Codex review.
 
 ## Quick start
 
@@ -74,4 +74,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.7.4**. Licensed under the [MIT License](LICENSE).
+Current version: **0.7.5**. Licensed under the [MIT License](LICENSE).

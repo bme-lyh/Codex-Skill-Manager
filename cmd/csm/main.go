@@ -326,7 +326,7 @@ func codexCommand(m *manager.Manager, args []string) (any, error) {
 		if report.ID != *reportID {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.Config.CodexReview.TimeoutSeconds)*time.Second)
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		return m.ReviewScanWithCodex(ctx, report, skills, nil)
 	}

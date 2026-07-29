@@ -561,7 +561,7 @@ export const demoConfig = {
     reasoningEffort: "medium",
     timeoutSeconds: 300,
     maxSamplePerRisk: 8,
-    maxParallelBatches: 2
+    maxParallelBatches: 1
   }
 };
 

@@ -32,6 +32,7 @@ type Manager struct {
 	store      *state.Store
 	github     *githubsource.Client
 	mu         sync.Mutex
+	codexMu    sync.Mutex
 	previews   map[string]model.InstallPreview
 	adoptions  map[string]model.AdoptionPreview
 }
@@ -110,6 +111,8 @@ func (m *Manager) ReviewScanWithCodex(
 	requestedSkills []string,
 	progress codexreview.ProgressFunc,
 ) (model.ScanReport, error) {
+	m.codexMu.Lock()
+	defer m.codexMu.Unlock()
 	m.mu.Lock()
 	if !m.Config.CodexReview.Enabled {
 		m.mu.Unlock()
