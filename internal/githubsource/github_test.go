@@ -1,6 +1,8 @@
 package githubsource
 
 import (
+	"archive/zip"
+	"bytes"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,6 +10,81 @@ import (
 	"testing"
 	"time"
 )
+
+func TestExtractZipWritesOnlyContainedEntries(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "staging")
+	if err := os.MkdirAll(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := buildZipFixture(t, []zipFixtureEntry{
+		{name: "repo-root/", mode: os.ModeDir | 0o700},
+		{name: "repo-root/SKILL.md", content: "---\nname: safe\n---\n"},
+		{name: "repo-root/nested/file.txt", content: "expected"},
+	})
+
+	root, err := extractZip(data, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRoot := filepath.Join(dest, "repo-root")
+	if root != expectedRoot {
+		t.Fatalf("root = %q, want %q", root, expectedRoot)
+	}
+	content, err := os.ReadFile(filepath.Join(expectedRoot, "nested", "file.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "expected" {
+		t.Fatalf("content = %q", content)
+	}
+}
+
+func TestExtractZipRejectsPathTraversalAndAbsolutePaths(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+	}{
+		{name: "parent prefix", entry: "../escape.txt"},
+		{name: "nested parent prefix", entry: "repo-root/../../escape.txt"},
+		{name: "normalized parent element", entry: "repo-root/../escape.txt"},
+		{name: "windows parent element", entry: `repo-root\..\escape.txt`},
+		{name: "rooted path", entry: "/absolute.txt"},
+		{name: "drive path", entry: "C:/absolute.txt"},
+		{name: "current directory", entry: "."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parent := t.TempDir()
+			dest := filepath.Join(parent, "staging")
+			if err := os.MkdirAll(dest, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			data := buildZipFixture(t, []zipFixtureEntry{{name: tt.entry, content: "untrusted"}})
+
+			if _, err := extractZip(data, dest); err == nil {
+				t.Fatalf("expected %q to be rejected", tt.entry)
+			}
+			if _, err := os.Stat(filepath.Join(parent, "escape.txt")); !os.IsNotExist(err) {
+				t.Fatalf("archive wrote outside staging root: %v", err)
+			}
+		})
+	}
+}
+
+func TestExtractZipRejectsSymbolicLinks(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "staging")
+	if err := os.MkdirAll(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := buildZipFixture(t, []zipFixtureEntry{
+		{name: "repo-root/", mode: os.ModeDir | 0o700},
+		{name: "repo-root/link", content: "target", mode: os.ModeSymlink | 0o600},
+	})
+
+	if _, err := extractZip(data, dest); err == nil {
+		t.Fatal("expected symbolic link entry to be rejected")
+	}
+}
 
 func TestParseSupportedGitHubURLs(t *testing.T) {
 	tests := []struct {
@@ -78,6 +155,35 @@ func TestDiscoverRejectsDifferentSkillsWithSameName(t *testing.T) {
 	if _, err := Discover(root, ""); err == nil {
 		t.Fatal("expected ambiguous duplicate Skill names to be rejected")
 	}
+}
+
+type zipFixtureEntry struct {
+	name    string
+	content string
+	mode    os.FileMode
+}
+
+func buildZipFixture(t *testing.T, entries []zipFixtureEntry) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for _, entry := range entries {
+		header := &zip.FileHeader{Name: entry.name, Method: zip.Store}
+		if entry.mode != 0 {
+			header.SetMode(entry.mode)
+		}
+		file, err := writer.CreateHeader(header)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write([]byte(entry.content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
 }
 
 func writeDiscoverySkill(t *testing.T, dir, name, body string) {
