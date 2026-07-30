@@ -35,6 +35,12 @@ func TestRunCLIRejectsInvalidCommandUsage(t *testing.T) {
 		{name: "schedule parse", args: []string{"schedule", "--enabled=maybe"}},
 		{name: "schedule frequency", args: []string{"schedule", "--frequency=hourly"}},
 		{name: "schedule time", args: []string{"schedule", "--at=tomorrow"}},
+		{name: "assisted plan consent missing scan", args: []string{"install", "--assist", "--create-plan"}},
+		{name: "assisted plan consent missing flag", args: []string{"install", "--assist", "--project-scan-id", "project-scan-demo"}},
+		{name: "assisted plan consent mixed source", args: []string{
+			"install", "--assist", "--project-scan-id", "project-scan-demo", "--create-plan",
+			"--local", `D:\skills`,
+		}},
 	}
 
 	for _, test := range tests {

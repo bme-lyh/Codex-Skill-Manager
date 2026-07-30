@@ -380,6 +380,56 @@ type InstallPreview struct {
 	ExpiresAt   time.Time        `json:"expiresAt"`
 }
 
+// CodexProjectSecurity is the read-only security portion of a project scan.
+// It is advisory evidence only; local scanner findings and the manager's
+// approval gates remain authoritative for installation.
+type CodexProjectSecurity struct {
+	Verdict           string         `json:"verdict"`
+	Summary           string         `json:"summary"`
+	Confidence        float64        `json:"confidence"`
+	LocalHighestRisk  RiskSeverity   `json:"localHighestRisk"`
+	LocalFindingCount int            `json:"localFindingCount"`
+	Concerns          []CodexConcern `json:"concerns"`
+}
+
+type CodexProjectInstallMethod struct {
+	Kind          string   `json:"kind"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description"`
+	Supported     bool     `json:"supported"`
+	Required      bool     `json:"required"`
+	EvidenceFiles []string `json:"evidenceFiles"`
+}
+
+// CodexProjectScanResult is a reusable, read-only project overview. The
+// result records coverage so callers can distinguish a conclusion from a
+// complete guarantee when files were summarized, redacted, or omitted.
+type CodexProjectScanResult struct {
+	ID                    string                      `json:"id"`
+	SourcePlanID          string                      `json:"sourcePlanId"`
+	Status                string                      `json:"status"`
+	Repository            Repository                  `json:"repository"`
+	Summary               string                      `json:"summary"`
+	Security              CodexProjectSecurity        `json:"security"`
+	InstallationMethods   []CodexProjectInstallMethod `json:"installationMethods"`
+	ContextMode           string                      `json:"contextMode"`
+	ContextFileCount      int                         `json:"contextFileCount"`
+	SummaryFileCount      int                         `json:"summaryFileCount"`
+	DeepAnalysisFileCount int                         `json:"deepAnalysisFileCount"`
+	OmittedFileCount      int                         `json:"omittedFileCount"`
+	RedactedFileCount     int                         `json:"redactedFileCount"`
+	TruncatedFileCount    int                         `json:"truncatedFileCount"`
+	FocusFiles            []string                    `json:"focusFiles"`
+	ContextDigest         string                      `json:"contextDigest"`
+	ScanDigest            string                      `json:"scanDigest"`
+	Model                 string                      `json:"model"`
+	ReasoningEffort       string                      `json:"reasoningEffort"`
+	StartedAt             time.Time                   `json:"startedAt"`
+	CompletedAt           time.Time                   `json:"completedAt,omitempty"`
+	ExpiresAt             time.Time                   `json:"expiresAt"`
+	Error                 string                      `json:"error,omitempty"`
+}
+
 type AssistedInstallRequirement struct {
 	ID          string `json:"id"`
 	Kind        string `json:"kind"`
@@ -446,6 +496,8 @@ type AssistedInstallPermission struct {
 type AssistedInstallPlan struct {
 	ID                string                       `json:"id"`
 	SourcePlanID      string                       `json:"sourcePlanId"`
+	ProjectScanID     string                       `json:"projectScanId,omitempty"`
+	ProjectScanDigest string                       `json:"projectScanDigest,omitempty"`
 	Status            string                       `json:"status"`
 	TransactionID     string                       `json:"transactionId,omitempty"`
 	RecoveryStatus    string                       `json:"recoveryStatus,omitempty"`

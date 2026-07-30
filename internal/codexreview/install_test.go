@@ -524,9 +524,24 @@ func TestAssistedInstallInputAcceptsLargeComplexRepositoryContext(t *testing.T) 
 		Repository: model.Repository{Provider: "local", FullName: "local:large"},
 		Skills:     []model.CandidateSkill{assistedTestCandidate("review-pr")},
 	}
-	payload, err := buildInstallAnalysisInput(preview, "en", files)
+	chunks, err := buildPackagedContextChunks(
+		"assisted-install", "en", "large", preview.Repository.FullName,
+		contextSubjectsForInstall(preview.Skills), files,
+	)
 	if err != nil {
-		t.Fatalf("build repository-sized Codex payload: %v", err)
+		t.Fatalf("split repository-sized Codex payload: %v", err)
+	}
+	summaries := make([]contextChunkSummary, len(chunks))
+	for index, chunk := range chunks {
+		summaries[index] = contextChunkSummary{
+			ChunkIndex: chunk.Index, ChunkDigest: chunk.Digest,
+			ReviewedFileCount: len(chunk.Files), Summary: "validated bounded summary",
+			Signals: []contextChunkSignal{},
+		}
+	}
+	payload, err := buildInstallAnalysisInputWithChunks(preview, "en", files, summaries)
+	if err != nil {
+		t.Fatalf("build repository-sized Codex synthesis payload: %v", err)
 	}
 	if len(payload) >= maxAssistedPromptBytes {
 		t.Fatalf("test context unexpectedly reached the hard payload limit: %d", len(payload))

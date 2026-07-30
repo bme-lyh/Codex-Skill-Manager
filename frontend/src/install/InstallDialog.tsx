@@ -36,6 +36,7 @@ import type {
   AssistedInstallResult,
   AssistedInstallStep,
   Candidate,
+  CodexProjectScanResult,
   InstallPreview,
   RiskCluster,
   ScanReport,
@@ -99,6 +100,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
   const [source, setSource] = useState(initialDraft?.source ?? "");
   const [requestedRef, setRequestedRef] = useState(initialDraft?.requestedRef ?? "");
   const [preview, setPreview] = useState<InstallPreview | null>(null);
+  const [projectScan, setProjectScan] = useState<CodexProjectScanResult | null>(null);
   const [plan, setPlan] = useState<AssistedInstallPlan | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
@@ -169,7 +171,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
   const retryEnabled = retryTask !== "" && busy === "" && !rateLimitBlocked && (
     retryTask === "assisted" ? assistedRetryReady :
       retryTask === "rollback" ? rollbackRetryReady :
-        retryTask === "codex" ? !!preview :
+        retryTask === "codex" ? !!preview || !!projectScan :
           retryTask === "source" ? !!source.trim() :
             retryTask === "standard" ? !!selectedSkills.length && !hasBlockingWarnings :
               true
@@ -294,6 +296,26 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       } catch (error) {
         if (activeReference.kind === "analysis") {
           try {
+            const restoredScan = await api.getProjectScan(activeReference.id);
+            setInstallMethod("assisted");
+            setProjectScan(restoredScan);
+            activeAnalysisReferenceRef.current = restoredScan.sourcePlanId;
+            analysisStartedAtRef.current = 0;
+            setActiveInstallReference({ kind: "analysis", id: restoredScan.sourcePlanId });
+            setFeedback({
+              tone: "success",
+              title: t("项目扫描已恢复", "Project scan restored"),
+              message: t(
+                "请先阅读项目概述、安全结论和安装方式，再决定是否授权生成安装计划。",
+                "Review the overview, security conclusion, and installation methods before authorizing an installation plan."
+              )
+            });
+            setRetryTask("");
+            return;
+          } catch {
+            // The scan may still be running; restore its progress below.
+          }
+          try {
             const snapshot = await api.getAssistedProgress(activeReference.id);
             activeAnalysisReferenceRef.current = activeReference.id;
             analysisStartedAtRef.current = Date.parse(snapshot.startedAt) || 0;
@@ -387,7 +409,28 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         setRetryTask("");
         return;
       } catch {
-        if (!snapshot?.terminal || disposed) return;
+        try {
+          const restoredScan = await api.getProjectScan(referenceId);
+          if (disposed) return;
+          restoredAnalysisPollingRef.current = false;
+          activeAnalysisReferenceRef.current = restoredScan.sourcePlanId;
+          analysisStartedAtRef.current = 0;
+          setProjectScan(restoredScan);
+          setActiveInstallReference({ kind: "analysis", id: restoredScan.sourcePlanId });
+          setBusy("");
+          setFeedback({
+            tone: "success",
+            title: t("项目扫描已完成", "Project scan complete"),
+            message: t(
+              "后台扫描已完成。请阅读结果，再决定是否授权生成安装计划。",
+              "The background scan completed. Review it before authorizing an installation plan."
+            )
+          });
+          setRetryTask("");
+          return;
+        } catch {
+          if (!snapshot?.terminal || disposed) return;
+        }
       }
       restoredAnalysisPollingRef.current = false;
       activeAnalysisReferenceRef.current = "";
@@ -495,6 +538,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     restoredAnalysisPollingRef.current = false;
     clearActivePlan();
     setPreview(null);
+    setProjectScan(null);
     setPlan(null);
     setProgress(null);
     setResult(null);
@@ -511,7 +555,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     setRolledBack(false);
   };
 
-  const analyzeWithCodex = async (sourcePlanId: string) => {
+  const scanWithCodex = async (sourcePlanId: string) => {
     const generation = ++analysisGeneration.current;
     activeAnalysisReferenceRef.current = sourcePlanId;
     analysisStartedAtRef.current = Date.now();
@@ -526,15 +570,64 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     setBusy("codex");
     setFeedback({
       tone: "info",
-      title: t("Codex 正在分析完整仓库", "Codex is analyzing the full repository"),
+	  title: t("Codex 正在扫描项目", "Codex is scanning the project"),
       message: t(
-        "正在归纳仓库用途、安装要求、MCP 配置和可执行步骤。",
-        "Summarizing repository purpose, requirements, MCP configuration, and executable steps."
+	    "正在按“本地结果、文件摘要、重点文件分析”生成项目概述、安全结论和安装方式；此阶段不会生成或执行安装计划。",
+	    "Building the overview, security conclusion, and installation methods from local results, file summaries, and focused analysis. No installation plan is generated or executed yet."
       )
     });
     setRetryTask("");
     try {
-      const analyzed = await api.analyzeAssisted(sourcePlanId);
+      const analyzed = await api.scanProject(sourcePlanId);
+      if (generation !== analysisGeneration.current) return;
+	  setProjectScan(analyzed);
+      setSelectedPermissions([]);
+      setFeedback({
+        tone: "success",
+	    title: t("项目扫描已完成", "Project scan complete"),
+        message: t(
+	      `已汇总 ${analyzed.summaryFileCount || 0} 个文件，并深度分析 ${analyzed.deepAnalysisFileCount || 0} 个重点文件。请先阅读结论，再决定是否授权生成安装计划。`,
+	      `${analyzed.summaryFileCount || 0} files were summarized and ${analyzed.deepAnalysisFileCount || 0} focus files were analyzed in depth. Review the result before authorizing an installation plan.`
+        )
+      });
+    } catch (error) {
+      if (generation !== analysisGeneration.current) return;
+      restoredAnalysisPollingRef.current = false;
+      // Keep the typed analysis reference until the user explicitly dismisses
+      // or retries. If the dialog was hidden, the persisted terminal progress
+      // is then available when the task is reopened.
+      const issue = issueFrom(error, t, t(
+	    "Codex 未能完成项目扫描。已保留本地来源分析结果，可重试或切换到标准安装。",
+	    "Codex could not complete the project scan. The local source analysis is preserved; retry or switch to standard installation."
+      ));
+      setFeedback(issue);
+      setRetryTask(issue.retryable === false ? "" : "codex");
+      throw error;
+    } finally {
+      if (generation === analysisGeneration.current) setBusy("");
+    }
+  };
+
+  const createPlanFromProjectScan = async () => {
+    if (!projectScan) return;
+    const generation = ++analysisGeneration.current;
+    activeAnalysisReferenceRef.current = projectScan.sourcePlanId;
+    analysisStartedAtRef.current = Date.now();
+    restoredAnalysisPollingRef.current = false;
+    progressRef.current = null;
+    setProgress(null);
+    setBusy("codex");
+    setFeedback({
+      tone: "info",
+      title: t("正在制定安装计划", "Creating installation plan"),
+      message: t(
+        "你已同意继续。Codex 将以已验证的项目扫描为输入制定计划；本地管理器仍会限制动作类型并生成逐项权限。",
+        "You approved continuing. Codex is using the verified project scan to propose a plan; the local manager still restricts action types and derives per-action permissions."
+      )
+    });
+    setRetryTask("");
+    try {
+      const analyzed = await api.createAssistedPlanFromScan(projectScan.id);
       if (generation !== analysisGeneration.current) return;
       setPlan(analyzed);
       setActiveInstallReference({ kind: "plan", id: analyzed.id });
@@ -547,23 +640,18 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         tone: "success",
         title: t("安装计划已生成", "Installation plan ready"),
         message: t(
-          `Codex 已阅读 ${analyzed.contextFileCount || 0} 个上下文文件。请核对步骤和权限后执行。`,
-          `Codex reviewed ${analyzed.contextFileCount || 0} context files. Review the steps and permissions before execution.`
+          "请核对自动步骤、人工步骤和逐项权限后再执行。",
+          "Review automatic steps, manual steps, and per-action permissions before execution."
         )
       });
     } catch (error) {
       if (generation !== analysisGeneration.current) return;
-      restoredAnalysisPollingRef.current = false;
-      // Keep the typed analysis reference until the user explicitly dismisses
-      // or retries. If the dialog was hidden, the persisted terminal progress
-      // is then available when the task is reopened.
       const issue = issueFrom(error, t, t(
-        "Codex 未能生成可靠计划。已保留来源分析结果，可重试或切换到标准安装。",
-        "Codex could not produce a reliable plan. The source analysis is preserved; retry or switch to standard installation."
+        "Codex 未能生成可靠计划。项目扫描结果仍然保留，可重试或切换到标准安装。",
+        "Codex could not produce a reliable plan. The project scan is preserved; retry or switch to standard installation."
       ));
       setFeedback(issue);
       setRetryTask(issue.retryable === false ? "" : "codex");
-      throw error;
     } finally {
       if (generation === analysisGeneration.current) setBusy("");
     }
@@ -622,6 +710,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     });
     setRetryTask("");
     setPreview(null);
+    setProjectScan(null);
     setPlan(null);
     setProgress(null);
     setResult(null);
@@ -637,7 +726,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       setSelectedSkills(analyzed.skills.map(skill => skill.name));
       if (installMethod === "assisted") {
         codexPhase = true;
-        await analyzeWithCodex(analyzed.id);
+        await scanWithCodex(analyzed.id);
       } else {
         setFeedback({
           tone: "success",
@@ -1067,7 +1156,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         setRetryTask("");
       }).catch(error => setFeedback(issueFrom(error, t))).finally(() => setBusy(""));
     } else if (retryTask === "source") void analyzeSource();
-    else if (retryTask === "codex" && preview) void analyzeWithCodex(preview.id).catch(() => undefined);
+    else if (retryTask === "codex" && projectScan) void createPlanFromProjectScan();
+    else if (retryTask === "codex" && preview) void scanWithCodex(preview.id).catch(() => undefined);
     else if (retryTask === "standard") void installStandard();
     else if (retryTask === "assisted") reviewBeforeRetry();
     else if (retryTask === "rollback") void rollback();
@@ -1093,6 +1183,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     analysisStartedAtRef.current = 0;
     clearActivePlan();
     setInstallMethod("standard");
+    setProjectScan(null);
     setPlan(null);
     setProgress(null);
     setResult(null);
@@ -1145,6 +1236,9 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         completed={!!standardResult}
       />;
     }
+    if (projectScan && !plan) {
+      return <ProjectScanView scan={projectScan} />;
+    }
     if (!plan) {
       if (busy === "codex" && progress) {
         return <AnalysisProgressView progress={progress} />;
@@ -1153,7 +1247,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         title={busy === "codex" ? t("Codex 正在生成安装计划", "Codex is generating the installation plan") :
           t("安装计划尚未生成", "Installation plan is not available")}
         detail={busy === "codex"
-          ? t("正在阅读仓库完整上下文并识别 Skills、MCP、依赖和配置步骤。", "Reading full repository context and identifying Skills, MCP, dependencies, and configuration steps.")
+          ? t("正在按固定预算分层处理仓库上下文。", "Processing repository context in bounded layers.")
           : t("可重试 Codex 分析，或使用已完成的来源检查切换到标准安装。", "Retry Codex analysis or use the completed source check for standard installation.")} />;
     }
     if (displayProgress || result) {
@@ -1197,7 +1291,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
             installMethod === "assisted" ? <Sparkles size={17} /> : <Search size={17} />}
           {busy === "source" ? t("正在分析来源…", "Analyzing source…") :
             busy === "codex" ? t("Codex 正在分析…", "Codex is analyzing…") :
-              installMethod === "assisted" ? t("分析并生成计划", "Analyze and create plan") : t("分析来源", "Analyze source")}
+              installMethod === "assisted" ? t("扫描项目", "Scan project") : t("分析来源", "Analyze source")}
         </button>
       </>;
     }
@@ -1213,7 +1307,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
           onClick={() => {
             if (!preview) return;
             setInstallMethod("assisted");
-            void analyzeWithCodex(preview.id).catch(() => undefined);
+            void scanWithCodex(preview.id).catch(() => undefined);
           }}>
           <Sparkles size={16} />{t("生成一键安装计划", "Create assisted plan")}
         </button>
@@ -1221,6 +1315,20 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
           onClick={() => void installStandard()}>
           {busy === "standard" ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
           {busy === "standard" ? t("正在安装…", "Installing…") : t(`安装选中的 ${selectedSkills.length} 个`, `Install ${selectedSkills.length} selected`)}
+        </button>
+      </>;
+    }
+    if (projectScan && !plan) {
+      return <>
+        <button type="button" className="ghost" disabled={busy !== ""} onClick={resetForNewSource}>
+          <ArrowLeft size={16} />{t("返回", "Back")}
+        </button>
+        <button type="button" className="ghost" disabled={busy !== "" || !preview} onClick={switchToStandard}>
+          {t("切换到标准安装", "Switch to standard installation")}
+        </button>
+        <button type="button" className="primary" disabled={busy !== ""}
+          onClick={() => void createPlanFromProjectScan()}>
+          <Sparkles size={17} />{t("同意并生成安装计划", "Approve and create installation plan")}
         </button>
       </>;
     }
@@ -1237,7 +1345,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
           {t("切换到标准安装", "Switch to standard installation")}
         </button>
         <button type="button" className="primary" disabled={busy !== "" || !preview}
-          onClick={() => preview && void analyzeWithCodex(preview.id).catch(() => undefined)}>
+          onClick={() => preview && void scanWithCodex(preview.id).catch(() => undefined)}>
           <RefreshCw size={17} />{t("重试 Codex 分析", "Retry Codex analysis")}
         </button>
       </>;
@@ -1373,7 +1481,7 @@ function SourceStep({ installMethod, sourceMethod, source, requestedRef, busy, s
         <p>{installMethod === "assisted"
           ? t(
             "点击分析后，应用会把仓库上下文安全打包给 Codex。若识别到 Python 工具，还会从官方 PyPI 下载 Wheel 到隔离暂存区以生成依赖锁；此时不会安装或运行这些内容。",
-            "After you start analysis, the app safely packages repository context for Codex. If a Python tool is found, Wheels are also downloaded from official PyPI into isolated staging to create a dependency lock; nothing is installed or run at this stage."
+            "The first stage performs a bounded, read-only project scan and does not create a plan or download dependencies. Only after you approve continuing may Codex create a typed plan and stage official PyPI Wheels when needed; nothing is installed or run before separate permission approval."
           )
           : t("仓库先下载到暂存区并运行本地安全检查，不执行仓库脚本。",
             "The repository is staged and checked locally. Repository scripts are not executed.")}</p></div>
@@ -1395,6 +1503,73 @@ function StandardReview({ preview, candidates, selected, setSelected, scan, risk
     <RepositorySummary preview={preview} />
     <SkillSelection candidates={candidates} selected={selected} setSelected={setSelected} disabled={completed} />
     {scan && <CompactRiskReview report={scan} busy={riskBusy} onIgnore={onIgnore} />}
+  </div>;
+}
+
+function ProjectScanView({ scan }: { scan: CodexProjectScanResult }) {
+  const { t, locale, formatDate } = useI18n();
+  const security = scan.security;
+  return <div className="assisted-plan">
+    <div className="assisted-overview">
+      <div className="assisted-overview-head">
+        <div>
+          <span className="eyebrow">{t("Codex 项目扫描", "Codex project scan")}</span>
+          <h3>{scan.repository?.fullName || t("本地 Skill 项目", "Local Skill project")}</h3>
+        </div>
+        <span className={`complexity ${security.localHighestRisk}`}>
+          {severityLabel(security.localHighestRisk, locale)}
+        </span>
+      </div>
+      <p>{scan.summary || t("Codex 未提供项目概述。", "Codex did not provide a project summary.")}</p>
+      <div className="approach">
+        <ShieldCheck size={18} />
+        <span>{security.summary || t("未提供安全结论。", "No security conclusion was provided.")}</span>
+      </div>
+      <div className="assisted-meta">
+        <span><b>{t("安全结论", "Security verdict")}</b>{security.verdict}</span>
+        <span><b>{t("置信度", "Confidence")}</b>{Math.round(security.confidence * 100)}%</span>
+        <span><b>{t("本地发现", "Local findings")}</b>{security.localFindingCount}</span>
+        <span><b>{t("上下文", "Context")}</b>{scan.contextFileCount} {t("个文件", "files")}</span>
+        {scan.expiresAt && <span><b>{t("扫描有效期", "Scan expires")}</b>{formatDate(scan.expiresAt)}</span>}
+      </div>
+    </div>
+
+    <PlanSection title={t("安全注意事项", "Security notes")} icon={<AlertTriangle size={19} />}
+      subtitle={t("敏感内容仅保留元数据；结论区分合理功能与实际危害。", "Sensitive content is metadata-only; conclusions distinguish legitimate capability from harmful behavior.")}>
+      {security.concerns.length ? <div className="plan-step-list">
+        {security.concerns.map((concern, index) => <div className="plan-step" key={`${concern.title}-${index}`}>
+          <span className={`risk-dot ${concern.severity}`} />
+          <div>
+            <strong>{concern.title}</strong>
+            <p>{concern.rationale}</p>
+            {concern.recommendation && <small>{concern.recommendation}</small>}
+          </div>
+        </div>)}
+      </div> : <EmptyPlanText text={t("Codex 未提出额外安全注意事项。", "Codex raised no additional security notes.")} />}
+    </PlanSection>
+
+    <PlanSection title={t("识别到的安装方式", "Detected installation methods")} icon={<Download size={19} />}
+      subtitle={t("这里只描述可能的方式，不执行命令、下载或安装。", "These are declarative options only; no command, download, or installation is performed.")}>
+      <div className="plan-step-list">{scan.installationMethods.length ? scan.installationMethods.map((method, index) =>
+        <div className="plan-step" key={`${method.kind}-${index}`}>
+          {method.supported ? <CheckCircle2 size={18} /> : <CircleDashed size={18} />}
+          <div>
+            <strong>{method.title}</strong>
+            <p>{method.description}</p>
+            {!!method.evidenceFiles.length && <small>{method.evidenceFiles.join(", ")}</small>}
+          </div>
+        </div>) : <EmptyPlanText text={t("未识别到可声明的安装方式。", "No declarative installation method was identified.")} />}</div>
+    </PlanSection>
+
+    <div className="plan-warnings" role="status">
+      <ShieldCheck size={20} /><div>
+        <strong>{t("尚未授权安装", "Installation is not authorized")}</strong>
+        <p>{t(
+          `已摘要 ${scan.summaryFileCount} 个文件、深度分析 ${scan.deepAnalysisFileCount} 个重点文件；${scan.redactedFileCount} 个敏感文件已脱敏，${scan.truncatedFileCount} 个大文件已截断。只有点击“同意并生成安装计划”后才会进入下一阶段。`,
+          `${scan.summaryFileCount} files were summarized and ${scan.deepAnalysisFileCount} focus files were analyzed; ${scan.redactedFileCount} sensitive files were redacted and ${scan.truncatedFileCount} large files were truncated. The next stage starts only after you approve creating a plan.`
+        )}</p>
+      </div>
+    </div>
   </div>;
 }
 
@@ -1547,19 +1722,26 @@ function AnalysisProgressView({ progress }: { progress: AssistedInstallProgress 
   const { t } = useI18n();
   const total = progress.totalSteps || progress.steps.length || 3;
   const completed = Math.min(total, progress.completedSteps || 0);
+  const isProjectScan = progress.steps.length > 0 &&
+    !progress.steps.some(step => step.id === "dependency-lock");
   const steps = progress.steps.map(step => ({
     ...step,
     title: step.id === "inventory" ? t("仓库盘点", "Repository inventory") :
       step.id === "codex-analysis" ? t("Codex 分析", "Codex analysis") :
         step.id === "validation" ? t("本地验证", "Local validation") :
           step.id === "dependency-lock" ? t("依赖锁定", "Dependency lock") :
-            step.id === "finalizing" ? t("保存计划", "Finalize plan") : step.title
+            step.id === "finalizing" && isProjectScan ? t("保存项目扫描", "Persist project scan") :
+              step.id === "finalizing" ? t("保存计划", "Finalize plan") : step.title
   }));
   return <div className="analysis-progress-view">
     <div className="analysis-progress-head" role="status" aria-live="polite" aria-atomic="true">
       <LoaderCircle className="spin" size={25} />
-      <div><span className="eyebrow">{t("安装分析进度", "Installation analysis progress")}</span>
-        <h3>{progress.message || t("Codex 正在生成安装计划", "Codex is generating the installation plan")}</h3>
+      <div><span className="eyebrow">{isProjectScan
+        ? t("项目扫描进度", "Project scan progress")
+        : t("安装分析进度", "Installation analysis progress")}</span>
+        <h3>{progress.message || (isProjectScan
+          ? t("Codex 正在扫描项目", "Codex is scanning the project")
+          : t("Codex 正在生成安装计划", "Codex is generating the installation plan"))}</h3>
         <p>{t(`已完成 ${completed}/${total} 个阶段`, `${completed}/${total} stages completed`)}
           {progress.activityCount ? t(` · ${progress.activityCount} 条活动更新`, ` · ${progress.activityCount} activity updates`) : ""}</p>
       </div>

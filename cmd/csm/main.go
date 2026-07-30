@@ -425,9 +425,11 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	ref := fs.String("ref", "", "branch, tag, or commit")
 	all := fs.Bool("all", false, "select all discovered skills")
 	apply := fs.Bool("apply", false, "apply the plan")
-	assist := fs.Bool("assist", false, "use Codex to create a structured assisted-install plan")
+	assist := fs.Bool("assist", false, "use the consent-gated Codex project scan and assisted-install flow")
 	acceptHigh := fs.Bool("accept-high-risk", false, "deprecated compatibility flag; use warning decisions")
 	planID := fs.String("plan-id", "", "existing plan ID")
+	projectScanID := fs.String("project-scan-id", "", "completed Codex project scan ID")
+	createPlan := fs.Bool("create-plan", false, "approve creating an assisted-install plan from --project-scan-id")
 	projectRoot := fs.String("project-root", "", "target Git or SVN working tree for an approved MCP integration")
 	var selected stringList
 	var grants stringList
@@ -435,6 +437,19 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	fs.Var(&grants, "grant", "approved assisted-install permission ID; repeatable")
 	if err := parseFlags(fs, args); err != nil {
 		return nil, err
+	}
+	if *projectScanID != "" {
+		if !*assist || !*createPlan {
+			return nil, usagef("--project-scan-id requires --assist --create-plan")
+		}
+		if *planID != "" || *apply || *rawURL != "" || *local != "" || *ref != "" ||
+			*all || len(selected) > 0 || len(grants) > 0 || *projectRoot != "" {
+			return nil, usagef("--project-scan-id --create-plan cannot be combined with a source, apply, selection, grant, or project-root flag")
+		}
+		return m.AnalyzeInstallFromProjectScan(ctx, *projectScanID, nil)
+	}
+	if *createPlan {
+		return nil, usagef("--create-plan requires --project-scan-id")
 	}
 	if *planID != "" {
 		if !*apply {
@@ -465,7 +480,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	}
 	if *assist && *apply {
 		return nil, usagef(
-			"assisted installation is two-phase: create and review a plan first, then use --assist --plan-id ID --apply with explicit --grant values",
+			"assisted installation is three-phase: scan the source, approve plan creation with --project-scan-id ID --create-plan, then apply the reviewed --plan-id ID with explicit --grant values",
 		)
 	}
 	if (*rawURL == "") == (*local == "") {
@@ -481,7 +496,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			return nil, err
 		}
 		if *assist {
-			return m.AnalyzeInstallWithCodex(ctx, value.ID, nil)
+			return m.ScanProjectWithCodex(ctx, value.ID, nil)
 		}
 		if *all {
 			for _, skill := range value.Skills {
@@ -498,7 +513,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			return nil, err
 		}
 		if *assist {
-			return m.AnalyzeInstallWithCodex(ctx, value.ID, nil)
+			return m.ScanProjectWithCodex(ctx, value.ID, nil)
 		}
 		if *all {
 			for _, skill := range value.Skills {

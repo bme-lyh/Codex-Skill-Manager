@@ -38,8 +38,15 @@ Desktop `codex-review-progress` events include a monotonically increasing
 than the last accepted event for the same `reviewId`.
 
 Desktop assisted installation returns domain objects directly. With
-`csm --json install --assist`, the same plan or result appears under the normal
-CLI envelope's `data`. `AssistedInstallPlan` binds `id` and `sourcePlanId` to a
+`csm --json install --assist`, `data` is first a `CodexProjectScanResult` with
+`id`, `sourcePlanId`, `summary`, `security`, `installationMethods`, coverage and
+redaction/truncation counts, focus-file paths, context/scan digests, timestamps,
+and expiry. Security contains the advisory verdict, summary, confidence, local
+risk baseline, and evidence-bound concerns.
+
+`csm --json install --assist --project-scan-id ID --create-plan` returns an
+`AssistedInstallPlan`. It binds `id`, `sourcePlanId`, `projectScanId`, and
+`projectScanDigest` to a
 source identity, `planDigest`, `contextDigest`, optional `configFingerprint`,
 and expiry. Reader-facing fields include `summary`, `approach`, `complexity`,
 `requirements`, `warnings`, `skills`, `scan`, `codexModel`,

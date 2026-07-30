@@ -127,6 +127,46 @@ func TestBuildPackagedContextChunksCoversLargeGroupExactlyOnce(t *testing.T) {
 	if strings.Contains(string(finalPayload), "academic research context file") {
 		t.Fatal("final synthesis payload must contain metadata and summaries, not duplicate raw text")
 	}
+	var synthesis batchInput
+	if err := json.Unmarshal(finalPayload, &synthesis); err != nil {
+		t.Fatal(err)
+	}
+	if synthesis.ContextFileCount != fileCount || synthesis.OmittedFileCount != fileCount-len(synthesis.Files) {
+		t.Fatalf("unexpected synthesis coverage: files=%d omitted=%d total=%d",
+			len(synthesis.Files), synthesis.OmittedFileCount, synthesis.ContextFileCount)
+	}
+	if len(synthesis.Files) > 400 {
+		t.Fatalf("final synthesis retained %d metadata files, want at most 400", len(synthesis.Files))
+	}
+}
+
+func TestCodexContextBudgetStaysBelowTurnCharacterLimit(t *testing.T) {
+	if maxContextChunkPayloadBytes >= 1_048_576 {
+		t.Fatalf("chunk budget %d must remain below Codex turn limit", maxContextChunkPayloadBytes)
+	}
+	if maxCodexInputBytes != maxContextChunkPayloadBytes {
+		t.Fatalf("final and chunk budgets diverged: %d != %d", maxCodexInputBytes, maxContextChunkPayloadBytes)
+	}
+}
+
+func TestSafeCodexContextFilesRedactsCredentialLikePaths(t *testing.T) {
+	files := []installAnalysisFile{
+		{Path: ".env", Kind: "text", Encoding: "utf-8", Content: "TOKEN=secret", Size: 12, SHA256: "a"},
+		{Path: "README.md", Kind: "text", Encoding: "utf-8", Content: "safe", Size: 4, SHA256: "b"},
+	}
+	safe := safeCodexContextFiles(files)
+	if !safe[0].Redacted || safe[0].Content != "" || safe[0].Encoding != "redacted" {
+		t.Fatalf("credential-like file was not converted to metadata-only input: %#v", safe[0])
+	}
+	if safe[0].SHA256 != files[0].SHA256 || safe[0].Size != files[0].Size {
+		t.Fatal("redaction must preserve immutable metadata")
+	}
+	if safe[1].Redacted || safe[1].Content != "safe" {
+		t.Fatalf("ordinary documentation was unexpectedly redacted: %#v", safe[1])
+	}
+	if files[0].Content != "TOKEN=secret" {
+		t.Fatal("redaction mutated the local inventory")
+	}
 }
 
 func TestValidateContextChunkSummaryRejectsMissingChunkAndSpoofedPath(t *testing.T) {

@@ -67,21 +67,26 @@ install extra tools or change Codex MCP configuration.
 
 ## Codex assisted installation
 
-Assisted installation is also two-phase:
+Assisted installation has three explicit phases:
 
 ```powershell
 csm --json install --url "https://github.com/owner/repository" --assist
+csm --json install --assist --project-scan-id "project-scan-..." --create-plan
 csm --json install --assist --plan-id "assisted-plan-..." --apply `
   --skill "skill-name" `
   --grant "PERMISSION_ID" `
   --project-root "D:\work\project"
 ```
 
-Review the returned Skills, steps, warnings, permissions, and
+The first command returns a read-only project overview, advisory security
+conclusion, evidence coverage, and declarative installation methods. Review it
+before running the second command, which is the explicit consent to create a
+plan. Then review the returned Skills, steps, warnings, permissions, and
 `needsProjectRoot`. On apply, pass only permission IDs listed by that plan.
 `--all` may replace repeated `--skill` values. Supply `--project-root` only
 when the approved MCP plan requires it; the path must be a real Git or SVN
-working tree. Creating an assisted plan cannot be combined with `--apply`.
+working tree. Project scanning does not download dependencies or create an
+installation plan, and plan creation cannot be combined with `--apply`.
 
 Using `--assist` explicitly opts in for that invocation. It uses the configured
 Codex CLI, model, reasoning effort, and account usage. It does not enable
