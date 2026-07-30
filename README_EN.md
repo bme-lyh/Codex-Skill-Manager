@@ -79,7 +79,7 @@ a warning. Download only from this repository's Releases page and compare the
 archive hash with the accompanying `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.8.1-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.9.0-windows-amd64.zip -Algorithm SHA256
 ```
 
 ### Build from source
@@ -112,4 +112,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.8.1**. Licensed under the [MIT License](LICENSE).
+Current version: **0.9.0**. Licensed under the [MIT License](LICENSE).
