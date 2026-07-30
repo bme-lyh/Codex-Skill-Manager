@@ -1,4 +1,7 @@
 import type {
+  AssistedInstallPlan,
+  AssistedInstallProgress,
+  AssistedInstallResult,
   CodexCLIStatus,
   Dashboard,
   Finding,
@@ -154,7 +157,7 @@ export const demoScanReport: ScanReport = {
     overallVerdict: "人工复核后可接受",
     model: "gpt-5.6",
     reasoningEffort: "medium",
-    contextMode: "full-target-read-only",
+    contextMode: "full-target-packaged-no-tools",
     contextFileCount: 128,
     startedAt: "2026-07-28T10:21:00Z",
     completedAt: "2026-07-28T10:22:00Z",
@@ -210,6 +213,58 @@ export const demoScanReport: ScanReport = {
 };
 
 const demoHistory: Transaction[] = [
+  {
+    id: "demo-tx-assisted-install",
+    type: "assisted-install",
+    status: "partial",
+    targets: ["build-graph", "debug-issue", "explore-codebase", "review-pr"],
+    projectRoot: "D:\\projects\\demo-codebase",
+    recoveryStatus: "available",
+    startedAt: "2026-07-29T10:14:00Z",
+    completedAt: "2026-07-29T10:14:35Z",
+    steps: [
+      {
+        id: "install-skills",
+        kind: "install-skills",
+        title: "安装 Skills",
+        description: "安装选中的 Skills",
+        status: "completed",
+        required: true,
+        supported: true,
+        reversible: true
+      },
+      {
+        id: "install-managed-tool",
+        kind: "managed-python-tool",
+        title: "安装受管代码关系工具",
+        description: "安装已锁定并校验的 Wheel",
+        status: "completed",
+        required: true,
+        supported: true,
+        reversible: true
+      },
+      {
+        id: "configure-mcp",
+        kind: "configure-codex-mcp",
+        title: "配置 Codex MCP",
+        description: "备份后写入受管 MCP 配置",
+        status: "completed",
+        required: true,
+        supported: true,
+        reversible: true
+      },
+      {
+        id: "initialize-project-index",
+        kind: "manual",
+        title: "首次建立项目索引",
+        description: "按项目范围手动建立索引",
+        status: "manual-pending",
+        required: false,
+        supported: false,
+        reversible: false
+      }
+    ]
+  },
   {
     id: "demo-tx-install",
     type: "install",
@@ -588,42 +643,310 @@ export const demoCodexStatus: CodexCLIStatus = {
   ]
 };
 
+const demoInstallSkills = [
+  {
+    name: "build-graph",
+    description: "构建或更新代码关系图",
+    sourcePath: "skills/build-graph"
+  },
+  {
+    name: "debug-issue",
+    description: "结合代码关系定位问题原因",
+    sourcePath: "skills/debug-issue"
+  },
+  {
+    name: "explore-codebase",
+    description: "使用结构关系理解代码库",
+    sourcePath: "skills/explore-codebase"
+  },
+  {
+    name: "review-pr",
+    description: "结合影响范围复核 Pull Request",
+    sourcePath: "skills/review-pr"
+  }
+];
+
 export const demoInstallPreview: InstallPreview = {
   id: "demo-install-plan",
   repository: {
     provider: "github",
-    fullName: "example/academic-research-skills",
+    fullName: "example/code-review-skills",
     private: false,
     defaultBranch: "main",
     license: "MIT",
     resolvedRef: "main",
-    commitSha: "be72d09a13f67de91a9b8748a46fa29b8b52dc10"
+    commitSha: "8c2b57d37b8d96f47e5a4d41cc4d2f117c8296a1"
   },
-  skills: [
-    {
-      name: "literature-search",
-      description: "跨来源检索并整理学术证据",
-      sourcePath: "skills/literature-search"
-    },
-    {
-      name: "systematic-review",
-      description: "系统综述筛选、提取与质量核查",
-      sourcePath: "skills/systematic-review"
-    },
-    {
-      name: "citation-checker",
-      description: "核对引用格式、DOI 和参考文献",
-      sourcePath: "skills/citation-checker"
-    }
-  ],
+  skills: demoInstallSkills,
   scan: {
-    ...demoScanReport,
     id: "demo-install-scan",
-    target: "example/academic-research-skills",
-    filesScanned: 57
+    target: "example/code-review-skills",
+    highestSeverity: "informational",
+    activeHighestSeverity: "informational",
+    findings: [],
+    filesScanned: 186,
+    activeFindingCount: 0,
+    ignoredFindingCount: 0,
+    status: "passed",
+    completedAt: "2026-07-28T11:10:00Z",
+    clusters: [],
+    skills: demoInstallSkills.map(skill => ({
+      skillName: skill.name,
+      sourcePath: skill.sourcePath,
+      groupId: "demo-code-review",
+      groupName: "代码复核工具",
+      filesScanned: 1,
+      highestSeverity: "informational" as const,
+      activeFindingCount: 0,
+      ignoredFindingCount: 0
+    }))
   },
   createdAt: "2026-07-28T11:10:00Z",
   expiresAt: "2026-07-28T12:10:00Z"
+};
+
+export const demoAssistedInstallPlan: AssistedInstallPlan = {
+  id: "demo-assisted-plan",
+  sourcePlanId: demoInstallPreview.id,
+  status: "manual-required",
+  repository: demoInstallPreview.repository,
+  summary: "仓库包含 4 个代码复核 Skills，并提供一个可选的 Python MCP 服务。",
+  approach: "安装选中的 Skills，将已锁定的 Wheel 安装到隔离环境，再备份并写入 MCP 配置。仓库脚本不会执行。",
+  complexity: "complex",
+  requirements: [
+    {
+      id: "codex-cli",
+      kind: "tool",
+      title: "Codex CLI 已登录",
+      description: "用于分析仓库说明并生成受约束的安装计划。",
+      required: true,
+      satisfied: true
+    },
+    {
+      id: "python",
+      kind: "runtime",
+      title: "Python 3.11 或更高版本",
+      description: "MCP 服务运行所需。",
+      required: true,
+      satisfied: true
+    }
+  ],
+  steps: [
+    {
+      id: "install-skills",
+      kind: "install-skills",
+      title: "安装 Skills",
+      description: "将选中的 Skill 目录安装到 Codex Skills 目录并记录来源。",
+      status: "queued",
+      required: true,
+      supported: true,
+      skillNames: demoInstallPreview.skills.map(skill => skill.name),
+      permissionIds: ["skills-write"],
+      reversible: true,
+      recovery: "可从操作历史回滚到安装前状态。"
+    },
+    {
+      id: "install-managed-tool",
+      kind: "managed-python-tool",
+      title: "安装受管代码关系工具",
+      description: "仅使用分析阶段锁定并校验哈希的 Wheel 创建隔离 Python 环境。",
+      status: "planned",
+      required: true,
+      supported: true,
+      pythonPackage: "example-code-graph",
+      versionSpec: "==2.3.7",
+      pythonWheels: [
+        {
+          name: "example-code-graph",
+          version: "2.3.7",
+          filename: "example_code_graph-2.3.7-py3-none-any.whl",
+          sha256: "1111111111111111111111111111111111111111111111111111111111111111",
+          tags: ["py3-none-any"]
+        },
+        {
+          name: "tree-sitter",
+          version: "0.25.2",
+          filename: "tree_sitter-0.25.2-cp39-abi3-win_amd64.whl",
+          sha256: "2222222222222222222222222222222222222222222222222222222222222222",
+          native: true,
+          tags: ["cp39-abi3-win_amd64"]
+        },
+        {
+          name: "tree-sitter-language-pack",
+          version: "0.9.0",
+          filename: "tree_sitter_language_pack-0.9.0-cp310-abi3-win_amd64.whl",
+          sha256: "3333333333333333333333333333333333333333333333333333333333333333",
+          native: true,
+          tags: ["cp310-abi3-win_amd64"]
+        },
+        {
+          name: "networkx",
+          version: "3.5",
+          filename: "networkx-3.5-py3-none-any.whl",
+          sha256: "4444444444444444444444444444444444444444444444444444444444444444",
+          tags: ["py3-none-any"]
+        }
+      ],
+      entrypoint: "example-code-graph",
+      permissionIds: ["pypi-wheel-lock", "managed-tool-write", "managed-tool-run", "managed-native-code"],
+      reversible: true,
+      recovery: "受管环境会整体移入隔离区。"
+    },
+    {
+      id: "configure-mcp",
+      kind: "configure-codex-mcp",
+      title: "配置 Codex MCP",
+      description: "备份现有配置后，新增指向受管工具的 MCP 条目。",
+      status: "planned",
+      required: true,
+      supported: true,
+      entrypoint: "example-code-graph",
+      mcpServerName: "example_code_graph",
+      mcpArgs: ["serve"],
+      permissionIds: ["codex-mcp-config"],
+      reversible: true,
+      recovery: "恢复配置备份并隔离应用创建的所有权记录。"
+    },
+    {
+      id: "initialize-project-index",
+      kind: "manual",
+      title: "首次建立项目索引",
+      description: "该步骤需要结合项目实际情况选择索引范围，应用不会自动执行。",
+      status: "manual",
+      required: true,
+      supported: false,
+      permissionIds: [],
+      reversible: false,
+      recovery: "按照仓库说明在确认目标项目后手动执行。"
+    }
+  ],
+  permissions: [
+    {
+      id: "skills-write",
+      kind: "filesystem-write",
+      title: "写入 Skills 目录",
+      description: "仅写入本计划列出的 Skill 目录。",
+      target: demoConfig.paths.skillsRoot,
+      risk: "standard",
+      required: true,
+      reversible: true
+    },
+    {
+      id: "pypi-wheel-lock",
+      kind: "package-approval",
+      title: "使用已锁定的 PyPI Wheel",
+      description: "分析阶段已从官方 PyPI 下载；执行阶段只接受列表中的文件名和 SHA-256。",
+      targets: ["example-code-graph==2.3.7 · 4 Wheels"],
+      risk: "standard",
+      required: true,
+      reversible: true
+    },
+    {
+      id: "managed-tool-write",
+      kind: "filesystem-write",
+      title: "创建受管工具环境",
+      description: "只在应用数据目录中创建隔离 Python 环境。",
+      targets: ["example-code-graph==2.3.7"],
+      risk: "standard",
+      required: true,
+      reversible: true
+    },
+    {
+      id: "managed-tool-run",
+      kind: "process",
+      title: "允许受管工具运行",
+      description: "允许 Codex 后续通过 MCP 启动批准的入口。",
+      targets: ["example-code-graph"],
+      risk: "standard",
+      required: true,
+      reversible: true
+    },
+    {
+      id: "managed-native-code",
+      kind: "high-risk-process",
+      title: "运行本机代码（高风险）",
+      description: "两个平台 Wheel 包含本机代码；文件名、平台标签和 SHA-256 已固定。",
+      targets: ["tree-sitter · win_amd64", "tree-sitter-language-pack · win_amd64"],
+      risk: "high",
+      required: true,
+      reversible: true
+    },
+    {
+      id: "codex-mcp-config",
+      kind: "configuration",
+      title: "配置 Codex MCP",
+      description: "修改前自动备份，且只新增计划中的受管 MCP 服务。",
+      target: "Codex config.toml",
+      risk: "standard",
+      required: true,
+      reversible: true
+    }
+  ],
+  warnings: [
+    "仓库脚本不会被直接执行；无法安全自动化的步骤会保留为人工步骤。",
+    "原生 Wheel 需要单独批准高风险权限。"
+  ],
+  needsProjectRoot: true,
+  projectRootReason: "MCP 服务需要一个明确的项目目录作为默认分析范围。",
+  codexModel: "gpt-5.6",
+  reasoningEffort: "medium",
+  contextFileCount: 348,
+  createdAt: "2026-07-28T11:12:00Z",
+  expiresAt: "2026-07-28T12:12:00Z",
+  skills: demoInstallPreview.skills,
+  scan: demoInstallPreview.scan
+};
+
+export const demoAssistedInstallProgress: AssistedInstallProgress = {
+  referenceId: demoAssistedInstallPlan.id,
+  runId: "demo-assisted-run",
+  sequence: 6,
+  phase: "running",
+  message: "正在创建受管工具环境",
+  currentStepId: "install-managed-tool",
+  completedSteps: 1,
+  totalSteps: 4,
+  activityCount: 8,
+  steps: [
+    { id: "install-skills", title: "安装 Skills", status: "completed", completedAt: "2026-07-28T11:14:10Z" },
+    { id: "install-managed-tool", title: "安装受管代码关系工具", status: "running", startedAt: "2026-07-28T11:14:10Z" },
+    { id: "configure-mcp", title: "配置 Codex MCP", status: "queued" },
+    { id: "initialize-project-index", title: "首次建立项目索引", status: "manual-pending", message: "待手动处理" }
+  ],
+  startedAt: "2026-07-28T11:14:00Z",
+  updatedAt: "2026-07-28T11:14:18Z",
+  terminal: false
+};
+
+export const demoAssistedInstallResult: AssistedInstallResult = {
+  plan: { ...demoAssistedInstallPlan, status: "partial", recoveryStatus: "available" },
+  transaction: {
+    id: "demo-tx-assisted-install",
+    type: "assisted-install",
+    status: "partial",
+    targets: demoInstallPreview.skills.map(skill => skill.name),
+    startedAt: "2026-07-28T11:14:00Z",
+    completedAt: "2026-07-28T11:14:35Z"
+  },
+  referenceId: demoAssistedInstallPlan.id,
+  runId: "demo-assisted-run",
+  progress: {
+    ...demoAssistedInstallProgress,
+    sequence: 8,
+    phase: "partial",
+    message: "自动步骤已完成，1 个人工步骤仍待处理",
+    completedSteps: 4,
+    currentStepId: "",
+    terminal: true,
+    updatedAt: "2026-07-28T11:14:35Z",
+    steps: demoAssistedInstallPlan.steps.map(step => ({
+      id: step.id,
+      title: step.title,
+      kind: step.kind,
+      status: step.kind === "manual" ? "manual-pending" : "completed",
+      message: step.kind === "manual" ? "待手动处理" : "步骤已完成"
+    }))
+  }
 };
 
 export const demoQuarantine = [

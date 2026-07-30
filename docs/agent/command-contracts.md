@@ -38,8 +38,63 @@ Planning commands:
 - `update --group ID`: resolve a GitHub source and create a persisted update
   preview for its installed Skills; scan scope is limited to actual candidate
   Skill directories;
-- `install --url URL [--ref REF]`: create a preview only;
-- `install --local PATH`: create a preview only.
+- `install --url URL [--ref REF] [--assist]`: create a standard preview, or
+  create and return a Codex assisted plan when explicitly requested;
+- `install --local PATH [--assist]`: same contract for an explicit local source.
+
+Without `--assist`, the CLI `install` contract remains Skill-only. It never
+installs dependencies or edits Codex MCP configuration.
+
+## Assisted-install contract
+
+Version 0.8.0 exposes the same manager workflow through the desktop facade and
+the CLI. It must preserve this sequence:
+
+1. create the ordinary source preview and local scan;
+2. package the complete commit-pinned GitHub staging directory or explicit
+   local source into an opt-in Codex session with the shell tool disabled;
+   oversized input is covered by deterministic no-tools chunks and a final
+   synthesis;
+3. validate the schema locally, bind it to the source/configuration/plan
+   digests, downgrade unsupported actions to `manual`, and derive permissions;
+4. show the summary, requirements, warnings, exact Skills, typed steps, and
+   every required permission;
+5. apply only the exact selected Skills and approved permission IDs, plus an
+   explicit project root when MCP requires one;
+6. resolve any approved Python tool's complete Wheel closure during analysis,
+   record exact package identities and hashes, and reject source distributions;
+7. journal each step and persist monotonic progress, cancellation, retry, and
+   recovery; the desktop relays live progress while CLI returns the final
+   structured state.
+
+Supported executable step kinds are `install-skills`,
+`managed-python-tool`, and `configure-codex-mcp`. `manual` is never executed.
+The executor must reject missing permissions, expired or changed plans,
+unselected targets, changed Codex configuration, model-supplied paths or
+environment, non-Wheel Python builds, an existing unmanaged MCP name, and an
+MCP project root that is not a real Git or SVN working tree.
+Managed Python execution requires a GitHub source whose repository identity
+matches official PyPI metadata. Apply verifies the staged Wheel lock and runs
+offline with hashes required; native-code Wheels need a separate high-risk
+permission. Approved automatic steps may finish before a `partial` result lists
+required manual work; optional manual work is shown and skipped.
+The immutable Wheel approval permission ID is `pypi-wheel-lock`; it does not
+grant apply-time network access. `selectedSkills` is persisted as the exact
+approved subset and must default to empty, never all candidates, when absent.
+
+Codex output cannot authorize arbitrary commands. Repository scripts are never
+run. On failure, completed reversible steps recover in reverse order. If output
+hashes no longer match, recovery refuses to overwrite the changed file and
+returns an explicit recovery status and instructions.
+
+CLI analysis uses `install --url URL --assist` or
+`install --local PATH --assist`. Apply uses
+`install --assist --plan-id ID --apply --skill NAME... --grant ID...`, with
+optional `--all` and a required `--project-root PATH` only when the plan says it
+needs MCP. `--assist` itself is the per-invocation opt-in; it does not depend on
+the Security Center Codex-review toggle. It still uses the configured CLI path,
+model, reasoning effort, and account usage. Internal plan snapshots are not a
+public file interface.
 
 Mutating commands:
 
@@ -51,6 +106,7 @@ Mutating commands:
 - `group reorder --id ID...`;
 - `group move --group ID --skill NAME...`;
 - `install --plan-id ID --apply --skill NAME... [--accept-high-risk]`;
+- assisted apply: `install --assist --plan-id ID --apply --skill NAME... --grant ID... [--project-root PATH]`;
 - `remove NAME...`: move explicit names into quarantine;
 - `restore --skill NAME --transaction ID`;
 - `rollback --transaction ID`;
@@ -76,4 +132,4 @@ never mutate source provenance or Skill content.
 Finding/cluster ignores are reloaded from local state at apply time. Ignoring
 creates a transaction record and the reason is optional; restored findings immediately
 participate in the gate again. A Codex verdict can never substitute for the
-explicit deterministic confirmation.
+explicit human ignore decision.

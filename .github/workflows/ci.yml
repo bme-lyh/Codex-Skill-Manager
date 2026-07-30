@@ -12,7 +12,7 @@ permissions:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -23,7 +23,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 11.9.0
 
       - uses: actions/setup-node@v7
         with:
@@ -43,26 +43,26 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm --dir frontend install --frozen-lockfile
 
-      - name: Type-check and build frontend
-        run: pnpm --dir frontend run build
+      - name: Validate bundled Agent Skill
+        run: go run ./cmd/skill-validator ./skills/codex-skill-manager
 
-      # The root Wails package embeds frontend/dist, so build it before Go
-      # compiles or tests that package on a clean checkout.
-      - name: Run Go tests
-        run: go test ./...
+      - name: Test and build release binaries
+        shell: pwsh
+        run: .\scripts\build.ps1
 
-      - name: Build CLI
-        run: go build -trimpath -o build/bin/csm.exe ./cmd/csm
+      - name: Package release-ready artifacts
+        shell: pwsh
+        run: |
+          $project = Get-Content -LiteralPath "wails.json" -Raw | ConvertFrom-Json
+          $version = [string]$project.info.productVersion
+          .\scripts\package-release.ps1 -Version $version -OutputRoot ".\build\ci-release"
 
-      - name: Build Wails desktop application
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build -s -m -trimpath -platform windows/amd64 -o CodexSkillManager.exe
-
-      - name: Upload unsigned Windows binaries
+      - name: Upload unsigned release-ready Windows artifacts
         uses: actions/upload-artifact@v7
         with:
           name: CodexSkillManager-windows-amd64-unsigned
           path: |
-            build/bin/CodexSkillManager.exe
-            build/bin/csm.exe
+            build/ci-release
+            build/bin/build-manifest.json
           if-no-files-found: error
           retention-days: 14

@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: 使用文档 / Documentation
-    url: https://github.com/lyhhh/codex-skill-manager/tree/main/docs
+    url: https://github.com/bme-lyh/Codex-Skill-Manager/tree/main/docs
     about: 提交问题前请先查看完整文档与故障排查。
   - name: 安全策略 / Security policy
-    url: https://github.com/lyhhh/codex-skill-manager/security/policy
+    url: https://github.com/bme-lyh/Codex-Skill-Manager/security/policy
     about: 不要在公开 Issue 中披露凭据或可利用的未修复漏洞。

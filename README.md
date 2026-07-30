@@ -15,7 +15,7 @@ Codex Skill Manager 是面向 Windows 10/11 的本地 Skills 管理工具。它�
 
 ## 界面展示
 
-[![Codex Skill Manager 当前界面展示：多分组 Skills、批量操作、更新状态、安全中心、Codex 复核、安装预览、历史回滚、报告以及中英文设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
+[![Codex Skill Manager 当前界面展示：多分组 Skills、批量操作、更新状态、安全中心、Codex 复核、GitHub 与本地安装、Codex 一键安装计划和执行结果、历史回滚、报告以及中英文设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
 > 动图展示主要界面。里面使用的分组、Skill 和路径都是示例，不包含真实账号或个人信息。
 
@@ -38,12 +38,30 @@ flowchart LR
 
 | 能力 | 说明 |
 |---|---|
-| 安装与下载 | 从 GitHub 公共/私有仓库或本地目录安装一个或多个 Skills |
+| 安装与下载 | 从 GitHub 公共/私有仓库或本地目录安装一个或多个 Skills；复杂仓库可选 Codex 辅助安装 |
 | 风险检查 | 安装、更新或手动检查时显示风险原因和相关文件 |
 | 更新与卸载 | 支持多选操作；更新前自动备份，卸载后可以恢复 |
 | 分组整理 | 自动分组，也可以新建、改名和拖动分组 |
 | 已有 Skills | 找出当前目录里的 Skills，并在不移动文件的情况下加入管理 |
 | 界面语言 | 支持简体中文和 English；首次运行默认中文 |
+
+## 两种安装方式
+
+两种方式都会先确认来源、找出仓库中的 Skills，并完成本地风险检查。
+
+| 方式 | 适合场景 | 行为 |
+|---|---|---|
+| 标准安装 | 普通单 Skill 或多 Skill 仓库 | 只安装你选中的 Skill 目录，不安装额外工具，也不修改 MCP 配置 |
+| Codex 一键安装 | 还需要工具、MCP 等配置的复杂仓库 | Codex 先阅读完整仓库并生成说明和计划；你确认 Skills、权限和项目目录后，应用再执行支持的步骤 |
+
+一键安装需要已经安装并登录的 **Codex CLI**，并会消耗 Codex 额度。应用不会直接
+运行仓库脚本或 Codex 临时生成的命令。无法安全自动完成的内容会明确列为人工步骤，
+不会伪装成安装成功。分析 Python 工具时，应用可能先从官方 PyPI 下载文件到隔离
+暂存区进行核对；在你批准前不会安装或运行。
+
+进度、错误、剩余人工步骤和回滚入口都会保留在安装窗口或历史记录中。Codex
+不可用时，仍可切回标准安装。详细边界见
+[图形界面指南](docs/user/gui-guide.md) 和 [安全说明](SECURITY.md)。
 
 ## 使用 Codex 风险复核
 
@@ -54,6 +72,7 @@ Codex 风险复核是可选功能，默认关闭。启用前需要：
 3. 确认你的 Codex 账户有可用额度。
 
 复核会消耗 Codex 额度，所需时间与 Skill 数量、文件大小、所选模型和推理强度有关。应用默认逐组复核，失败组会自动重试一次；切换页面不会中断进度或丢失结果。不开启此功能时，本地风险检查和其他管理功能仍可正常使用。
+这个设置开关只控制安全中心风险复核，不控制使用者主动选择的 Codex 辅助安装。
 
 ## 三分钟开始
 
@@ -66,13 +85,19 @@ Codex 风险复核是可选功能，默认关闭。启用前需要：
 
 应用默认读取 `%USERPROFILE%\.codex\skills`。`.system` 只显示、不修改。
 界面默认使用简体中文，可在 **设置 → 语言** 中立即切换为 English；选择会自动保存。
+当前发布包尚未进行 Windows 代码签名，SmartScreen 可能显示提醒。请只从本仓库的
+Releases 下载，并用同页的 `SHA256SUMS.txt` 核对压缩包：
+
+```powershell
+Get-FileHash .\CodexSkillManager-0.8.0-windows-amd64.zip -Algorithm SHA256
+```
 
 ### 方式二：从源码构建
 
 需要 Go、Node.js、pnpm、WebView2 与 Wails v2：
 
 ```powershell
-pnpm --dir frontend install
+pnpm --dir frontend install --frozen-lockfile
 .\scripts\build.ps1
 ```
 
@@ -85,6 +110,7 @@ pnpm --dir frontend install
 - 更新前自动备份；卸载会移入隔离区，方便恢复。
 - 本地修改不会在没有明确确认时被覆盖。
 - Codex 复核是可选功能；默认检查完全在本地完成。
+- Codex 辅助安装只执行受支持、经过本地验证并由你明确授权的步骤。
 
 静态扫描无法证明内容绝对安全。完整边界与报告方式见 [安全策略](SECURITY.md)。
 
@@ -98,7 +124,7 @@ pnpm --dir frontend install
 
 ## 项目状态
 
-当前版本为 **0.7.7**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
+当前版本为 **0.8.0**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
 
 欢迎提交问题和改进建议。参与前请阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
 

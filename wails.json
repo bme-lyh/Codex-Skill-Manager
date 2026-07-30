@@ -2,11 +2,18 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "codex-skill-manager",
   "outputfilename": "CodexSkillManager",
-  "frontend:install": "pnpm install --frozen-lockfile=false",
+  "frontend:install": "pnpm install --frozen-lockfile",
   "frontend:build": "pnpm run build",
   "frontend:dev:watcher": "pnpm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
     "name": "Codex Skill Manager Contributors"
+  },
+  "info": {
+    "companyName": "Codex Skill Manager Contributors",
+    "productName": "Codex Skill Manager",
+    "productVersion": "0.8.0",
+    "copyright": "Copyright (c) 2026 Codex Skill Manager Contributors",
+    "comments": "Codex Skill Manager for Windows"
   }
 }

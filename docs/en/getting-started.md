@@ -12,13 +12,75 @@ Portable releases contain `portable.marker` and store configuration and runtime 
 The first-run interface is Simplified Chinese. Open **设置 → 语言** and choose
 **English** to switch immediately; the selection is saved automatically.
 
+## Install a source build to a chosen directory
+
+From the repository root, build the application and then run the source-only
+installation script:
+
+```powershell
+pnpm --dir frontend install --frozen-lockfile
+.\scripts\build.ps1
+.\scripts\install.ps1 -InstallDirectory "D:\Apps\CodexSkillManager"
+```
+
+If Windows execution policy blocks the source installation script, use:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\install.ps1 `
+  -InstallDirectory "D:\Apps\CodexSkillManager"
+```
+
+Release archives do not require this script: extract the selected archive and
+run the executable directly.
+
 ## Manage existing Skills
 
 Open **Skills**, select unmanaged items, and click **Manage**. The read-only preview shows detected repositories, source paths, proposed groups, confidence, and scan results. Confirming the plan records provenance and hashes; it does not move or rewrite Skill content.
 
 ## Install a new Skill
 
-Click **Install Skill**, choose GitHub or local directory, and provide the source. GitHub input may be a repository URL, a path inside a repository, or a direct `SKILL.md` URL. The application resolves a commit, downloads to staging, discovers Skills, scans actual installation targets, and asks you to select the final targets.
+Click **Install Skill**, choose GitHub or local directory, and provide the
+source. GitHub input may be a repository URL, a path inside a repository, or a
+direct `SKILL.md` URL. Both installation modes pin GitHub input to an immutable
+commit or validate an explicit local directory, discover Skills, scan the actual
+targets, and ask you to select the final Skills.
+
+**Standard installation** copies only the selected Skill directories. It does
+not install extra tools, configure MCP, or execute repository scripts.
+
+**Codex assisted installation** is for repositories that also need a Python
+tool or Codex MCP integration. Selecting this mode is the explicit opt-in for
+the current installation. Check Codex in Settings and make sure the CLI is
+installed, signed in, and has available usage. The app packages the complete
+prepared source for Codex with shell access disabled, then shows a summary, requirements,
+typed steps, and required permissions. Select the Skills, approve each required
+permission, and provide a real Git or SVN project directory if MCP configuration
+needs one.
+
+Automatic execution is limited to installing Skills, installing a verified
+Python tool from official PyPI, and writing a manager-owned Codex MCP entry.
+Repository scripts and free-form commands proposed by Codex are never run.
+Unsupported work remains a manual step. The app can finish supported steps
+first, then reports a partial result until the manual work is complete. Managed
+Python and MCP automation requires a GitHub source so PyPI ownership can be
+verified. When you start assisted analysis, the app may download Wheels from
+official PyPI into isolated staging to create a complete dependency lock; no
+package is installed or run at that stage. Local directories still support
+standard installation and packaged Codex analysis. Source context is processed
+through Codex CLI, so private-repository users should consider their data and
+usage requirements before enabling it.
+
+Source, GitHub 403, Codex, and execution errors stay visible inside the
+installation dialog. Rate limits show a reset countdown, and Codex CLI errors
+link to Settings. You can retry, cancel, roll back, or preserve the source
+analysis and switch to standard installation. Long-running work can continue
+after the dialog is hidden. Reopening restores its progress. A failed retry
+returns to approval with only the exact prior Skill subset, permissions, and
+project root. Partial manual work and its rollback entry remain in History.
+
+The CLI exposes the same two-phase workflow; see the
+[CLI reference](cli-reference.md#codex-assisted-installation).
 
 ## Check for updates
 

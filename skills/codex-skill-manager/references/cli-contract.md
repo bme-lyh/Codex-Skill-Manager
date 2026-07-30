@@ -13,6 +13,7 @@ csm --json dashboard
 csm --json audit
 csm --json check
 csm --json history
+csm --json version
 csm --json codex review --report SCAN_ID --skill SKILL_A --skill SKILL_B
 ```
 
@@ -35,6 +36,27 @@ csm --json install --plan-id PLAN_ID --apply --skill SKILL_NAME
 
 Local installation uses `install --local ABSOLUTE_PATH`, followed by the
 same apply command. Repeat `--skill` to select multiple skills.
+
+Two-phase Codex assisted installation:
+
+```powershell
+csm --json install --url https://github.com/OWNER/REPO --assist
+csm --json install --assist --plan-id ASSISTED_PLAN --apply `
+  --skill SKILL_NAME --grant PERMISSION_ID
+```
+
+Use `--all` instead of repeated `--skill` when the user approved every candidate.
+Repeat `--grant` only for permission IDs shown by the plan. Add
+`--project-root ABSOLUTE_GIT_OR_SVN_PATH` only when `needsProjectRoot` is true.
+Creating a plan cannot be combined with `--apply`.
+
+The `--assist` flag is the explicit opt-in for that installation. It is
+independent of the Security Center risk-review toggle but uses the configured
+Codex CLI, model, reasoning effort, and account usage. Read the structured
+summary, requirements, steps, warnings, permissions, and recovery fields.
+Codex output cannot authorize arbitrary commands. Approved automatic steps may
+finish before a `partial` result reports required manual work; internal plan
+files are not a public interface.
 
 Two-phase management of existing unmanaged Skills:
 
@@ -74,4 +96,6 @@ csm --json rollback --transaction TRANSACTION_ID
 
 Exit 0 means success, 1 means operational or policy failure, and 2 means invalid
 usage. JSON output has `schemaVersion`, `command`, `status`, optional `data`,
-and optional `error`.
+and optional `error`, including for `version`. Invalid flags, unexpected
+arguments, and missing required options return 2 before the requested operation
+runs.

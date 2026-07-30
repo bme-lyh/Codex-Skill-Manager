@@ -14,7 +14,10 @@ $screens = @(
     @{ File = "updates.png"; Label = "Update Center" },
     @{ File = "security-summary.png"; Label = "Security Summary" },
     @{ File = "security-clusters.png"; Label = "Risk Clusters & Codex Review" },
-    @{ File = "install-preview.png"; Label = "Install & Safety Preview" },
+    @{ File = "install-source.png"; Label = "Install from GitHub or a Local Folder" },
+    @{ File = "assisted-plan.png"; Label = "Codex Plan, Permissions & Safety Review" },
+    @{ File = "assisted-permissions.png"; Label = "Explicit Permissions & Project Scope" },
+    @{ File = "assisted-result.png"; Label = "Execution Progress, Result & Recovery" },
     @{ File = "history.png"; Label = "History & Rollback" },
     @{ File = "quarantine.png"; Label = "Quarantine" },
     @{ File = "reports.png"; Label = "Reports" },
@@ -25,7 +28,7 @@ $screens = @(
 $columns = 4
 $rows = [Math]::Ceiling($screens.Count / $columns)
 $tileWidth = 600
-$imageHeight = 338
+$imageHeight = 375
 $labelHeight = 42
 $gap = 18
 $canvasWidth = ($columns * $tileWidth) + (($columns + 1) * $gap)

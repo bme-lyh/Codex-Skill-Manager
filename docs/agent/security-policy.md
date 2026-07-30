@@ -15,10 +15,65 @@ CSM is deny-by-default at the mutation boundary:
 - source commits and installed file hashes are recorded;
 - GitHub secrets are not written to config, logs or reports.
 
-Local scanning is the default. Codex CLI review is opt-in and runs with the full
-target directory as its read-only working context. It inventories the target and
-may read relevant implementation, scripts, tests, examples and documentation.
-Local rule clusters are supplemental leads. The ephemeral session strips common
+Local scanning is the default. Codex CLI review is opt-in and packages the full
+selected group into model input. Text is included verbatim, binary files use
+immutable metadata, the shell tool is disabled, and the working directory
+contains only manager-owned output. Local rule clusters are supplemental leads. The ephemeral session strips common
 secret environment variables, disables approval and returns schema-validated
 output. Repository text remains untrusted data; only an explicit human action
 changes ignore state.
+
+Codex assisted installation is also opt-in and must start from the ordinary
+commit-pinned GitHub or explicit-local, scanned source preview. The complete
+prepared source is packaged into the model input; text is verbatim and binary
+files are represented by path, size, and SHA-256. The session disables the shell
+tool and runs from a manager-owned output directory. Its output is only a
+declarative proposal.
+
+The global `codexReview.enabled` setting gates Security Center risk review only.
+Selecting the assisted mode in the desktop or passing CLI `--assist` is the
+per-install opt-in and still uses the configured CLI path, model, reasoning
+effort, and account usage.
+
+Local code must derive permissions and restrict execution to:
+
+- exact selected Skill installation through the normal manager;
+- an exact-version, repository-matched Python package whose complete Wheel-only
+  dependency closure is resolved from official PyPI before approval;
+- a new manager-owned Codex MCP entry that invokes that managed executable only
+  with the fixed `serve` argument and an explicit version-controlled project
+  root.
+
+Every resolved Wheel is identified by project, version, filename, compatibility
+tags, and SHA-256 in the plan digest. Pure Wheels use the ordinary managed-tool
+permissions. Platform-compatible native Wheels additionally derive the explicit
+`managed-native-code` high-risk permission and list each affected Wheel and
+hash. Unknown or incompatible native platforms remain manual.
+
+The resolver must clear inherited proxy and `PIP_*` network configuration and
+force app-launched pip through a temporary loopback CONNECT proxy restricted to
+`pypi.org:443` and `files.pythonhosted.org:443`. TLS remains end-to-end in pip.
+Each accepted artifact must match official PyPI metadata by normalized project,
+version, filename, URL, and SHA-256. This is process configuration, not an
+OS-level network sandbox; the trust boundary therefore includes the selected
+local Python and pip executables.
+
+Apply never resolves dependencies again. It verifies that the cached Wheel set
+exactly matches the approved lock, creates the managed environment, and invokes
+pip with `--no-index --require-hashes`. If official metadata, repository
+ownership, the complete Wheel closure, or the bounded cache cannot be verified
+during analysis, the integration and dependent MCP action become required
+manual steps instead of falling back to a dynamic runtime install.
+
+Repository scripts, arbitrary shell, source package builds, model-selected
+paths, model-selected environment variables, direct-URL Python dependencies,
+existing unowned MCP entries, and unknown action kinds are never executed or
+overwritten. Unsupported work stays manual. Each executable permission and
+target requires explicit user approval.
+
+Assisted mutations must keep a parent transaction, per-step state, backup or
+quarantine paths, hashes, failure reporting, and a recovery action. Automatic
+recovery must refuse to overwrite any output that changed after apply and must
+surface an exact manual recovery path instead. MCP configuration must be
+fingerprinted again after the write-ahead checkpoint and at the final atomic
+replacement boundary; any mismatch aborts without replacing the current file.

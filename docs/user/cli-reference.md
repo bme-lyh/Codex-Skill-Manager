@@ -1,11 +1,15 @@
 # CLI 参考
 
-所有命令支持：
+用法：
 
 ```text
---config <绝对路径>
---json
+csm [--config 绝对路径] [--json] 命令
 ```
+
+全局选项可以写在命令前后。`--json` 会返回统一结构，其中包含
+`schemaVersion`、`command`、`status`，以及可选的 `data` 和 `error`；
+`csm --json version` 也遵循这一结构。直接运行 `csm` 会显示内置命令列表并返回
+退出码 2；当前没有单独的 `help` 命令。
 
 ## 只读命令
 
@@ -13,10 +17,11 @@
 csm discover
 csm dashboard
 csm audit [--skill NAME]
-csm check
+csm check [--group GROUP_ID ...] [--force]
 csm history
 csm reports
 csm doctor
+csm version
 ```
 
 不指定 `--skill` 时，`audit` 会检查全部非系统 Skills，并按应用中的分组记录结果；指定后只检查该 Skill。
@@ -85,6 +90,36 @@ csm install --url "https://github.com/owner/repo" --ref v1.2.0
 csm install --local "D:\skills\package"
 ```
 
+不带 `--assist` 时，上述命令始终使用标准的两阶段 Skill 安装，不安装额外工具，
+也不修改 Codex MCP。
+
+## Codex 辅助安装
+
+CLI 同样使用两阶段流程。第一步只分析并输出计划：
+
+```powershell
+csm --json install --url "https://github.com/owner/repo" --assist
+```
+
+核对返回的 `id`、`skills`、`steps`、`permissions`、`warnings` 和
+`needsProjectRoot`。第二步明确选择 Skills，并逐个传入计划中要批准的权限 ID：
+
+```powershell
+csm --json install --assist --plan-id ASSISTED_PLAN --apply `
+  --skill skill-a `
+  --grant PERMISSION_ID `
+  --project-root "D:\work\my-project"
+```
+
+只传计划实际列出的权限；`--all` 可代替多个 `--skill`。只有计划要求 MCP 时才传
+`--project-root`，它必须是真实的 Git 或 SVN 工作目录。不能在创建辅助计划时同时
+使用 `--apply`。
+
+输入 `--assist` 本身就是本次明确启用，不受安全中心“Codex 风险复核”总开关
+控制；它仍使用设置中的 CLI 路径、模型和推理强度，并消耗 Codex 额度。CLI 返回
+最终结构化计划或结果；桌面界面另外提供实时进度、取消和恢复展示。内部计划快照
+不是稳定的外部文件接口，应始终通过命令返回的 ID 继续操作。
+
 ## 应用计划
 
 ```powershell
@@ -147,3 +182,12 @@ csm warning --report SCAN_ID --restore
 
 所有级别和确定性规则使用同一命令；`--confirm-deterministic` 仅为旧脚本兼容保留。
 `--dry-run` 会返回明确的风险簇目标而不修改状态。
+
+## 输出与退出码
+
+- `0`：成功。
+- `1`：运行失败或安全策略阻止。
+- `2`：命令、参数或必填选项无效。
+
+无效参数会在对应操作执行前结束。JSON 模式仍会返回统一错误结构，不会混入
+Flag 解析器的额外文本。

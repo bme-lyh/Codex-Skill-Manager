@@ -1,5 +1,22 @@
-import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, InstallPreview, RiskCluster, ScanReport, Transaction, UpdateCheckResult } from "./types";
+import type {
+  AdoptionPreview,
+  AssistedInstallPlan,
+  AssistedInstallProgress,
+  AssistedInstallResult,
+  CodexCLIStatus,
+  CodexReviewProgress,
+  Dashboard,
+  Finding,
+  InstallPreview,
+  RiskCluster,
+  ScanReport,
+  Transaction,
+  UpdateCheckResult
+} from "./types";
 import {
+  demoAssistedInstallPlan,
+  demoAssistedInstallProgress,
+  demoAssistedInstallResult,
   demoCodexStatus,
   demoConfig,
   demoDashboard,
@@ -38,6 +55,16 @@ type Backend = {
   ValidateGitHubCredentials(): Promise<Record<string, any>>;
   GetCodexCLIStatus(): Promise<CodexCLIStatus>;
   ReviewScanWithCodex(report: ScanReport, skillNames: string[]): Promise<ScanReport>;
+  AnalyzeInstallWithCodex?(installPlanId: string): Promise<AssistedInstallPlan>;
+  ApplyAssistedInstall?(
+    planId: string,
+    skills: string[],
+    permissionIds: string[],
+    projectRoot: string
+  ): Promise<AssistedInstallResult>;
+  GetAssistedInstallPlan?(planId: string): Promise<AssistedInstallPlan>;
+  GetAssistedInstallProgress?(referenceId: string): Promise<AssistedInstallProgress>;
+  CancelAssistedInstall?(referenceId: string): Promise<void>;
   GetDiagnostics(): Promise<Record<string, any>>;
   ListQuarantine(): Promise<Array<{ skill: string; transactionId: string; path: string }>>;
 };
@@ -81,6 +108,37 @@ function normalizeScan(value: ScanReport): ScanReport {
     activeHighestSeverity: value?.activeHighestSeverity ?? value?.highestSeverity ?? "informational",
     activeFindingCount: value?.activeFindingCount ?? findings.filter(f => !f.ignored).length,
     ignoredFindingCount: value?.ignoredFindingCount ?? findings.filter(f => f.ignored).length
+  };
+}
+
+function normalizeAssistedPlan(value: AssistedInstallPlan): AssistedInstallPlan {
+  return {
+    ...value,
+    repository: value?.repository ?? demoAssistedInstallPlan.repository,
+    requirements: value?.requirements ?? [],
+    steps: value?.steps ?? [],
+    permissions: value?.permissions ?? [],
+    warnings: value?.warnings ?? [],
+    contextFileCount: value?.contextFileCount ?? 0,
+    needsProjectRoot: value?.needsProjectRoot ?? false,
+    skills: value?.skills ?? [],
+    scan: value?.scan ? normalizeScan(value.scan) : undefined
+  };
+}
+
+function normalizeAssistedProgress(value: AssistedInstallProgress): AssistedInstallProgress {
+  return {
+    ...value,
+    referenceId: value?.referenceId ?? value?.runId ?? "",
+    runId: value?.runId ?? value?.referenceId ?? "",
+    sequence: value?.sequence ?? 0,
+    phase: value?.phase ?? "queued",
+    message: value?.message ?? "",
+    completedSteps: value?.completedSteps ?? 0,
+    totalSteps: value?.totalSteps ?? value?.steps?.length ?? 0,
+    activityCount: value?.activityCount ?? 0,
+    steps: value?.steps ?? [],
+    terminal: value?.terminal ?? false
   };
 }
 
@@ -222,10 +280,87 @@ export const api = {
     if (!b) throw new Error("桌面后端尚未连接");
     return normalizeScan(await b.ReviewScanWithCodex(report, skillNames));
   },
+  analyzeAssisted: async (installPlanId: string): Promise<AssistedInstallPlan> => {
+    const b = backend();
+    if (!b) return normalizeAssistedPlan(demoAssistedInstallPlan);
+    if (typeof b.AnalyzeInstallWithCodex !== "function") {
+      throw new Error("当前桌面后端不支持 Codex 一键安装，请升级应用或切换到标准安装");
+    }
+    return normalizeAssistedPlan(await b.AnalyzeInstallWithCodex(installPlanId));
+  },
+  applyAssisted: async (
+    planId: string,
+    skills: string[],
+    permissionIds: string[],
+    projectRoot = ""
+  ): Promise<AssistedInstallResult> => {
+    const b = backend();
+    if (!b) return {
+      ...demoAssistedInstallResult,
+      plan: normalizeAssistedPlan(demoAssistedInstallResult.plan),
+      progress: demoAssistedInstallResult.progress
+        ? normalizeAssistedProgress(demoAssistedInstallResult.progress)
+        : undefined
+    };
+    if (typeof b.ApplyAssistedInstall !== "function") {
+      throw new Error("当前桌面后端不支持执行 Codex 一键安装，请升级应用或切换到标准安装");
+    }
+    const result = await b.ApplyAssistedInstall(planId, skills, permissionIds, projectRoot);
+    return {
+      ...result,
+      plan: normalizeAssistedPlan(result.plan),
+      progress: result.progress ? normalizeAssistedProgress(result.progress) : undefined
+    };
+  },
+  getAssistedPlan: async (planId: string): Promise<AssistedInstallPlan> => {
+    const b = backend();
+    if (!b) return normalizeAssistedPlan({ ...demoAssistedInstallPlan, id: planId || demoAssistedInstallPlan.id });
+    if (typeof b.GetAssistedInstallPlan !== "function") {
+      throw new Error("当前桌面后端不支持恢复 Codex 一键安装计划");
+    }
+    return normalizeAssistedPlan(await b.GetAssistedInstallPlan(planId));
+  },
+  getAssistedProgress: async (referenceId: string): Promise<AssistedInstallProgress> => {
+    const b = backend();
+    if (!b) return normalizeAssistedProgress({
+      ...demoAssistedInstallProgress,
+      referenceId,
+      runId: "",
+      sequence: 0,
+      phase: "ready",
+      message: "",
+      completedSteps: 0,
+      activityCount: 0,
+      terminal: false,
+      steps: demoAssistedInstallProgress.steps.map(step => ({
+        ...step,
+        status: step.id === "initialize-project-index" ? "manual-pending" : "queued"
+      }))
+    });
+    if (typeof b.GetAssistedInstallProgress !== "function") {
+      throw new Error("当前桌面后端不支持恢复 Codex 一键安装进度");
+    }
+    return normalizeAssistedProgress(await b.GetAssistedInstallProgress(referenceId));
+  },
+  cancelAssisted: async (referenceId: string): Promise<void> => {
+    const b = backend();
+    if (!b) return;
+    if (typeof b.CancelAssistedInstall !== "function") {
+      throw new Error("当前桌面后端不支持取消 Codex 一键安装");
+    }
+    await b.CancelAssistedInstall(referenceId);
+  },
   onCodexReviewProgress: (handler: (progress: CodexReviewProgress) => void): (() => void) => {
     const wailsRuntime = (window as any).runtime;
     if (typeof wailsRuntime?.EventsOn !== "function") return () => undefined;
     const unsubscribe = wailsRuntime.EventsOn("codex-review-progress", handler);
+    return typeof unsubscribe === "function" ? unsubscribe : () => undefined;
+  },
+  onAssistedInstallProgress: (handler: (progress: AssistedInstallProgress) => void): (() => void) => {
+    const wailsRuntime = (window as any).runtime;
+    if (typeof wailsRuntime?.EventsOn !== "function") return () => undefined;
+    const unsubscribe = wailsRuntime.EventsOn("assisted-install-progress", (progress: AssistedInstallProgress) =>
+      handler(normalizeAssistedProgress(progress)));
     return typeof unsubscribe === "function" ? unsubscribe : () => undefined;
   },
   diagnostics: async () => {

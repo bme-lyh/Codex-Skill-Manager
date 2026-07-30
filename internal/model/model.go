@@ -2,7 +2,25 @@ package model
 
 import "time"
 
-const Version = "0.7.7"
+const Version = "0.8.0"
+
+const (
+	AssistedInstallStepInstallSkills     = "install-skills"
+	AssistedInstallStepManagedPythonTool = "managed-python-tool"
+	AssistedInstallStepConfigureCodexMCP = "configure-codex-mcp"
+	AssistedInstallStepManual            = "manual"
+
+	AssistedInstallPermissionSkillsWrite       = "skills-write"
+	AssistedInstallPermissionPyPIWheelLock     = "pypi-wheel-lock"
+	AssistedInstallPermissionManagedToolWrite  = "managed-tool-write"
+	AssistedInstallPermissionManagedToolRun    = "managed-tool-run"
+	AssistedInstallPermissionManagedNativeCode = "managed-native-code"
+	AssistedInstallPermissionCodexMCPConfig    = "codex-mcp-config"
+
+	// AssistedInstallPermissionPyPINetwork is a deprecated source-compatible
+	// alias. Applying the immutable Wheel lock is offline and grants no network.
+	AssistedInstallPermissionPyPINetwork = AssistedInstallPermissionPyPIWheelLock
+)
 
 type RiskSeverity string
 
@@ -362,6 +380,137 @@ type InstallPreview struct {
 	ExpiresAt   time.Time        `json:"expiresAt"`
 }
 
+type AssistedInstallRequirement struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	VersionSpec string `json:"versionSpec,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Required    bool   `json:"required"`
+}
+
+// AssistedPythonWheelLock is the immutable, approval-time identity of one
+// Wheel in a managed tool's complete dependency closure. Native Wheels require
+// a separate high-risk permission.
+type AssistedPythonWheelLock struct {
+	Name     string   `json:"name"`
+	Version  string   `json:"version"`
+	Filename string   `json:"filename"`
+	SHA256   string   `json:"sha256"`
+	Native   bool     `json:"native,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+}
+
+type AssistedInstallStep struct {
+	ID                 string                    `json:"id"`
+	Kind               string                    `json:"kind"`
+	Title              string                    `json:"title"`
+	Description        string                    `json:"description"`
+	Status             string                    `json:"status"`
+	Required           bool                      `json:"required"`
+	Supported          bool                      `json:"supported"`
+	SkillNames         []string                  `json:"skillNames,omitempty"`
+	PythonPackage      string                    `json:"pythonPackage,omitempty"`
+	VersionSpec        string                    `json:"versionSpec,omitempty"`
+	PythonWheels       []AssistedPythonWheelLock `json:"pythonWheels,omitempty"`
+	Entrypoint         string                    `json:"entrypoint,omitempty"`
+	MCPServerName      string                    `json:"mcpServerName,omitempty"`
+	MCPArgs            []string                  `json:"mcpArgs,omitempty"`
+	PermissionIDs      []string                  `json:"permissionIds,omitempty"`
+	Reversible         bool                      `json:"reversible"`
+	Recovery           string                    `json:"recovery,omitempty"`
+	TargetPath         string                    `json:"targetPath,omitempty"`
+	BackupPath         string                    `json:"backupPath,omitempty"`
+	ManifestPath       string                    `json:"manifestPath,omitempty"`
+	ChildTransactionID string                    `json:"childTransactionId,omitempty"`
+	OutputHashes       map[string]string         `json:"outputHashes,omitempty"`
+	OriginalMissing    bool                      `json:"originalMissing,omitempty"`
+	AppliedHash        string                    `json:"appliedHash,omitempty"`
+	Error              string                    `json:"error,omitempty"`
+	StartedAt          *time.Time                `json:"startedAt,omitempty"`
+	CompletedAt        *time.Time                `json:"completedAt,omitempty"`
+}
+
+type AssistedInstallPermission struct {
+	ID          string   `json:"id"`
+	Kind        string   `json:"kind"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Risk        string   `json:"risk"`
+	Required    bool     `json:"required"`
+	Approved    bool     `json:"approved"`
+	Targets     []string `json:"targets,omitempty"`
+}
+
+type AssistedInstallPlan struct {
+	ID                string                       `json:"id"`
+	SourcePlanID      string                       `json:"sourcePlanId"`
+	Status            string                       `json:"status"`
+	TransactionID     string                       `json:"transactionId,omitempty"`
+	RecoveryStatus    string                       `json:"recoveryStatus,omitempty"`
+	Repository        Repository                   `json:"repository"`
+	Summary           string                       `json:"summary"`
+	Approach          string                       `json:"approach"`
+	Complexity        string                       `json:"complexity"`
+	Requirements      []AssistedInstallRequirement `json:"requirements"`
+	Steps             []AssistedInstallStep        `json:"steps"`
+	Permissions       []AssistedInstallPermission  `json:"permissions"`
+	Warnings          []string                     `json:"warnings"`
+	Skills            []CandidateSkill             `json:"skills,omitempty"`
+	SelectedSkills    []string                     `json:"selectedSkills,omitempty"`
+	Scan              ScanReport                   `json:"scan"`
+	NeedsProjectRoot  bool                         `json:"needsProjectRoot"`
+	ProjectRootReason string                       `json:"projectRootReason,omitempty"`
+	ProjectRoot       string                       `json:"projectRoot,omitempty"`
+	CodexModel        string                       `json:"codexModel"`
+	ReasoningEffort   string                       `json:"reasoningEffort"`
+	OutputLocale      string                       `json:"outputLocale,omitempty"`
+	ContextFileCount  int                          `json:"contextFileCount"`
+	ContextDigest     string                       `json:"contextDigest"`
+	PlanDigest        string                       `json:"planDigest"`
+	ConfigFingerprint string                       `json:"configFingerprint,omitempty"`
+	CreatedAt         time.Time                    `json:"createdAt"`
+	ExpiresAt         time.Time                    `json:"expiresAt"`
+}
+
+type AssistedInstallProgressStep struct {
+	ID          string     `json:"id"`
+	Kind        string     `json:"kind"`
+	Title       string     `json:"title"`
+	Status      string     `json:"status"`
+	Message     string     `json:"message,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	StartedAt   *time.Time `json:"startedAt,omitempty"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+}
+
+type AssistedInstallProgress struct {
+	ReferenceID    string                        `json:"referenceId"`
+	RunID          string                        `json:"runId"`
+	Sequence       uint64                        `json:"sequence"`
+	Phase          string                        `json:"phase"`
+	Message        string                        `json:"message"`
+	CurrentStepID  string                        `json:"currentStepId,omitempty"`
+	CompletedSteps int                           `json:"completedSteps"`
+	TotalSteps     int                           `json:"totalSteps"`
+	ActivityCount  int                           `json:"activityCount"`
+	Steps          []AssistedInstallProgressStep `json:"steps"`
+	StartedAt      time.Time                     `json:"startedAt"`
+	UpdatedAt      time.Time                     `json:"updatedAt"`
+	CompletedAt    *time.Time                    `json:"completedAt,omitempty"`
+	Terminal       bool                          `json:"terminal"`
+	Error          string                        `json:"error,omitempty"`
+}
+
+type AssistedInstallResult struct {
+	ReferenceID string                   `json:"referenceId,omitempty"`
+	RunID       string                   `json:"runId,omitempty"`
+	Plan        AssistedInstallPlan      `json:"plan"`
+	Transaction Transaction              `json:"transaction"`
+	Progress    *AssistedInstallProgress `json:"progress,omitempty"`
+}
+
 type AdoptionPreview struct {
 	ID        string           `json:"id"`
 	Skills    []Skill          `json:"skills"`
@@ -435,14 +584,17 @@ type CodexReasoningOption struct {
 }
 
 type Transaction struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	Status      string    `json:"status"`
-	Targets     []string  `json:"targets"`
-	StartedAt   time.Time `json:"startedAt"`
-	CompletedAt time.Time `json:"completedAt,omitempty"`
-	BackupPaths []string  `json:"backupPaths,omitempty"`
-	Error       string    `json:"error,omitempty"`
+	ID             string                `json:"id"`
+	Type           string                `json:"type"`
+	Status         string                `json:"status"`
+	Targets        []string              `json:"targets"`
+	StartedAt      time.Time             `json:"startedAt"`
+	CompletedAt    time.Time             `json:"completedAt,omitempty"`
+	BackupPaths    []string              `json:"backupPaths,omitempty"`
+	Steps          []AssistedInstallStep `json:"steps,omitempty"`
+	ProjectRoot    string                `json:"projectRoot,omitempty"`
+	RecoveryStatus string                `json:"recoveryStatus,omitempty"`
+	Error          string                `json:"error,omitempty"`
 }
 
 type Dashboard struct {
