@@ -9,6 +9,27 @@ import (
 	"testing"
 )
 
+func approvedTestProjectRoot(t *testing.T, path string) string {
+	t.Helper()
+	approved, err := validateAssistedProjectRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return approved
+}
+
+func TestValidateAssistedProjectRootIsStableAfterApproval(t *testing.T) {
+	project := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(filepath.Join(project, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	first := approvedTestProjectRoot(t, project)
+	second := approvedTestProjectRoot(t, first)
+	if !strings.EqualFold(first, second) {
+		t.Fatalf("approved project root was not stable: first %q, second %q", first, second)
+	}
+}
+
 func TestConfigureManagedMCPBacksUpAndRestoresConfig(t *testing.T) {
 	m := newTestManager(t)
 	codexHome := filepath.Join(t.TempDir(), "codex")
@@ -32,6 +53,7 @@ func TestConfigureManagedMCPBacksUpAndRestoresConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(project, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	project = approvedTestProjectRoot(t, project)
 	before, err := fileFingerprint(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -92,6 +114,7 @@ func TestConfigureManagedMCPRejectsDriftAndExistingUnownedServer(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(project, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	project = approvedTestProjectRoot(t, project)
 	hash, err := fileFingerprint(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -133,6 +156,7 @@ func TestConfigureManagedMCPPersistsIntentBeforeWritingConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(project, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	project = approvedTestProjectRoot(t, project)
 	before, err := fileFingerprint(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -200,6 +224,7 @@ func TestConfigureManagedMCPRefusesConfigDriftAfterCheckpoint(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(project, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	project = approvedTestProjectRoot(t, project)
 	before, err := fileFingerprint(configPath)
 	if err != nil {
 		t.Fatal(err)
