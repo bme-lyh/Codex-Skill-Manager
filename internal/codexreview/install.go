@@ -218,6 +218,11 @@ func AnalyzeInstall(
 		return model.AssistedInstallPlan{}, err
 	}
 	schemaPath := filepath.Join(workDir, "install-plan-schema.json")
+	if err := validateStrictCodexSchema([]byte(installPlanOutputSchema)); err != nil {
+		err = fmt.Errorf("invalid assisted-install output schema: %w", err)
+		tracker.fail("codex-analysis", err)
+		return model.AssistedInstallPlan{}, err
+	}
 	if err := os.WriteFile(schemaPath, []byte(installPlanOutputSchema), 0o600); err != nil {
 		tracker.fail("codex-analysis", err)
 		return model.AssistedInstallPlan{}, err
@@ -365,7 +370,9 @@ func runInstallAnalysisAttempt(
 	if err := command.Start(); err != nil {
 		return generatedInstallPlan{}, err
 	}
-	_, streamErr := io.Copy(activityWriter{onActivity: onActivity}, stdout)
+	stdoutEvents := newCodexJSONLDiagnosticWriter(onActivity, 8<<10)
+	_, streamErr := io.Copy(stdoutEvents, stdout)
+	stdoutEvents.Flush()
 	waitErr := command.Wait()
 	if waitErr != nil {
 		if errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
@@ -374,6 +381,9 @@ func runInstallAnalysisAttempt(
 			)
 		}
 		message := strings.TrimSpace(diagnostic.String())
+		if message == "" {
+			message = strings.TrimSpace(stdoutEvents.String())
+		}
 		if message == "" {
 			message = waitErr.Error()
 		}
@@ -401,6 +411,106 @@ func runInstallAnalysisAttempt(
 	return generated, nil
 }
 
+type codexJSONLDiagnosticWriter struct {
+	activity   activityWriter
+	pending    []byte
+	diagnostic boundedDiagnosticBuffer
+}
+
+func newCodexJSONLDiagnosticWriter(onActivity func(), limit int) *codexJSONLDiagnosticWriter {
+	return &codexJSONLDiagnosticWriter{
+		activity:   activityWriter{onActivity: onActivity},
+		diagnostic: newBoundedDiagnosticBuffer(limit),
+	}
+}
+
+func (writer *codexJSONLDiagnosticWriter) Write(data []byte) (int, error) {
+	written := len(data)
+	_, _ = writer.activity.Write(data)
+	writer.pending = append(writer.pending, data...)
+	for {
+		index := bytes.IndexByte(writer.pending, '\n')
+		if index < 0 {
+			break
+		}
+		writer.consume(writer.pending[:index])
+		writer.pending = writer.pending[index+1:]
+	}
+	// Successful item-completion events can contain the model response. Never
+	// retain an unbounded line merely to diagnose a later process failure.
+	if len(writer.pending) > 256<<10 {
+		writer.pending = writer.pending[:0]
+	}
+	return written, nil
+}
+
+func (writer *codexJSONLDiagnosticWriter) Flush() {
+	if len(writer.pending) == 0 {
+		return
+	}
+	writer.consume(writer.pending)
+	writer.pending = writer.pending[:0]
+}
+
+func (writer *codexJSONLDiagnosticWriter) String() string {
+	return writer.diagnostic.String()
+}
+
+func (writer *codexJSONLDiagnosticWriter) consume(line []byte) {
+	line = bytes.TrimSpace(line)
+	if len(line) == 0 {
+		return
+	}
+	var event map[string]any
+	if err := json.Unmarshal(line, &event); err != nil {
+		return
+	}
+	eventType, _ := event["type"].(string)
+	eventType = strings.ToLower(strings.TrimSpace(eventType))
+	if !strings.Contains(eventType, "error") && !strings.Contains(eventType, "fail") {
+		return
+	}
+	message := codexEventFailureMessage(event)
+	if message == "" {
+		return
+	}
+	if writer.diagnostic.String() != "" {
+		_, _ = writer.diagnostic.Write([]byte("\n"))
+	}
+	_, _ = writer.diagnostic.Write([]byte(message))
+}
+
+func codexEventFailureMessage(event map[string]any) string {
+	messages := make([]string, 0, 2)
+	appendMessage := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		for _, existing := range messages {
+			if existing == value {
+				return
+			}
+		}
+		messages = append(messages, value)
+	}
+	if message, ok := event["message"].(string); ok {
+		appendMessage(message)
+	}
+	switch value := event["error"].(type) {
+	case string:
+		appendMessage(value)
+	case map[string]any:
+		if message, ok := value["message"].(string); ok {
+			appendMessage(message)
+		}
+		if code, ok := value["code"].(string); ok && len(messages) == 0 {
+			appendMessage(code)
+		}
+	}
+	return strings.Join(messages, ": ")
+}
+
 func ensureJSONEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
@@ -408,6 +518,69 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 			return errors.New("Codex assisted-install result contains multiple JSON values")
 		}
 		return fmt.Errorf("decode trailing Codex assisted-install data: %w", err)
+	}
+	return nil
+}
+
+func validateStrictCodexSchema(data []byte) error {
+	var schema any
+	if err := json.Unmarshal(data, &schema); err != nil {
+		return err
+	}
+	return validateStrictCodexSchemaNode(schema, "$")
+}
+
+func validateStrictCodexSchemaNode(value any, path string) error {
+	switch node := value.(type) {
+	case map[string]any:
+		if rawProperties, exists := node["properties"]; exists {
+			properties, ok := rawProperties.(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s properties must be an object", path)
+			}
+			additional, ok := node["additionalProperties"].(bool)
+			if !ok || additional {
+				return fmt.Errorf("%s must set additionalProperties to false", path)
+			}
+			rawRequired, ok := node["required"].([]any)
+			if !ok {
+				return fmt.Errorf("%s must require every property", path)
+			}
+			required := make(map[string]bool, len(rawRequired))
+			for _, item := range rawRequired {
+				name, ok := item.(string)
+				if !ok || name == "" {
+					return fmt.Errorf("%s contains an invalid required property", path)
+				}
+				required[name] = true
+			}
+			for name, property := range properties {
+				if !required[name] {
+					return fmt.Errorf("%s.%s is not required", path, name)
+				}
+				if err := validateStrictCodexSchemaNode(property, path+"."+name); err != nil {
+					return err
+				}
+			}
+			for name := range required {
+				if _, exists := properties[name]; !exists {
+					return fmt.Errorf("%s requires undefined property %s", path, name)
+				}
+			}
+		}
+		for _, key := range []string{"items", "anyOf", "oneOf", "allOf"} {
+			if child, exists := node[key]; exists {
+				if err := validateStrictCodexSchemaNode(child, path+"."+key); err != nil {
+					return err
+				}
+			}
+		}
+	case []any:
+		for index, child := range node {
+			if err := validateStrictCodexSchemaNode(child, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -2177,11 +2350,11 @@ const installPlanOutputSchema = `{
           "kind": {"type": "string", "minLength": 1, "maxLength": 64},
           "name": {"type": "string", "minLength": 1, "maxLength": 200},
           "description": {"type": "string", "minLength": 1, "maxLength": 2000},
-          "versionSpec": {"type": "string", "maxLength": 120},
-          "status": {"type": "string", "maxLength": 64},
+          "versionSpec": {"type": ["string", "null"], "maxLength": 120},
+          "status": {"type": ["string", "null"], "maxLength": 64},
           "required": {"type": "boolean"}
         },
-        "required": ["id", "kind", "name", "description", "required"],
+        "required": ["id", "kind", "name", "description", "versionSpec", "status", "required"],
         "additionalProperties": false
       }
     },
@@ -2197,20 +2370,19 @@ const installPlanOutputSchema = `{
           "title": {"type": "string", "minLength": 1, "maxLength": 300},
           "description": {"type": "string", "minLength": 1, "maxLength": 3000},
           "required": {"type": "boolean"},
-          "skillNames": {"type": "array", "maxItems": 256, "items": {"type": "string", "maxLength": 200}},
-          "pythonPackage": {"type": "string", "maxLength": 128},
-          "versionSpec": {"type": "string", "maxLength": 120},
-          "entrypoint": {"type": "string", "maxLength": 128},
-          "mcpServerName": {"type": "string", "maxLength": 64},
-          "mcpArgs": {"type": "array", "maxItems": 16, "items": {"type": "string", "maxLength": 128}},
+          "skillNames": {"type": ["array", "null"], "maxItems": 256, "items": {"type": "string", "maxLength": 200}},
+          "pythonPackage": {"type": ["string", "null"], "maxLength": 128},
+          "versionSpec": {"type": ["string", "null"], "maxLength": 120},
+          "entrypoint": {"type": ["string", "null"], "maxLength": 128},
+          "mcpServerName": {"type": ["string", "null"], "maxLength": 64},
+          "mcpArgs": {"type": ["array", "null"], "maxItems": 16, "items": {"type": "string", "maxLength": 128}},
           "reversible": {"type": "boolean"},
-          "recovery": {"type": "string", "maxLength": 2000},
-          "command": {"type": "string", "maxLength": 512},
-          "args": {"type": "array", "maxItems": 32, "items": {"type": "string", "maxLength": 256}},
-          "targetPath": {"type": "string", "maxLength": 512},
-          "environment": {"type": "object", "maxProperties": 16, "additionalProperties": {"type": "string", "maxLength": 512}}
+          "recovery": {"type": ["string", "null"], "maxLength": 2000},
+          "command": {"type": ["string", "null"], "maxLength": 512},
+          "args": {"type": ["array", "null"], "maxItems": 32, "items": {"type": "string", "maxLength": 256}},
+          "targetPath": {"type": ["string", "null"], "maxLength": 512}
         },
-        "required": ["id", "kind", "title", "description", "required", "reversible"],
+        "required": ["id", "kind", "title", "description", "required", "skillNames", "pythonPackage", "versionSpec", "entrypoint", "mcpServerName", "mcpArgs", "reversible", "recovery", "command", "args", "targetPath"],
         "additionalProperties": false
       }
     },

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -884,6 +885,24 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 	}
 	candidates, err := githubsource.Discover(root, repo.SourcePath)
 	if err != nil {
+		var conflict *githubsource.SkillNameConflictError
+		if errors.As(err, &conflict) && conflict.SuggestedSourcePath != "" {
+			pathParts := strings.Split(filepath.ToSlash(conflict.SuggestedSourcePath), "/")
+			for index := range pathParts {
+				pathParts[index] = url.PathEscape(pathParts[index])
+			}
+			suggestedURL := fmt.Sprintf(
+				"https://github.com/%s/tree/%s/%s",
+				repo.FullName,
+				repo.CommitSHA,
+				strings.Join(pathParts, "/"),
+			)
+			return model.InstallPreview{}, fmt.Errorf(
+				"%w; suggested Codex source URL: %s",
+				err,
+				suggestedURL,
+			)
+		}
 		return model.InstallPreview{}, err
 	}
 	if len(candidates) == 0 {

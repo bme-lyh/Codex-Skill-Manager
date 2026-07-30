@@ -29,6 +29,8 @@ export interface InstallIssueSignals {
   codexUnavailable: boolean;
   restartRequired: boolean;
   invalidInput: boolean;
+  skillVariantConflict: boolean;
+  suggestedSourceUrl: string;
 }
 
 export interface AssistedPlanDisposition {
@@ -138,6 +140,9 @@ export function classifyInstallIssue(error: unknown): InstallIssueSignals {
     rawMessage.match(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?/)?.[0] ||
     "";
   const combined = `${code} ${rawMessage} ${rawDetail}`;
+  const suggestedSourceUrl = combined.match(
+    /suggested Codex source URL:\s*(https:\/\/github\.com\/[^\s;]+)/i
+  )?.[1] ?? "";
   return {
     code,
     rawMessage,
@@ -150,7 +155,9 @@ export function classifyInstallIssue(error: unknown): InstallIssueSignals {
     restartRequired: /(?:plan|计划).*(?:expired|过期)|configuration changed after approval|配置.*(?:变化|变更)|context.*changed|上下文.*变化|digest mismatch|摘要不匹配|tamper/i
       .test(combined),
     invalidInput: /only https:\/\/github\.com|invalid GitHub repository URL|unsupported GitHub repository URL path|invalid local|无效.*(?:链接|目录|来源)/i
-      .test(combined)
+      .test(combined),
+    skillVariantConflict: /multiple different Skills use the name|conflicting repository paths/i.test(combined),
+    suggestedSourceUrl
   };
 }
 

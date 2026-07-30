@@ -459,6 +459,50 @@ func TestAssistedInstallInputPackagesContextAndDisablesShell(t *testing.T) {
 	}
 }
 
+func TestAssistedInstallOutputSchemaIsStrictCodexCompatible(t *testing.T) {
+	if err := validateStrictCodexSchema([]byte(installPlanOutputSchema)); err != nil {
+		t.Fatalf("assisted-install schema is not strict-output compatible: %v", err)
+	}
+}
+
+func TestStrictCodexSchemaRejectsOptionalProperties(t *testing.T) {
+	schema := `{
+		"type":"object",
+		"properties":{"requiredValue":{"type":"string"},"optionalValue":{"type":"string"}},
+		"required":["requiredValue"],
+		"additionalProperties":false
+	}`
+	if err := validateStrictCodexSchema([]byte(schema)); err == nil ||
+		!strings.Contains(err.Error(), "optionalValue is not required") {
+		t.Fatalf("expected an optional-property validation error, got %v", err)
+	}
+}
+
+func TestCodexJSONLDiagnosticWriterKeepsOnlyFailureMessages(t *testing.T) {
+	activityCount := 0
+	writer := newCodexJSONLDiagnosticWriter(func() { activityCount++ }, 1024)
+	stream := strings.Join([]string{
+		`{"type":"thread.started","thread_id":"secret-thread-id"}`,
+		`{"type":"item.completed","item":{"type":"agent_message","text":"private repository summary"}}`,
+		`{"type":"turn.failed","error":{"message":"Invalid schema for response_format: every property must be required"}}`,
+	}, "\n")
+	if _, err := writer.Write([]byte(stream)); err != nil {
+		t.Fatal(err)
+	}
+	writer.Flush()
+	if activityCount != 2 {
+		t.Fatalf("activity count = %d, want 2 completed JSONL records", activityCount)
+	}
+	diagnostic := writer.String()
+	if !strings.Contains(diagnostic, "Invalid schema for response_format") {
+		t.Fatalf("failure message was not retained: %q", diagnostic)
+	}
+	if strings.Contains(diagnostic, "private repository summary") ||
+		strings.Contains(diagnostic, "secret-thread-id") {
+		t.Fatalf("non-error Codex output leaked into diagnostics: %q", diagnostic)
+	}
+}
+
 func TestAssistedInstallInputAcceptsLargeComplexRepositoryContext(t *testing.T) {
 	root := t.TempDir()
 	content := strings.Repeat("package context\n", 62_500)

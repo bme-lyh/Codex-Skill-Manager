@@ -49,6 +49,9 @@ Use `--all` instead of repeated `--skill` when the user approved every candidate
 Repeat `--grant` only for permission IDs shown by the plan. Add
 `--project-root ABSOLUTE_GIT_OR_SVN_PATH` only when `needsProjectRoot` is true.
 Creating a plan cannot be combined with `--apply`.
+If discovery reports different same-name Skills, repeat the create command with
+the specific GitHub `tree/<commit>/<subtree>` URL shown by the error. A detected
+`skills-codex` subtree is a suggestion, not permission to combine variants.
 
 The `--assist` flag is the explicit opt-in for that installation. It is
 independent of the Security Center risk-review toggle but uses the configured
@@ -56,7 +59,8 @@ Codex CLI, model, reasoning effort, and account usage. Read the structured
 summary, requirements, steps, warnings, permissions, and recovery fields.
 Codex output cannot authorize arbitrary commands. Approved automatic steps may
 finish before a `partial` result reports required manual work; internal plan
-files are not a public interface.
+files are not a public interface. If assisted analysis fails, the original
+source plan remains valid for the standard Skill-only apply workflow.
 
 Two-phase management of existing unmanaged Skills:
 

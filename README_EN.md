@@ -51,6 +51,11 @@ in the installation dialog or History. Standard installation remains available
 when Codex is unavailable. See the [GUI guide](docs/en/gui-guide.md) and
 [security policy](SECURITY_EN.md) for the detailed boundaries.
 
+When a repository contains different same-name mainline and Codex variants,
+the dialog lists the conflicting paths and can switch to a detected Codex
+subtree. A failed Codex plan does not discard the completed source check, so
+the selected Skills can still be installed in standard mode.
+
 ## Optional Codex review
 
 Codex review is off by default. To use it, install and sign in to **Codex CLI**, enable the feature in Settings, and make sure your Codex account has available usage.
@@ -74,7 +79,7 @@ a warning. Download only from this repository's Releases page and compare the
 archive hash with the accompanying `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.8.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.8.1-windows-amd64.zip -Algorithm SHA256
 ```
 
 ### Build from source
@@ -107,4 +112,4 @@ A clean static scan is not proof of safety. See the [security policy](SECURITY_E
 - [Architecture](docs/agent/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 
-Current version: **0.8.0**. Licensed under the [MIT License](LICENSE).
+Current version: **0.8.1**. Licensed under the [MIT License](LICENSE).

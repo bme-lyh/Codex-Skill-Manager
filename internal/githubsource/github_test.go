@@ -500,10 +500,22 @@ func TestDiscoverDeduplicatesIdenticalSkillsAndPrefersCanonicalPath(t *testing.T
 func TestDiscoverRejectsDifferentSkillsWithSameName(t *testing.T) {
 	root := t.TempDir()
 	writeDiscoverySkill(t, filepath.Join(root, "skills", "one"), "duplicate", "first")
-	writeDiscoverySkill(t, filepath.Join(root, "plugins", "two"), "duplicate", "second")
+	writeDiscoverySkill(t, filepath.Join(root, "skills", "skills-codex", "two"), "duplicate", "second")
 
-	if _, err := Discover(root, ""); err == nil {
+	_, err := Discover(root, "")
+	if err == nil {
 		t.Fatal("expected ambiguous duplicate Skill names to be rejected")
+	}
+	var conflict *SkillNameConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("expected a structured Skill conflict, got %T: %v", err, err)
+	}
+	if conflict.Name != "duplicate" ||
+		conflict.SuggestedSourcePath != "skills/skills-codex" ||
+		len(conflict.Paths) != 2 ||
+		!strings.Contains(err.Error(), "skills/one") ||
+		!strings.Contains(err.Error(), "skills/skills-codex/two") {
+		t.Fatalf("unexpected conflict guidance: %#v (%v)", conflict, err)
 	}
 }
 
