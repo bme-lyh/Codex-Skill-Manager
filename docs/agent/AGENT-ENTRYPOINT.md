@@ -11,7 +11,7 @@ two-step workflow:
    high-risk findings.
 
 CLI installation without `--assist` is the standard Skill-only workflow.
-Version 0.8.1 provides Codex assisted installation through the desktop and the
+Version 0.9.0 provides Codex assisted installation through the desktop and the
 CLI's explicit three-phase `install --assist` contract, with strict output-schema
 validation, bounded JSONL error diagnostics, and guided Codex-subtree selection.
 Its Codex output is untrusted

@@ -93,7 +93,7 @@ Codex 风险复核是可选功能，默认关闭。启用前需要：
 Releases 下载，并用同页的 `SHA256SUMS.txt` 核对压缩包：
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.8.1-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.9.0-windows-amd64.zip -Algorithm SHA256
 ```
 
 ### 方式二：从源码构建
@@ -128,7 +128,7 @@ pnpm --dir frontend install --frozen-lockfile
 
 ## 项目状态
 
-当前版本为 **0.8.1**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
+当前版本为 **0.9.0**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
 
 欢迎提交问题和改进建议。参与前请阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
 
