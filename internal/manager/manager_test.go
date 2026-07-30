@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,170 @@ import (
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/inventory"
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
 )
+
+func TestInstallRestoresExistingSkillWhenBackupJournalFails(t *testing.T) {
+	m := newTestManager(t)
+	sourceRoot := filepath.Join(filepath.Dir(m.Config.Paths.DataRoot), "package")
+	writeTestSkill(t, sourceRoot, "demo")
+	sourceFile := filepath.Join(sourceRoot, "demo", "SKILL.md")
+	if err := os.WriteFile(
+		sourceFile,
+		[]byte("---\nname: demo\ndescription: original fixture\n---\noriginal\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := m.PrepareLocal(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ApplyInstall(preview.ID, []string{"demo"}, false); err != nil {
+		t.Fatal(err)
+	}
+	targetFile := filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")
+	original, err := os.ReadFile(targetFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		sourceFile,
+		[]byte("---\nname: demo\ndescription: updated fixture\n---\nupdated\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	update, err := m.PrepareLocal(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(m.Config.Paths.DataRoot, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TRIGGER fail_install_backup_journal
+BEFORE UPDATE ON transactions
+WHEN NEW.type = 'install'
+  AND NEW.status = 'running'
+  AND instr(NEW.payload_json, '"backupPaths":') > 0
+BEGIN
+  SELECT RAISE(FAIL, 'injected backup journal failure');
+END`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	failed, err := m.ApplyInstall(update.ID, []string{"demo"}, false)
+	if err == nil || !strings.Contains(err.Error(), "injected backup journal failure") {
+		t.Fatalf("expected injected journal failure, got transaction=%#v error=%v", failed, err)
+	}
+	if failed.Status != "failed" || failed.RecoveryStatus != "completed" {
+		t.Fatalf("failed update did not report completed recovery: %#v", failed)
+	}
+	restored, err := os.ReadFile(targetFile)
+	if err != nil {
+		t.Fatalf("original Skill was not restored: %v", err)
+	}
+	if string(restored) != string(original) {
+		t.Fatalf("journal failure replaced the original Skill:\n%s", restored)
+	}
+}
+
+func TestQuarantineDoesNotMutateWhenInitialJournalFails(t *testing.T) {
+	m := newTestManager(t)
+	sourceRoot := filepath.Join(filepath.Dir(m.Config.Paths.DataRoot), "package")
+	writeTestSkill(t, sourceRoot, "demo")
+	preview, err := m.PrepareLocal(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ApplyInstall(preview.ID, []string{"demo"}, false); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(m.Config.Paths.DataRoot, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TRIGGER fail_quarantine_start_journal
+BEFORE INSERT ON transactions
+WHEN NEW.type = 'quarantine'
+BEGIN
+  SELECT RAISE(FAIL, 'injected quarantine journal failure');
+END`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if tx, err := m.Quarantine([]string{"demo"}); err == nil ||
+		!strings.Contains(err.Error(), "injected quarantine journal failure") {
+		t.Fatalf("expected initial journal failure, got transaction=%#v error=%v", tx, err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")); err != nil {
+		t.Fatalf("quarantine mutated the Skill before its journal existed: %v", err)
+	}
+	lock, err := m.store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, managed := findManaged(lock, "demo"); !managed {
+		t.Fatal("quarantine journal failure removed the source mapping")
+	}
+}
+
+func TestQuarantineRollsBackWhenCompletionJournalFails(t *testing.T) {
+	m := newTestManager(t)
+	sourceRoot := filepath.Join(filepath.Dir(m.Config.Paths.DataRoot), "package")
+	writeTestSkill(t, sourceRoot, "demo")
+	preview, err := m.PrepareLocal(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ApplyInstall(preview.ID, []string{"demo"}, false); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(m.Config.Paths.DataRoot, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TRIGGER fail_quarantine_completion_journal
+BEFORE UPDATE ON transactions
+WHEN NEW.type = 'quarantine' AND NEW.status = 'completed'
+BEGIN
+  SELECT RAISE(FAIL, 'injected quarantine completion failure');
+END`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	failed, err := m.Quarantine([]string{"demo"})
+	if err == nil || !strings.Contains(err.Error(), "injected quarantine completion failure") {
+		t.Fatalf("expected completion journal failure, got transaction=%#v error=%v", failed, err)
+	}
+	if failed.Status != "failed" || failed.RecoveryStatus != "completed" {
+		t.Fatalf("unexpected failed quarantine status: %#v", failed)
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")); err != nil {
+		t.Fatalf("completion journal failure did not restore the Skill: %v", err)
+	}
+	lock, err := m.store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, managed := findManaged(lock, "demo"); !managed {
+		t.Fatal("completion journal failure did not restore the source mapping")
+	}
+}
 
 func TestLocalInstallQuarantineRestoreKeepsSourceMapping(t *testing.T) {
 	root := t.TempDir()
@@ -508,6 +673,51 @@ func TestGitHubInstallCreatesSourceGroupAndTracksPartialUpdatesPerSkill(t *testi
 	}
 	if commits["alpha"] != second.Repository.CommitSHA || commits["beta"] != first.Repository.CommitSHA {
 		t.Fatalf("partial update lost per-Skill commit state: %#v", commits)
+	}
+}
+
+func TestInstallRejectsStagingChangesAfterAnalysis(t *testing.T) {
+	m := newTestManager(t)
+	preview := githubPreviewFixture(t, m, "plan-drift", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"alpha"})
+	m.previews[preview.ID] = preview
+	skillFile := filepath.Join(preview.StagingPath, "skills", "alpha", "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte(
+		"---\nname: alpha\ndescription: changed after analysis\n---\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := m.ApplyInstall(preview.ID, []string{"alpha"}, false); err == nil ||
+		!strings.Contains(err.Error(), "changed after analysis") {
+		t.Fatalf("expected staging drift to invalidate the install plan, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "alpha")); !os.IsNotExist(err) {
+		t.Fatalf("invalid plan wrote a Skill target: %v", err)
+	}
+	history, err := m.History(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tx := range history {
+		if tx.Type == "install" {
+			t.Fatalf("invalid plan must fail before an install transaction starts: %#v", tx)
+		}
+	}
+}
+
+func TestGitHubInstallRejectsUnmanagedStagingPath(t *testing.T) {
+	m := newTestManager(t)
+	preview := githubPreviewFixture(t, m, "plan-outside", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"alpha"})
+	outside := filepath.Join(t.TempDir(), "repository")
+	if err := copyTree(preview.StagingPath, outside); err != nil {
+		t.Fatal(err)
+	}
+	preview.StagingPath = outside
+	m.previews[preview.ID] = preview
+
+	if _, err := m.ApplyInstall(preview.ID, []string{"alpha"}, false); err == nil ||
+		!strings.Contains(err.Error(), "not managed") {
+		t.Fatalf("expected an unmanaged staging root to be rejected, got %v", err)
 	}
 }
 

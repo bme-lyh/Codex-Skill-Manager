@@ -22,7 +22,7 @@
 ```powershell
 gofmt -w .
 go test ./...
-pnpm --dir frontend install
+pnpm --dir frontend install --frozen-lockfile
 pnpm --dir frontend run build
 .\scripts\build.ps1
 ```

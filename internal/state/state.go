@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -295,6 +296,42 @@ func (s *Store) RecentTransactions(limit int) ([]model.Transaction, error) {
 		}
 		var tx model.Transaction
 		if json.Unmarshal([]byte(raw), &tx) == nil {
+			out = append(out, tx)
+		}
+	}
+	return out, rows.Err()
+}
+
+// RecoverableAssistedTransactions returns every assisted-install transaction
+// that still has an automatic recovery path. These records must not disappear
+// merely because newer history entries pushed them past the recent-history
+// limit used by the dashboard.
+func (s *Store) RecoverableAssistedTransactions() ([]model.Transaction, error) {
+	rows, err := s.db.Query(`
+SELECT payload_json
+FROM transactions
+WHERE type = 'assisted-install'
+ORDER BY started_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.Transaction, 0)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var tx model.Transaction
+		if err := json.Unmarshal([]byte(raw), &tx); err != nil {
+			continue
+		}
+		recovery := strings.ToLower(strings.TrimSpace(tx.RecoveryStatus))
+		status := strings.ToLower(strings.TrimSpace(tx.Status))
+		// A legacy assisted-install record may still be "running" with no
+		// recovery status after an application exit. Return it so the manager
+		// can reconcile the orphaned plan and transaction for rollback.
+		if status == "running" || (recovery != "" && recovery != "completed") {
 			out = append(out, tx)
 		}
 	}

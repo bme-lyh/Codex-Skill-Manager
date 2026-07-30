@@ -1,43 +1,122 @@
 # CLI reference
 
-Run `csm help` for the authoritative command list. Add `--json` to receive structured output suitable for Agents and automation.
+Use the executable as follows. Global options may appear before or after the
+command:
+
+```text
+csm [--config ABSOLUTE_PATH] [--json] COMMAND
+```
+
+`--json` returns one envelope with `schemaVersion`, `command`, `status`,
+optional `data`, and optional `error`. This includes `csm --json version`.
+Running `csm` without a command prints the built-in command list; there is no
+separate `help` command.
+
+## Inspect
 
 ```powershell
-csm doctor
 csm discover
 csm dashboard
-csm scan --skill skill-name
+csm audit
+csm audit --skill "skill-name"
+csm check [--group "github:owner/repository" ...] [--force]
+csm github-auth
+csm codex status
+csm codex review --report "scan-..." [--skill "skill-name" ...]
+csm history
+csm reports
+csm doctor
+csm version
+```
+
+Without `--skill`, `audit` scans all non-system Skills. `check` accepts repeated
+`--group` values; `--force` bypasses the short-lived GitHub cache.
+
+## Manage existing Skills and groups
+
+```powershell
+csm bootstrap
+csm manage --skill "skill-a" --skill "skill-b"
+csm manage --plan-id "manage-plan-..." --skill "skill-a" --apply
+
+csm group create --name "Daily tools"
+csm group rename --id "group-..." --name "Development"
+csm group reorder --id "group-a" --id "group-b"
+csm group move --group "group-..." --skill "skill-a" --skill "skill-b"
+```
+
+`manage` first creates a plan. Applying that plan records source and snapshot
+metadata without moving the existing Skill directory.
+
+## Standard installation and updates
+
+Create and review a plan, then apply it with explicit Skill names:
+
+```powershell
+csm --json install --url "https://github.com/owner/repository" [--ref "tag-or-commit"]
+csm --json install --local "D:\skills\package"
+csm --json install --plan-id "plan-..." --skill "skill-a" --skill "skill-b" --apply
+
 csm check
+csm --json update --group "github:owner/repository"
+csm --json install --plan-id "update-plan-..." --skill "skill-a" --apply
 ```
 
-Mutations use a two-step contract:
+Standard installation installs only selected Skill directories. It does not
+install extra tools or change Codex MCP configuration.
+
+## Codex assisted installation
+
+Assisted installation is also two-phase:
 
 ```powershell
-csm --json install --url "https://github.com/owner/repository"
-csm install --plan-id "plan-..." --skill "skill-name" --apply
+csm --json install --url "https://github.com/owner/repository" --assist
+csm --json install --assist --plan-id "assisted-plan-..." --apply `
+  --skill "skill-name" `
+  --grant "PERMISSION_ID" `
+  --project-root "D:\work\project"
 ```
 
-Existing unmanaged Skills:
+Review the returned Skills, steps, warnings, permissions, and
+`needsProjectRoot`. On apply, pass only permission IDs listed by that plan.
+`--all` may replace repeated `--skill` values. Supply `--project-root` only
+when the approved MCP plan requires it; the path must be a real Git or SVN
+working tree. Creating an assisted plan cannot be combined with `--apply`.
+
+Using `--assist` explicitly opts in for that invocation. It uses the configured
+Codex CLI, model, reasoning effort, and account usage. It does not enable
+arbitrary repository scripts or free-form generated commands.
+
+## Remove, restore, and roll back
 
 ```powershell
-csm manage --skill "skill-name"
-csm manage --plan-id "adopt-plan-..." --skill "skill-name" --apply
+csm remove "skill-a" "skill-b"
+csm restore --skill "skill-a" --transaction "tx-..."
+csm rollback --transaction "tx-..."
 ```
 
-Updates:
+`remove` accepts positional Skill names, moves them to quarantine, and does not
+accept `--skill`, `--apply`, wildcards, or `--all`. Use `history` to find
+transaction IDs.
+
+## Warning decisions and scheduling
 
 ```powershell
-csm check
-csm update --group "github:owner/repository"
-csm install --plan-id "plan-..." --skill "skill-name" --apply
+csm warning --fingerprint "HASH" --rule "RULE_ID" --file "skill/SKILL.md"
+csm warning --cluster "RISK_ID" --fingerprint "HASH1" --fingerprint "HASH2"
+csm warning --report "scan-..." --dry-run
+csm warning --report "scan-..."
+csm warning --report "scan-..." --restore
+
+csm schedule --enabled=true --frequency=weekly --at=09:00
 ```
 
-Removal is recoverable:
+Warning reasons are optional. Use `--restore` to reverse an ignored warning.
+Schedule frequency is `daily` or `weekly`, and time uses 24-hour `HH:mm`.
 
-```powershell
-csm remove --skill "skill-name" --apply
-csm quarantine list
-csm restore --skill "skill-name" --transaction "tx-..." --apply
-```
+Exit code `0` means success, `1` means an operational or policy failure, and
+`2` means invalid command usage. Invalid flags and missing required options
+stop before the requested operation runs.
 
-See the complete Chinese [CLI reference](../user/cli-reference.md) and the language-neutral [command contracts](../agent/command-contracts.md).
+See the [Chinese CLI reference](../user/cli-reference.md) and the
+[Agent command contracts](../agent/command-contracts.md).

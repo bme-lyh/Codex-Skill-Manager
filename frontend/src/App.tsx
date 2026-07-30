@@ -7,7 +7,9 @@ import {
   ArrowUpCircle, KeyRound, Stethoscope, Sparkles, Languages
 } from "lucide-react";
 import { api } from "./api";
+import { isPackagedFullContextMode } from "./codexContext";
 import { I18nProvider, normalizeLocale, translate, useI18n } from "./i18n";
+import { InstallDialog } from "./install/InstallDialog";
 import type { AppLocale, Translate } from "./i18n";
 import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateStatus } from "./types";
 
@@ -57,17 +59,20 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
   const [selected, setSelected] = useState<string[]>([]);
   const [operation, setOperation] = useState<Operation | null>(null);
 
-  const refresh = async () => {
+  const loadDashboard = async (throwOnError: boolean) => {
     setLoading(true);
     try {
       setData(await api.dashboard());
       setError("");
     } catch (e: any) {
       setError(e?.message ?? String(e));
+      if (throwOnError) throw e;
     } finally {
       setLoading(false);
     }
   };
+  const refresh = () => loadDashboard(false);
+  const refreshStrict = () => loadDashboard(true);
 
   useEffect(() => { void refresh(); }, []);
 
@@ -116,7 +121,7 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
             <button className="ghost" disabled={loading} onClick={() => void runOperation(t("刷新 Skills 清单", "Refresh Skills"), refresh, t("清单已刷新", "Skills refreshed"))}>
               <RefreshCw size={17} className={loading ? "spin" : ""} />{loading ? t("刷新中…", "Refreshing…") : t("刷新", "Refresh")}
             </button>
-            <button className="primary" onClick={() => setInstallOpen(true)}><Download size={17} />{t("安装 Skill", "Install Skill")}</button>
+            <button className="primary" onClick={() => setInstallOpen(true)}><Download size={17} />{t("安装 Skills", "Install Skills")}</button>
           </div>
         </header>
         {error && <div className="error-banner"><CircleAlert size={18} />{error}<button onClick={() => setError("")}>×</button></div>}
@@ -137,7 +142,8 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
           </div>
         ) : null}
       </main>
-      {installOpen && <InstallDialog close={() => setInstallOpen(false)} refresh={refresh} runOperation={runOperation} />}
+      {installOpen && <InstallDialog close={() => setInstallOpen(false)} refresh={refreshStrict}
+        openSettings={() => { setInstallOpen(false); setPage("settings"); }} />}
     </div>
   );
 }
@@ -212,6 +218,8 @@ function transactionTypeLabel(value: string, locale: AppLocale): string {
   const labels: Record<string, [string, string]> = {
     install: ["安装", "Install"], update: ["更新", "Update"], manage: ["管理", "Manage"], adopt: ["管理", "Manage"],
     quarantine: ["移至隔离区", "Quarantine"], rollback: ["回滚", "Rollback"], restore: ["恢复", "Restore"],
+    "assisted-install": ["Codex 一键安装", "Codex assisted installation"],
+    "rollback-assisted-install": ["回滚一键安装", "Roll back assisted installation"],
     "group-layout": ["调整分组布局", "Change group layout"], "group-create": ["新建分组", "Create group"],
     "group-rename": ["重命名分组", "Rename group"], "group-move": ["移动 Skill", "Move Skill"],
     "group-reorder": ["调整分组顺序", "Reorder groups"]
@@ -223,7 +231,10 @@ function transactionTypeLabel(value: string, locale: AppLocale): string {
 function transactionStatusLabel(value: string, locale: AppLocale): string {
   const labels: Record<string, [string, string]> = {
     completed: ["已完成", "Completed"], failed: ["失败", "Failed"],
-    running: ["进行中", "Running"], planned: ["已计划", "Planned"]
+    running: ["进行中", "Running"], planned: ["已计划", "Planned"],
+    partial: ["部分完成", "Partial"], cancelled: ["已取消", "Cancelled"],
+    interrupted: ["已中断", "Interrupted"], "rolled-back": ["已回滚", "Rolled back"],
+    "manual-pending": ["待人工处理", "Manual action pending"], skipped: ["已跳过", "Skipped"]
   };
   const label = labels[value];
   return label ? translate(locale, label[0], label[1]) : value;
@@ -862,7 +873,7 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
         <p>{report.codexReview.summary || report.codexReview.error}</p>
         <small>{report.codexReview.model === "default" ? t("Codex 默认模型", "Codex default model") : report.codexReview.model} ·
           {t("推理强度", "Reasoning effort")} {reasoningEffortLabel(report.codexReview.reasoningEffort, t)} ·
-          {report.codexReview.contextMode === "full-target-read-only"
+          {isPackagedFullContextMode(report.codexReview.contextMode)
             ? t(` 完整目录上下文（${report.codexReview.contextFileCount || 0} 个文件）`,
               ` full directory context (${report.codexReview.contextFileCount || 0} files)`)
             : t(" 规则摘要上下文", " rule-summary context")}</small>
@@ -1318,6 +1329,9 @@ function HistoryPage({ data, refresh, runOperation }: { data: Dashboard; refresh
     const original = data.recentHistory.find(tx => tx.id === id);
     const detail = original?.type.startsWith("group-")
       ? t("只会恢复分组布局，不会移动或修改 Skill 文件。", "Only the group layout will be restored; Skill files will not be moved or changed.")
+      : original?.type === "assisted-install"
+        ? t("会按事务记录恢复 Skills、受管工具和 Codex MCP 配置；目标已被修改时会安全停止并提示人工处理。",
+          "The transaction journal will restore Skills, managed tools, and Codex MCP configuration. Recovery stops safely if a target changed.")
       : original?.type === "manage" || original?.type === "adopt"
         ? t("只会恢复来源记录，不会移动 Skill 文件。", "Only source records will be restored; Skill files will not be moved.")
         : t("当前版本会先移动到隔离区。", "The current version will be moved to quarantine first.");
@@ -1329,12 +1343,27 @@ function HistoryPage({ data, refresh, runOperation }: { data: Dashboard; refresh
     } finally { setWorkingId(""); }
   };
   return <section className="panel full"><PanelHead title={t("操作历史", "Operation history")} subtitle={t("查看操作状态并执行回滚", "View operation status and roll back completed changes")} />
-    <div className="history-list">{data.recentHistory.length === 0 ? <Empty text={t("暂无操作", "No operations")} /> : data.recentHistory.map(tx => <article key={tx.id}>
+    <div className="history-list">{data.recentHistory.length === 0 ? <Empty text={t("暂无操作", "No operations")} /> : data.recentHistory.map(tx => {
+      const recoverableAssisted = tx.type === "assisted-install" && tx.status !== "running" &&
+        !!tx.recoveryStatus && tx.recoveryStatus !== "completed";
+      const recoverableStandard = tx.status === "completed" &&
+        (tx.type === "install" || tx.type === "adopt" || tx.type === "manage" || tx.type.startsWith("group-"));
+      const badgeClass = tx.status === "completed" ? "green" : tx.status === "partial" ? "amber" : "red";
+      return <article key={tx.id}>
       <div className={`tx-icon ${tx.status}`}><Clock3 size={19} /></div><div className="grow"><strong>{transactionTypeLabel(tx.type, locale)}</strong><span>{join(tx.targets) || "—"}</span>
-        <small>{formatDate(tx.startedAt)} · {tx.id}</small></div><span className={`badge ${tx.status === "completed" ? "green" : "red"}`}>{transactionStatusLabel(tx.status, locale)}</span>
-      {tx.status === "completed" && (tx.type === "install" || tx.type === "adopt" || tx.type === "manage" || tx.type.startsWith("group-")) && <button className="icon-button" disabled={!!workingId} title={t("回滚", "Roll back")} onClick={() => rollback(tx.id)}>
+        <small>{formatDate(tx.startedAt)} · {tx.id}</small>
+        {tx.type === "assisted-install" && !!tx.steps?.length && <details className="assisted-history-details">
+          <summary>{t("查看安装步骤", "View installation steps")}</summary>
+          <ol>{tx.steps.map(step => <li key={step.id} className={step.status}>
+            <span>{step.title}</span><em>{transactionStatusLabel(step.status, locale)}</em>
+            {step.error && <small>{step.error}</small>}
+          </li>)}</ol>
+        </details>}
+      </div><span className={`badge ${badgeClass}`}>{transactionStatusLabel(tx.status, locale)}</span>
+      {(recoverableAssisted || recoverableStandard) && <button className="icon-button" disabled={!!workingId} title={t("回滚", "Roll back")} onClick={() => rollback(tx.id)}>
         {workingId === tx.id ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}</button>}
-    </article>)}</div>
+    </article>;
+    })}</div>
   </section>;
 }
 
@@ -1525,7 +1554,12 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
         </div>
         {githubStatus && <div className={`integration-status ${githubStatus.authenticated ? "ok" : "warning"}`}>
           <strong>{githubStatus.authenticated ? t(`已认证：${githubStatus.login}`, `Authenticated: ${githubStatus.login}`) : t("未认证", "Not authenticated")}</strong>
-          <small>{githubStatus.message}</small>
+          <small>{githubStatus.authenticated
+            ? t("GitHub 凭据有效", "GitHub credentials are valid")
+            : !githubStatus.configured
+              ? t("未配置 GitHub 凭据；公共请求将使用共享 IP 额度",
+                "No GitHub credential is configured; public requests use the shared IP rate limit")
+              : githubStatus.message}</small>
           {!!githubStatus.limit && <small>{t("API 剩余额度", "API requests remaining")}：{githubStatus.remaining}/{githubStatus.limit}
             {githubStatus.resetAt ? t(` · 重置于 ${formatDate(githubStatus.resetAt)}`, ` · Resets ${formatDate(githubStatus.resetAt)}`) : ""}</small>}
         </div>}
@@ -1572,7 +1606,18 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
               !codexStatus.compatible ? t("Codex CLI 已登录，但复核能力不兼容", "Codex CLI is logged in but incompatible with review") :
                 t("Codex CLI 已登录且兼容", "Codex CLI is logged in and compatible")}</strong>
           {codexStatus.version && <small>{codexStatus.version}</small>}
-          {codexStatus.error && <small>{codexStatus.error}</small>}
+          {!codexStatus.available && <small>{t(
+            "请安装独立 Codex CLI，或在上方指定可执行文件路径。",
+            "Install the standalone Codex CLI or specify its executable path above."
+          )}</small>}
+          {codexStatus.available && !codexStatus.authenticated && <small>{t(
+            "请先在独立 Codex CLI 中完成登录。",
+            "Sign in with the standalone Codex CLI first."
+          )}</small>}
+          {codexStatus.authenticated && !codexStatus.compatible && <small>{t(
+            "请更新 Codex CLI，或检查当前自定义路径。",
+            "Update Codex CLI or check the configured executable path."
+          )}</small>}
           {codexStatus.authenticated && !!codexStatus.models?.length &&
             <small>{t(`已从当前 CLI 载入 ${codexStatus.models.length} 个可选模型。`,
               `Loaded ${codexStatus.models.length} available models from the current CLI.`)}</small>}
@@ -1599,136 +1644,6 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
       </div>
     </section>
   </div>;
-}
-
-function InstallDialog({ close, refresh, runOperation }: { close: () => void; refresh: () => Promise<void>; runOperation: RunOperation }) {
-  const { t, locale } = useI18n();
-  const [mode, setMode] = useState<"github" | "local">("github");
-  const [source, setSource] = useState("");
-  const [ref, setRef] = useState("");
-  const [preview, setPreview] = useState<InstallPreview | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [working, setWorking] = useState(false);
-  const [reviewing, setReviewing] = useState("");
-  const [codexWorking, setCodexWorking] = useState(false);
-  const [error, setError] = useState("");
-  const { progress: codexProgress, clearProgress } = useCodexProgress();
-  const analyze = async () => {
-    setWorking(true); setError("");
-    try {
-      const p = await runOperation(
-        mode === "github" ? t("分析 GitHub Skill 来源", "Analyze GitHub Skill source") : t("分析本地 Skill 目录", "Analyze local Skill directory"),
-        () => mode === "github" ? api.prepareGitHub(source, ref) : api.prepareLocal(source),
-        t("来源分析和安全扫描已完成", "Source analysis and security scan completed")
-      );
-      if (p) { setPreview(p); setSelected(p.skills.map(s => s.name)); }
-    } catch (e: any) { setError(e?.message ?? String(e)); } finally { setWorking(false); }
-  };
-  const apply = async () => {
-    if (!preview || !selected.length) return;
-    setWorking(true); setError("");
-    try {
-      const result = await runOperation(t("安装选中的 Skills", "Install selected Skills"),
-        () => api.apply(preview.id, selected, false), t("Skills 已安装并完成备份记录", "Skills installed and backup recorded"));
-      if (result) { await refresh(); close(); }
-    }
-    catch (e: any) { setError(e?.message ?? String(e)); } finally { setWorking(false); }
-  };
-  const toggleCluster = async (cluster: RiskCluster) => {
-    if (!preview) return;
-    setReviewing(cluster.id);
-    setError("");
-    try {
-      await api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true);
-      setPreview(current => current ? {
-        ...current,
-        scan: updateClusterState(current.scan, cluster.id, !cluster.ignored, "")
-      } : current);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setReviewing("");
-    }
-  };
-  const ignoreAll = async (clusters: RiskCluster[]) => {
-    if (!preview || !clusters.length) return;
-    setReviewing("manual-batch");
-    setError("");
-    try {
-      await api.setRiskClustersIgnored(clusters, true, "");
-      setPreview(current => current ? {
-        ...current, scan: updateClustersState(current.scan, clusters, true, "")
-      } : current);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setReviewing("");
-    }
-  };
-  const codexReview = async () => {
-    if (!preview) return;
-    setCodexWorking(true);
-    clearProgress();
-    setError("");
-    try {
-      const reviewed = await api.reviewWithCodex(preview.scan, selected);
-      setPreview(current => current ? { ...current, scan: reviewed } : current);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setCodexWorking(false);
-    }
-  };
-  const applyCodexSuggestions = async (clusters: RiskCluster[]) => {
-    if (!preview || !confirmCodexSuggestions(preview.scan, clusters)) return;
-    setReviewing("codex-batch");
-    setError("");
-    try {
-      const reason = codexBatchReason(preview.scan, clusters, locale);
-      await api.setRiskClustersIgnored(clusters, true, reason);
-      setPreview(current => current ? {
-        ...current, scan: updateClustersState(current.scan, clusters, true, reason)
-      } : current);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setReviewing("");
-    }
-  };
-  return <div className="modal-backdrop"><div className="modal">
-    <div className="modal-head"><h2>{t("安装 Skill", "Install Skill")}</h2><button onClick={close}><X /></button></div>
-    {!preview ? <div className="install-source">
-      <div className="tabs"><button className={mode === "github" ? "active" : ""} onClick={() => setMode("github")}><FolderGit2 size={17} />{t("GitHub 链接", "GitHub link")}</button>
-        <button className={mode === "local" ? "active" : ""} onClick={() => setMode("local")}><Boxes size={17} />{t("本地目录", "Local directory")}</button></div>
-      <label><span>{mode === "github" ? t("GitHub 仓库、目录或 SKILL.md 链接", "GitHub repository, directory, or SKILL.md link") :
-        t("包含一个或多个 Skills 的绝对路径", "Absolute path containing one or more Skills")}</span>
-        <input autoFocus value={source} onChange={e => setSource(e.target.value)} placeholder={mode === "github" ? "https://github.com/owner/repository" : "D:\\skills\\my-package"} /></label>
-      {mode === "github" && <label><span>{t("分支、标签或 Commit（可选）", "Branch, tag, or commit (optional)")}</span><input value={ref} onChange={e => setRef(e.target.value)} placeholder={t("留空时使用链接版本或默认分支", "Leave blank to use the linked version or default branch")} /></label>}
-      <div className="notice"><ShieldCheck size={20} /><span><strong>{t("安装前检查", "Pre-installation check")}</strong><small>{t("先下载到暂存目录并扫描，不执行仓库脚本。",
-        "Downloads to staging and scans first. Repository scripts are never executed.")}</small></span></div>
-    </div> : <div className="preview">
-      <div className="repo-summary"><FolderGit2 size={24} /><div><strong>{preview.repository.fullName}</strong><span>{preview.repository.resolvedRef} · {preview.repository.commitSha?.slice(0, 10)}</span></div>
-        <span className={`severity ${preview.scan.activeHighestSeverity}`}>{severityLabel(preview.scan.activeHighestSeverity, locale)}</span></div>
-      <h3>{t(`发现 ${preview.skills.length} 个 Skills`, `Found ${preview.skills.length} Skills`)}</h3>
-      <div className="candidate-list">{preview.skills.map(s => <label key={s.name}><input type="checkbox" checked={selected.includes(s.name)}
-        onChange={() => setSelected(selected.includes(s.name) ? selected.filter(n => n !== s.name) : [...selected, s.name])} />
-        <span><strong>{s.name}</strong><small>{s.description}</small><code>{s.sourcePath}</code></span></label>)}</div>
-      <div className="notice"><ShieldAlert size={20} /><span><strong>{t(`发现 ${preview.scan.findings.length} 条规则命中，${preview.scan.activeFindingCount} 条待处理`,
-        `Found ${preview.scan.findings.length} rule matches; ${preview.scan.activeFindingCount} open`)}</strong>
-        <small>{t("可逐项或一键忽略，无需填写原因。", "Ignore individual warnings or all at once; no reason is required.")}</small></span></div>
-      <FindingDetails report={preview.scan} reviewing={reviewing} onToggle={toggleCluster}
-        onCodexReview={codexReview} codexWorking={codexWorking}
-        codexProgress={codexProgress?.reportId === preview.scan.id ? codexProgress : null}
-        onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
-    </div>}
-    {error && <div className="error-banner"><CircleAlert size={17} />{error}</div>}
-    <div className="modal-actions"><button className="ghost" onClick={preview ? () => setPreview(null) : close}>{preview ? t("返回", "Back") : t("取消", "Cancel")}</button>
-      <button className="primary" disabled={working || (!preview && !source) || (!!preview && (!selected.length ||
-        reviewing !== "" || ["critical", "high"].includes(preview.scan.activeHighestSeverity)))} onClick={preview ? apply : analyze}>
-        {working ? <LoaderCircle className="spin" size={17} /> : preview ? <Download size={17} /> : <Search size={17} />}
-        {working ? (preview ? t("正在安装…", "Installing…") : t("正在分析…", "Analyzing…")) :
-          preview ? t("确认安装", "Install") : t("分析来源", "Analyze source")}</button></div>
-  </div></div>;
 }
 
 function Empty({ text }: { text: string }) {

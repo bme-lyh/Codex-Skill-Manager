@@ -221,6 +221,10 @@ export interface Transaction {
   targets: string[];
   startedAt: string;
   completedAt?: string;
+  backupPaths?: string[];
+  steps?: AssistedInstallStep[];
+  projectRoot?: string;
+  recoveryStatus?: string;
   error?: string;
 }
 
@@ -286,6 +290,148 @@ export interface InstallPreview {
   scan: ScanReport;
   createdAt: string;
   expiresAt: string;
+}
+
+export type AssistedInstallStatus =
+  | "analyzing"
+  | "ready"
+  | "awaiting-approval"
+  | "running"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+
+export interface AssistedInstallRequirement {
+  id?: string;
+  kind?: string;
+  name?: string;
+  title?: string;
+  description?: string;
+  versionSpec?: string;
+  status?: string;
+  required?: boolean;
+  satisfied?: boolean;
+}
+
+export interface AssistedInstallPermission {
+  id: string;
+  kind: string;
+  title: string;
+  description?: string;
+  target?: string;
+  targets?: string[];
+  risk?: Severity | "standard";
+  required: boolean;
+  approved?: boolean;
+  reversible?: boolean;
+}
+
+export interface AssistedPythonWheelLock {
+  name: string;
+  version: string;
+  filename: string;
+  sha256: string;
+  native?: boolean;
+  tags?: string[];
+}
+
+export interface AssistedInstallStep {
+  id: string;
+  kind: string;
+  title: string;
+  description: string;
+  status: string;
+  required: boolean;
+  supported: boolean;
+  skillNames?: string[];
+  pythonPackage?: string;
+  versionSpec?: string;
+  pythonWheels?: AssistedPythonWheelLock[];
+  entrypoint?: string;
+  mcpServerName?: string;
+  mcpArgs?: string[];
+  permissionIds?: string[];
+  reversible: boolean;
+  recovery?: string;
+  targetPath?: string;
+  backupPath?: string;
+  manifestPath?: string;
+  childTransactionId?: string;
+  outputHashes?: Record<string, string>;
+  originalMissing?: boolean;
+  appliedHash?: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface AssistedInstallPlan {
+  id: string;
+  sourcePlanId: string;
+  status: AssistedInstallStatus | string;
+  repository: InstallPreview["repository"];
+  summary: string;
+  approach: string;
+  complexity: string;
+  requirements: Array<string | AssistedInstallRequirement>;
+  steps: AssistedInstallStep[];
+  permissions: AssistedInstallPermission[];
+  warnings: string[];
+  needsProjectRoot: boolean;
+  projectRootReason?: string;
+  projectRoot?: string;
+  codexModel?: string;
+  reasoningEffort?: string;
+  outputLocale?: string;
+  contextFileCount: number;
+  contextDigest?: string;
+  planDigest?: string;
+  configFingerprint?: string;
+  createdAt: string;
+  expiresAt: string;
+  transactionId?: string;
+  recoveryStatus?: string;
+  selectedSkills?: string[];
+  skills?: Candidate[];
+  scan?: ScanReport;
+}
+
+export interface AssistedInstallProgressStep {
+  id: string;
+  title?: string;
+  kind?: string;
+  status: "queued" | "running" | "completed" | "failed" | "skipped" | "cancelled" | string;
+  message?: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface AssistedInstallProgress {
+  referenceId: string;
+  runId: string;
+  sequence: number;
+  phase: string;
+  message: string;
+  currentStepId?: string;
+  completedSteps: number;
+  totalSteps: number;
+  activityCount: number;
+  steps: AssistedInstallProgressStep[];
+  startedAt: string;
+  updatedAt: string;
+  terminal: boolean;
+  error?: string;
+}
+
+export interface AssistedInstallResult {
+  plan: AssistedInstallPlan;
+  transaction: Transaction;
+  referenceId?: string;
+  runId?: string;
+  progress?: AssistedInstallProgress;
 }
 
 export interface AdoptionPreview {

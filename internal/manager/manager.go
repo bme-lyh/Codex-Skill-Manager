@@ -33,8 +33,13 @@ type Manager struct {
 	github     *githubsource.Client
 	mu         sync.Mutex
 	codexMu    sync.Mutex
+	assistMu   sync.Mutex
+	assistData sync.Mutex
 	previews   map[string]model.InstallPreview
 	adoptions  map[string]model.AdoptionPreview
+	assisted   map[string]model.AssistedInstallPlan
+	progress   map[string]model.AssistedInstallProgress
+	cancels    map[string]context.CancelFunc
 }
 
 func Open(configPath string) (*Manager, error) {
@@ -84,6 +89,9 @@ func Open(configPath string) (*Manager, error) {
 		Config: cfg, ConfigPath: configPath, store: store,
 		github: githubsource.New(), previews: map[string]model.InstallPreview{},
 		adoptions: map[string]model.AdoptionPreview{},
+		assisted:  map[string]model.AssistedInstallPlan{},
+		progress:  map[string]model.AssistedInstallProgress{},
+		cancels:   map[string]context.CancelFunc{},
 	}, nil
 }
 
@@ -207,7 +215,19 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 	if latestErr != nil {
 		return model.Dashboard{}, latestErr
 	}
-	history, _ := m.store.RecentTransactions(20)
+	history, historyErr := m.store.RecentTransactions(20)
+	if historyErr != nil {
+		return model.Dashboard{}, historyErr
+	}
+	recoverableAssisted, recoveryHistoryErr := m.store.RecoverableAssistedTransactions()
+	if recoveryHistoryErr != nil {
+		return model.Dashboard{}, recoveryHistoryErr
+	}
+	recoverableAssisted, recoveryHistoryErr = m.interruptOrphanedAssistedTransactions(recoverableAssisted)
+	if recoveryHistoryErr != nil {
+		return model.Dashboard{}, recoveryHistoryErr
+	}
+	history = mergeTransactionHistory(history, recoverableAssisted)
 	updateStatuses, updateErr := m.store.LatestUpdateStatuses()
 	if updateErr != nil {
 		return model.Dashboard{}, updateErr
@@ -333,6 +353,22 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 	}
 	d.RiskCount = len(activeRisks)
 	return d, nil
+}
+
+func mergeTransactionHistory(recent, required []model.Transaction) []model.Transaction {
+	seen := make(map[string]bool, len(recent)+len(required))
+	merged := make([]model.Transaction, 0, len(recent)+len(required))
+	for _, tx := range append(required, recent...) {
+		if strings.TrimSpace(tx.ID) == "" || seen[tx.ID] {
+			continue
+		}
+		seen[tx.ID] = true
+		merged = append(merged, tx)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].StartedAt.After(merged[j].StartedAt)
+	})
+	return merged
 }
 
 func applyGroupLayout(skills []model.Skill, sourceGroups []model.Group, layout model.GroupLayoutState) ([]model.Skill, []model.Group) {
@@ -828,8 +864,6 @@ func (m *Manager) setRiskClustersIgnoredLocked(clusters []model.RiskCluster, ign
 }
 
 func (m *Manager) PrepareGitHub(ctx context.Context, rawURL, ref string) (model.InstallPreview, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	return m.prepareGitHub(ctx, rawURL, ref, nil)
 }
 
@@ -884,16 +918,16 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 		ID: id, Repository: repo, Skills: candidates, Scan: report,
 		StagingPath: root, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 	}
-	m.previews[id] = preview
 	if err := savePreview(m.Config.Paths.DataRoot, preview); err != nil {
 		return model.InstallPreview{}, err
 	}
+	m.mu.Lock()
+	m.previews[id] = preview
+	m.mu.Unlock()
 	return preview, nil
 }
 
 func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return model.InstallPreview{}, err
@@ -937,10 +971,12 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 		Skills: candidates, Scan: report, StagingPath: abs,
 		CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 	}
-	m.previews[id] = preview
 	if err := savePreview(m.Config.Paths.DataRoot, preview); err != nil {
 		return model.InstallPreview{}, err
 	}
+	m.mu.Lock()
+	m.previews[id] = preview
+	m.mu.Unlock()
 	return preview, nil
 }
 
@@ -1139,6 +1175,14 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 }
 
 func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.Transaction, error) {
+	return m.applyInstallWithTransactionID(planID, selected, "")
+}
+
+func (m *Manager) applyInstallWithTransactionID(
+	planID string,
+	selected []string,
+	transactionID string,
+) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	preview, ok := m.previews[planID]
@@ -1175,14 +1219,25 @@ func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.
 	if len(chosen) == 0 {
 		return model.Transaction{}, errors.New("no skills selected")
 	}
+	if err := m.verifyInstallPreview(preview, chosen); err != nil {
+		return model.Transaction{}, err
+	}
+	if transactionID == "" {
+		transactionID = "tx-" + time.Now().UTC().Format("20060102T150405.000000000")
+	}
+	if !validAssistedReferenceID(transactionID) || !strings.HasPrefix(transactionID, "tx-") {
+		return model.Transaction{}, errors.New("invalid installation transaction ID")
+	}
 	tx := model.Transaction{
-		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
+		ID:   transactionID,
 		Type: "install", Status: "running", StartedAt: time.Now().UTC(),
 	}
 	for _, c := range chosen {
 		tx.Targets = append(tx.Targets, c.Name)
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return model.Transaction{}, err
+	}
 
 	lock, err := m.store.LoadLock()
 	if err != nil {
@@ -1229,6 +1284,7 @@ func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.
 			return m.failInstall(tx, touched, backups, fmt.Errorf("invalid skill name: %s", c.Name))
 		}
 		source := filepath.Join(preview.StagingPath, filepath.FromSlash(c.SourcePath))
+		recoveryTracked := false
 		if _, err := os.Stat(target); err == nil {
 			existing, managed := findManaged(lock, c.Name)
 			expectedRepository := preview.Repository.FullName
@@ -1249,8 +1305,18 @@ func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.
 			}
 			backups[c.Name] = backup
 			tx.BackupPaths = append(tx.BackupPaths, backup)
+			// Track the Skill immediately after the destructive rename. If the
+			// following journal checkpoint fails, failInstall must still restore
+			// the backup to its original location.
+			touched = append(touched, c.Name)
+			recoveryTracked = true
+			if err := m.store.SaveTransaction(tx); err != nil {
+				return m.failInstall(tx, touched, backups, err)
+			}
 		}
-		touched = append(touched, c.Name)
+		if !recoveryTracked {
+			touched = append(touched, c.Name)
+		}
 		if err := copyTree(source, target); err != nil {
 			return m.failInstall(tx, touched, backups, err)
 		}
@@ -1283,9 +1349,36 @@ func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.
 		return m.failInstall(tx, touched, backups, err)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return m.failInstall(tx, touched, backups, err)
+	}
 	m.recordTransaction(tx)
 	return tx, nil
+}
+
+func (m *Manager) verifyInstallPreview(preview model.InstallPreview, chosen []model.CandidateSkill) error {
+	if preview.Repository.Provider == "github" {
+		if strings.TrimSpace(preview.Repository.CommitSHA) == "" {
+			return errors.New("GitHub install plan is not pinned to an immutable commit")
+		}
+		if err := ensureWithinOrEqual(m.Config.Paths.StagingRoot, preview.StagingPath); err != nil {
+			return fmt.Errorf("install staging path is not managed by this application: %w", err)
+		}
+	}
+	for _, candidate := range chosen {
+		source := filepath.Join(preview.StagingPath, filepath.FromSlash(candidate.SourcePath))
+		if err := ensureWithinOrEqual(preview.StagingPath, source); err != nil {
+			return fmt.Errorf("invalid source path for %s: %w", candidate.Name, err)
+		}
+		files, err := inventory.HashTree(source)
+		if err != nil {
+			return fmt.Errorf("verify %s after analysis: %w", candidate.Name, err)
+		}
+		if !sameFileRecords(files, candidate.Files) {
+			return fmt.Errorf("%s changed after analysis; create a new install plan", candidate.Name)
+		}
+	}
+	return nil
 }
 
 func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappings map[string]string) error {
@@ -1447,8 +1540,6 @@ func (m *Manager) PrepareUpdate(ctx context.Context, groupID string) (model.Inst
 	for name := range pkg.Skills {
 		installed[name] = true
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	preview, err := m.prepareGitHub(ctx, pkg.SourceURL, pkg.RequestedRef, installed)
 	if err != nil {
 		return model.InstallPreview{}, err
@@ -1562,7 +1653,9 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
 		Type: "quarantine", Status: "running", Targets: names, StartedAt: time.Now().UTC(),
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return model.Transaction{}, fmt.Errorf("start quarantine transaction: %w", err)
+	}
 	lock, err := m.store.LoadLock()
 	if err != nil {
 		return m.fail(tx, err)
@@ -1582,8 +1675,14 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 				rollbackErr = err
 			}
 		}
+		if err := m.restoreLockSnapshot(tx.ID); err != nil {
+			rollbackErr = errors.Join(rollbackErr, err)
+		}
 		if rollbackErr != nil {
+			tx.RecoveryStatus = "required"
 			cause = fmt.Errorf("%w; quarantine rollback failed: %v", cause, rollbackErr)
+		} else {
+			tx.RecoveryStatus = "completed"
 		}
 		return m.fail(tx, cause)
 	}
@@ -1615,7 +1714,9 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 		return rollbackMoved(err)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return rollbackMoved(fmt.Errorf("complete quarantine transaction: %w", err))
+	}
 	m.recordTransaction(tx)
 	return tx, nil
 }
@@ -1692,12 +1793,15 @@ func (m *Manager) Restore(name, transactionID string) (model.Transaction, error)
 }
 
 func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	original, err := m.store.Transaction(transactionID)
 	if err != nil {
 		return model.Transaction{}, err
 	}
+	if original.Type == "assisted-install" {
+		return m.rollbackAssistedInstall(original)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if original.Type != "install" && original.Type != "adopt" && original.Type != "manage" &&
 		!strings.HasPrefix(original.Type, "group-") {
 		return model.Transaction{}, fmt.Errorf("transaction type %s cannot be rolled back; use its dedicated recovery action", original.Type)
@@ -1859,7 +1963,10 @@ func (m *Manager) failInstall(tx model.Transaction, touched []string, backups ma
 		rollbackErr = err
 	}
 	if rollbackErr != nil {
+		tx.RecoveryStatus = "required"
 		cause = fmt.Errorf("%w; install rollback failed: %v", cause, rollbackErr)
+	} else {
+		tx.RecoveryStatus = "completed"
 	}
 	return m.fail(tx, cause)
 }

@@ -3,6 +3,7 @@
 .cache/
 .gocache/
 .gomodcache/
+.tmp/
 .pnpm-store/
 frontend/node_modules/
 

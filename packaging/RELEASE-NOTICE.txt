@@ -1,0 +1,16 @@
+Codex Skill Manager release notice / 发布说明
+
+These Windows binaries are not code-signed. Windows SmartScreen may show a
+warning. Download releases only from:
+https://github.com/bme-lyh/Codex-Skill-Manager/releases
+
+Verify the downloaded ZIP before opening it:
+  Get-FileHash .\DOWNLOADED_ARCHIVE.zip -Algorithm SHA256
+
+Compare the result with the matching line in the release SHA256SUMS file.
+The checksum detects a changed or damaged download; it is not a code signature.
+
+当前 Windows 程序尚未进行代码签名，Windows SmartScreen 可能显示提醒。请只从
+上方项目 Releases 页面下载。打开前请运行上述命令，并将结果与同一版本
+SHA256SUMS 文件中的对应行比较。校验和可以发现下载内容被更改或损坏，但不能代替
+代码签名。

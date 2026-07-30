@@ -35,3 +35,51 @@ Warning ignore and restore decisions are journaled as `ignore-warning` and
 `restore-warning` transactions. Their recovery path is the inverse warning
 action; generic transaction rollback supports `install`, legacy `adopt`,
 `manage`, and `group-*`.
+
+## Assisted installation
+
+Assisted execution creates an `assisted-install` parent transaction before any
+step runs. Apply revalidates the source-bound plan, selected Skills, plan
+and configuration digests, expiry, explicit permission IDs, and optional
+project root. Each typed step moves through queued/running/completed/failed or
+skipped states in the transaction payload:
+
+- `install-skills` delegates to the ordinary installation transaction and keeps
+  its child transaction ID and backups;
+- `managed-python-tool` carries the approval-time complete Wheel lock, then
+  records its explicit managed root, verified Wheel hashes and quarantine
+  recovery path;
+- `configure-codex-mcp` records the configuration backup, applied hash and
+  ownership manifest;
+- `manual` is reported but never mutated or marked as automatically completed.
+
+Before approval, every managed Python step verifies the root package's GitHub
+ownership through official PyPI metadata, resolves a bounded Wheel-only
+dependency closure, validates each archive, and binds every filename and hash
+to `planDigest`. Resolution failure converts the tool and dependent MCP step to
+required manual work. Before the first mutation, apply checks that the cached
+Wheel set still matches the lock. Installation is offline and uses pip
+`--require-hashes`; it never changes the approved dependency graph at runtime.
+Platform-specific Wheels also require the derived `managed-native-code`
+permission.
+
+Required manual steps become `manual-pending`. If at least one supported step
+is approved, those steps run transactionally and the parent plan, transaction,
+and terminal progress use `partial` with `recoveryStatus: "available"`.
+`manual-pending` counts as processed for progress but never as automatically
+completed. A partial run may be rolled back but cannot be automatically retried.
+The approval journal and plan persist the exact selected Skill subset and
+canonical project root before the first mutation.
+
+If a supported step fails or the user cancels at a safe point, the manager
+attempts recovery for completed reversible steps in reverse order and persists
+the result before returning. Recovery checks the applied output hash first. A
+hash mismatch means the user or another process changed the target; the manager
+must not overwrite it and instead marks recovery as incomplete with an exact
+manual path. A retry is allowed only after recovery completed and must not
+silently repeat an unrecovered non-idempotent mutation.
+
+The generic desktop rollback entry for the parent transaction uses the same
+step-specific recovery handlers. Reports include both the original execution
+failure and any recovery failure so a partial rollback cannot be presented as
+success.

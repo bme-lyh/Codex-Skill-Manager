@@ -92,13 +92,23 @@ func TestReviewArgsPlacesGlobalOptionsBeforeExec(t *testing.T) {
 
 func TestMissingCapabilitiesUsesFlagsNotVersion(t *testing.T) {
 	rootHelp := "--config --model --sandbox --ask-for-approval"
-	execHelp := "--ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules --json --output-schema --output-last-message"
+	execHelp := "--ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules --disable --json --output-schema --output-last-message"
 	if missing := missingCapabilitiesFromHelp(rootHelp, execHelp); len(missing) != 0 {
 		t.Fatalf("expected compatible capability set, got %v", missing)
 	}
 	missing := missingCapabilitiesFromHelp(rootHelp, strings.ReplaceAll(execHelp, "--output-schema", ""))
 	if !slices.Contains(missing, "exec --output-schema") {
 		t.Fatalf("expected missing output-schema capability, got %v", missing)
+	}
+}
+
+func TestCodexFeatureCapabilityIsNotVersionBound(t *testing.T) {
+	output := "shell_tool stable true\nshell_snapshot stable true\nunified_exec stable false\n"
+	if !codexFeatureAvailable(output, "shell_tool") {
+		t.Fatal("available shell_tool capability was not detected")
+	}
+	if codexFeatureAvailable("shell_tool removed false\n", "shell_tool") {
+		t.Fatal("removed shell_tool capability must not be accepted")
 	}
 }
 
@@ -128,7 +138,7 @@ func TestParseModelCatalogRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestCountContextFilesUsesCompleteTargetButSkipsManagerOwnedSystemData(t *testing.T) {
+func TestCountContextFilesIncludesRepositorySameNameDirectoriesButSkipsSystemSkills(t *testing.T) {
 	root := t.TempDir()
 	for _, relative := range []string{
 		"SKILL.md",
@@ -148,8 +158,8 @@ func TestCountContextFilesUsesCompleteTargetButSkipsManagerOwnedSystemData(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Fatalf("expected complete user target without manager-owned directories, got %d files", count)
+	if count != 3 {
+		t.Fatalf("expected repository-owned .csm-backups content to be included, got %d files", count)
 	}
 }
 
@@ -360,7 +370,12 @@ if "%~1"=="--help" (
   exit /b 0
 )
 if "%~1"=="exec" if "%~2"=="--help" (
-  echo --ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules --json --output-schema --output-last-message
+  echo --ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules --disable --json --output-schema --output-last-message
+  exit /b 0
+)
+if "%~1"=="features" if "%~2"=="list" (
+  echo shell_tool stable true
+  echo shell_snapshot stable true
   exit /b 0
 )
 set "OUT="

@@ -111,7 +111,7 @@ func (a *App) PrepareGitHub(rawURL, ref string) (model.InstallPreview, error) {
 	if err := a.ready(); err != nil {
 		return model.InstallPreview{}, err
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Minute)
 	defer cancel()
 	return a.mgr.PrepareGitHub(ctx, rawURL, ref)
 }
@@ -128,6 +128,61 @@ func (a *App) ApplyInstall(planID string, skills []string, acceptHighRisk bool) 
 		return model.Transaction{}, err
 	}
 	return a.mgr.ApplyInstall(planID, skills, acceptHighRisk)
+}
+
+func (a *App) AnalyzeInstallWithCodex(planID string) (model.AssistedInstallPlan, error) {
+	if err := a.ready(); err != nil {
+		return model.AssistedInstallPlan{}, err
+	}
+	return a.mgr.AnalyzeInstallWithCodex(
+		a.ctx,
+		planID,
+		func(progress model.AssistedInstallProgress) {
+			wailsruntime.EventsEmit(a.ctx, "assisted-install-progress", progress)
+		},
+	)
+}
+
+func (a *App) ApplyAssistedInstall(
+	planID string,
+	skills []string,
+	permissionIDs []string,
+	projectRoot string,
+) (model.AssistedInstallResult, error) {
+	if err := a.ready(); err != nil {
+		return model.AssistedInstallResult{}, err
+	}
+	return a.mgr.ApplyAssistedInstall(
+		a.ctx,
+		planID,
+		skills,
+		permissionIDs,
+		projectRoot,
+		func(progress model.AssistedInstallProgress) {
+			wailsruntime.EventsEmit(a.ctx, "assisted-install-progress", progress)
+		},
+	)
+}
+
+func (a *App) GetAssistedInstallPlan(planID string) (model.AssistedInstallPlan, error) {
+	if err := a.ready(); err != nil {
+		return model.AssistedInstallPlan{}, err
+	}
+	return a.mgr.GetAssistedInstallPlan(planID)
+}
+
+func (a *App) GetAssistedInstallProgress(referenceID string) (model.AssistedInstallProgress, error) {
+	if err := a.ready(); err != nil {
+		return model.AssistedInstallProgress{}, err
+	}
+	return a.mgr.GetAssistedInstallProgress(referenceID)
+}
+
+func (a *App) CancelAssistedInstall(referenceID string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.mgr.CancelAssistedInstall(referenceID)
 }
 
 func (a *App) AuditSkill(name string) (model.ScanReport, error) {

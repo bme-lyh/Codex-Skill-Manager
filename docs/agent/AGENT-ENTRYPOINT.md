@@ -10,6 +10,14 @@ two-step workflow:
 2. apply it only after the user has approved the exact skills and any accepted
    high-risk findings.
 
+CLI installation without `--assist` is the standard Skill-only workflow.
+Version 0.8.0 adds Codex assisted installation to the desktop and to the CLI's
+explicit two-phase `install --assist` contract. Its Codex output is untrusted
+proposal data: never turn it into shell commands. Preserve the source-bound
+preview, locally derived typed steps and permissions, explicit project root,
+progress sequence, parent transaction, and recovery status. Unsupported work
+remains manual.
+
 Never edit `sources.lock.json` or `state.db` directly. Never delete skill
 directories. `remove` means a reversible move into quarantine. The `.system`
 directory is protected and cannot be managed.

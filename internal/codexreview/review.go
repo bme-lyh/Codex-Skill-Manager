@@ -130,7 +130,7 @@ func countContextFiles(root string) (int, error) {
 			return err
 		}
 		if entry.IsDir() {
-			if path != root && shouldSkipReviewDir(entry.Name()) {
+			if path != root && shouldSkipReviewDir(root, path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -228,7 +228,14 @@ func canExecuteCodex(ctx context.Context, path string) bool {
 func missingCapabilities(ctx context.Context, path string) []string {
 	rootHelp := commandHelp(ctx, path, "--help")
 	execHelp := commandHelp(ctx, path, "exec", "--help")
-	return missingCapabilitiesFromHelp(rootHelp, execHelp)
+	missing := missingCapabilitiesFromHelp(rootHelp, execHelp)
+	features := commandHelp(ctx, path, "features", "list")
+	for _, feature := range []string{"shell_tool", "shell_snapshot"} {
+		if !codexFeatureAvailable(features, feature) {
+			missing = append(missing, "features "+feature)
+		}
+	}
+	return missing
 }
 
 func missingCapabilitiesFromHelp(rootHelp, execHelp string) []string {
@@ -240,7 +247,7 @@ func missingCapabilitiesFromHelp(rootHelp, execHelp string) []string {
 		{"全局", rootHelp, []string{"--config", "--model", "--sandbox", "--ask-for-approval"}},
 		{"exec", execHelp, []string{
 			"--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
-			"--json", "--output-schema", "--output-last-message",
+			"--disable", "--json", "--output-schema", "--output-last-message",
 		}},
 	}
 	missing := make([]string, 0)
@@ -252,6 +259,16 @@ func missingCapabilitiesFromHelp(rootHelp, execHelp string) []string {
 		}
 	}
 	return missing
+}
+
+func codexFeatureAvailable(output, name string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == name && fields[1] != "removed" {
+			return true
+		}
+	}
+	return false
 }
 
 func commandHelp(ctx context.Context, path string, args ...string) string {
@@ -287,18 +304,20 @@ func userHome() string {
 }
 
 func sanitizedEnvironment() []string {
-	blocked := []string{
-		"OPENAI_API_KEY", "CODEX_API_KEY", "GITHUB_TOKEN", "GH_TOKEN",
-		"AWS_SECRET_ACCESS_KEY", "AZURE_CLIENT_SECRET", "GOOGLE_APPLICATION_CREDENTIALS",
+	allowed := map[string]bool{
+		"ALL_PROXY": true, "APPDATA": true, "CODEX_HOME": true, "COMSPEC": true,
+		"HOMEDRIVE": true, "HOMEPATH": true, "HOME": true,
+		"HTTPS_PROXY": true, "HTTP_PROXY": true,
+		"LANG": true, "LC_ALL": true, "LOCALAPPDATA": true,
+		"NO_PROXY": true, "PATH": true, "PATHEXT": true,
+		"SSL_CERT_DIR": true, "SSL_CERT_FILE": true,
+		"SYSTEMROOT": true, "TEMP": true, "TMP": true,
+		"USERPROFILE": true, "WINDIR": true,
 	}
-	block := map[string]bool{}
-	for _, name := range blocked {
-		block[strings.ToUpper(name)] = true
-	}
-	out := make([]string, 0, len(os.Environ()))
+	out := make([]string, 0, len(allowed))
 	for _, item := range os.Environ() {
 		name, _, _ := strings.Cut(item, "=")
-		if !block[strings.ToUpper(name)] {
+		if allowed[strings.ToUpper(name)] {
 			out = append(out, item)
 		}
 	}
