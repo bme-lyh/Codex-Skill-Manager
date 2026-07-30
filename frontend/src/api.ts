@@ -7,6 +7,7 @@ import type {
   CodexReviewProgress,
   Dashboard,
   Finding,
+  CodexProjectScanResult,
   InstallPreview,
   RiskCluster,
   ScanReport,
@@ -55,7 +56,9 @@ type Backend = {
   ValidateGitHubCredentials(): Promise<Record<string, any>>;
   GetCodexCLIStatus(): Promise<CodexCLIStatus>;
   ReviewScanWithCodex(report: ScanReport, skillNames: string[]): Promise<ScanReport>;
-  AnalyzeInstallWithCodex?(installPlanId: string): Promise<AssistedInstallPlan>;
+  ScanProjectWithCodex?(sourcePlanId: string): Promise<CodexProjectScanResult>;
+  AnalyzeInstallFromProjectScan?(projectScanId: string): Promise<AssistedInstallPlan>;
+  GetProjectScan?(reference: string): Promise<CodexProjectScanResult>;
   ApplyAssistedInstall?(
     planId: string,
     skills: string[],
@@ -124,6 +127,70 @@ function normalizeAssistedPlan(value: AssistedInstallPlan): AssistedInstallPlan 
     skills: value?.skills ?? [],
     scan: value?.scan ? normalizeScan(value.scan) : undefined
   };
+}
+
+function normalizeProjectScan(value: CodexProjectScanResult): CodexProjectScanResult {
+  return {
+    ...value,
+    repository: value?.repository ?? demoInstallPreview.repository,
+    summary: value?.summary ?? "",
+    security: {
+      verdict: value?.security?.verdict ?? "insufficient-context",
+      summary: value?.security?.summary ?? "",
+      confidence: value?.security?.confidence ?? 0,
+      localHighestRisk: value?.security?.localHighestRisk ?? "informational",
+      localFindingCount: value?.security?.localFindingCount ?? 0,
+      concerns: value?.security?.concerns ?? []
+    },
+    installationMethods: value?.installationMethods ?? [],
+    contextFileCount: value?.contextFileCount ?? 0,
+    summaryFileCount: value?.summaryFileCount ?? 0,
+    deepAnalysisFileCount: value?.deepAnalysisFileCount ?? 0,
+    omittedFileCount: value?.omittedFileCount ?? 0,
+    redactedFileCount: value?.redactedFileCount ?? 0,
+    truncatedFileCount: value?.truncatedFileCount ?? 0,
+    focusFiles: value?.focusFiles ?? [],
+    contextDigest: value?.contextDigest ?? "",
+    scanDigest: value?.scanDigest ?? ""
+  };
+}
+
+function demoProjectScan(sourcePlanId: string): CodexProjectScanResult {
+  return normalizeProjectScan({
+    id: "demo-project-scan",
+    sourcePlanId,
+    status: "completed",
+    repository: demoInstallPreview.repository,
+    summary: "This repository publishes Skills and keeps optional integration work separate from the Skill copy.",
+    security: {
+      verdict: "mostly-contextual",
+      summary: "Local checks found no open high-risk warning in this preview; review the focused files before authorizing installation.",
+      confidence: 0.72,
+      localHighestRisk: demoInstallPreview.scan.activeHighestSeverity,
+      localFindingCount: demoInstallPreview.scan.activeFindingCount,
+      concerns: []
+    },
+    installationMethods: [{
+      kind: "skills-only",
+      title: "Install selected Skills",
+      description: "Copy the selected Skills through the manager transaction.",
+      supported: true,
+      required: true,
+      evidenceFiles: ["README.md"]
+    }],
+    contextMode: "demo",
+    contextFileCount: 0,
+    summaryFileCount: 0,
+    deepAnalysisFileCount: 0,
+    omittedFileCount: 0,
+    redactedFileCount: 0,
+    truncatedFileCount: 0,
+    focusFiles: [],
+    contextDigest: "",
+    scanDigest: "",
+    startedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 86400000).toISOString()
+  });
 }
 
 function normalizeAssistedProgress(value: AssistedInstallProgress): AssistedInstallProgress {
@@ -280,13 +347,29 @@ export const api = {
     if (!b) throw new Error("桌面后端尚未连接");
     return normalizeScan(await b.ReviewScanWithCodex(report, skillNames));
   },
-  analyzeAssisted: async (installPlanId: string): Promise<AssistedInstallPlan> => {
+  scanProject: async (sourcePlanId: string): Promise<CodexProjectScanResult> => {
+    const b = backend();
+    if (!b) return demoProjectScan(sourcePlanId);
+    if (typeof b.ScanProjectWithCodex !== "function") {
+      throw new Error("当前桌面后端不支持可复用的 Codex 项目扫描，请升级应用");
+    }
+    return normalizeProjectScan(await b.ScanProjectWithCodex(sourcePlanId));
+  },
+  createAssistedPlanFromScan: async (projectScanId: string): Promise<AssistedInstallPlan> => {
     const b = backend();
     if (!b) return normalizeAssistedPlan(demoAssistedInstallPlan);
-    if (typeof b.AnalyzeInstallWithCodex !== "function") {
-      throw new Error("当前桌面后端不支持 Codex 一键安装，请升级应用或切换到标准安装");
+    if (typeof b.AnalyzeInstallFromProjectScan !== "function") {
+      throw new Error("当前桌面后端不支持在项目扫描后生成 Codex 安装计划，请升级应用");
     }
-    return normalizeAssistedPlan(await b.AnalyzeInstallWithCodex(installPlanId));
+    return normalizeAssistedPlan(await b.AnalyzeInstallFromProjectScan(projectScanId));
+  },
+  getProjectScan: async (reference: string): Promise<CodexProjectScanResult> => {
+    const b = backend();
+    if (!b) return demoProjectScan(reference);
+    if (typeof b.GetProjectScan !== "function") {
+      throw new Error("当前桌面后端不支持恢复 Codex 项目扫描，请升级应用");
+    }
+    return normalizeProjectScan(await b.GetProjectScan(reference));
   },
   applyAssisted: async (
     planId: string,

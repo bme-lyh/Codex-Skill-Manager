@@ -45,19 +45,23 @@ untracked content.
 
 ## Assisted installation boundary
 
-Codex assisted installation is a manager workflow exposed through the Wails
-desktop facade and the CLI's explicit `install --assist` contract. It is layered
-on the ordinary installation preview. The standard resolver first pins GitHub
+Codex assisted installation is a consent-gated manager workflow exposed through
+the Wails desktop facade and the CLI's explicit `install --assist` contract. It
+is layered on the ordinary installation preview. The standard resolver first pins GitHub
 input to a full commit SHA and extracts it safely, or validates an explicit
 local directory. It then discovers candidates and scans the exact Skill targets.
-The manager packages every repository file on stdin: UTF-8 text is included
-verbatim and binary files are represented by path, size, and SHA-256. Only
+The reusable project-scan phase uses local results, bounded file summaries, and
+a deterministic focused-file analysis. Every file is covered by an immutable
+inventory and digest; credential-like files are metadata-only, large text files
+are bounded, and each Codex input stays below the configured 800 KiB budget. Only
 root-level VCS directories with real metadata markers are skipped; ordinary
 same-name and manager-like directories remain in scope. Canonical containment,
 handle identity, and post-read checks reject escape or replacement during
 packaging. If the package exceeds one model request, deterministic chunks cover
-every original text file exactly once and a final no-tools pass synthesizes the
-chunk results.
+every eligible text file exactly once and a final no-tools pass synthesizes the
+chunk results. It returns an overview, security conclusion, and declarative
+installation methods but cannot create permissions or execution steps. A
+separate explicit user decision authorizes plan creation from the verified scan.
 The assisted session disables Codex's shell tool and uses a manager-owned output
 directory as its working directory. A context digest detects changes before
 apply.

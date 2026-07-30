@@ -79,7 +79,7 @@ after the dialog is hidden. Reopening restores its progress. A failed retry
 returns to approval with only the exact prior Skill subset, permissions, and
 project root. Partial manual work and its rollback entry remain in History.
 
-The CLI exposes the same two-phase workflow; see the
+The CLI exposes the same three-phase scan, plan-consent, and apply workflow; see the
 [CLI reference](cli-reference.md#codex-assisted-installation).
 
 ## Check for updates

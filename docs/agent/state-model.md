@@ -37,8 +37,13 @@ Generated reports are stored under `reportsRoot`; immutable pre-change content
 is moved under `backupsRoot`; reversible uninstall content is moved under
 `quarantineRoot`; downloads are unpacked under `stagingRoot`.
 
-An assisted plan is bound to the ordinary source-plan ID, repository identity,
-context digest, configuration fingerprint, plan digest and expiry.
+Completed read-only project scans live under `dataRoot/project-scans`. They are
+bound to the source-plan ID, repository identity, context digest, canonical scan
+digest, and expiry; loading by source ID returns the latest valid completed scan.
+
+An assisted plan is bound to the project-scan ID and digest, ordinary source-plan
+ID, repository identity, context digest, configuration fingerprint, plan digest
+and expiry.
 Runtime progress is keyed by plan/run reference and uses a monotonic sequence so
 the desktop can recover the newest snapshot after navigation or dialog reopen.
 Plan and progress snapshots live under `dataRoot/assisted-install`; they are

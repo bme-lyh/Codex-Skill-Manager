@@ -216,9 +216,25 @@ func (s *assistedAnalysisProgressSequencer) completeAllAnalysisStages() {
 	}
 }
 
-func (m *Manager) AnalyzeInstallWithCodex(
+// AnalyzeInstallFromProjectScan is the consent boundary for the new assisted
+// flow. A completed project scan must be loaded and verified before Codex is
+// asked to produce an executable installation proposal.
+func (m *Manager) AnalyzeInstallFromProjectScan(
+	ctx context.Context,
+	projectScanID string,
+	progress AssistedInstallProgressFunc,
+) (model.AssistedInstallPlan, error) {
+	scan, err := m.GetProjectScan(projectScanID)
+	if err != nil {
+		return model.AssistedInstallPlan{}, err
+	}
+	return m.analyzeInstallWithCodex(ctx, scan.SourcePlanID, &scan, progress)
+}
+
+func (m *Manager) analyzeInstallWithCodex(
 	ctx context.Context,
 	sourcePlanID string,
+	projectScan *model.CodexProjectScanResult,
 	progress AssistedInstallProgressFunc,
 ) (model.AssistedInstallPlan, error) {
 	sourcePlanID = strings.TrimSpace(sourcePlanID)
@@ -228,6 +244,14 @@ func (m *Manager) AnalyzeInstallWithCodex(
 	}
 	if time.Now().UTC().After(preview.ExpiresAt) {
 		return model.AssistedInstallPlan{}, errors.New("source install plan has expired")
+	}
+	if projectScan != nil {
+		if projectScan.SourcePlanID != preview.ID || projectScan.Status != "completed" {
+			return model.AssistedInstallPlan{}, errors.New("a completed project scan for this source is required")
+		}
+		if _, err := m.GetProjectScan(projectScan.ID); err != nil {
+			return model.AssistedInstallPlan{}, err
+		}
 	}
 
 	analysisContext, cancel := context.WithCancel(ctx)
@@ -285,13 +309,25 @@ func (m *Manager) AnalyzeInstallWithCodex(
 		emit(value, false)
 	}
 
-	plan, err := codexreview.AnalyzeInstall(
-		analysisContext,
-		cfg,
-		preview,
-		m.Config.Paths.StagingRoot,
-		codexreview.AssistedInstallProgressFunc(relay),
-	)
+	var plan model.AssistedInstallPlan
+	if projectScan != nil {
+		plan, err = codexreview.AnalyzeInstallWithProjectScan(
+			analysisContext,
+			cfg,
+			preview,
+			m.Config.Paths.StagingRoot,
+			projectScan,
+			codexreview.AssistedInstallProgressFunc(relay),
+		)
+	} else {
+		plan, err = codexreview.AnalyzeInstall(
+			analysisContext,
+			cfg,
+			preview,
+			m.Config.Paths.StagingRoot,
+			codexreview.AssistedInstallProgressFunc(relay),
+		)
+	}
 	if err != nil {
 		failAnalysis("failed", err)
 		return model.AssistedInstallPlan{}, err
@@ -336,6 +372,10 @@ func (m *Manager) AnalyzeInstallWithCodex(
 	if err != nil {
 		failAnalysis("finalization-failed", err)
 		return model.AssistedInstallPlan{}, err
+	}
+	if projectScan != nil {
+		plan.ProjectScanID = projectScan.ID
+		plan.ProjectScanDigest = projectScan.ScanDigest
 	}
 	plan, err = codexreview.FinalizeAssistedInstallPlan(
 		plan,
@@ -389,6 +429,18 @@ func (m *Manager) GetAssistedInstallPlan(planID string) (model.AssistedInstallPl
 	preview, err := m.assistedSourcePreview(plan.SourcePlanID)
 	if err != nil {
 		return model.AssistedInstallPlan{}, fmt.Errorf("load assisted-install source plan: %w", err)
+	}
+	if plan.ProjectScanID != "" {
+		scan, scanErr := m.GetProjectScan(plan.ProjectScanID)
+		if scanErr != nil {
+			return model.AssistedInstallPlan{}, scanErr
+		}
+		if scan.SourcePlanID != plan.SourcePlanID ||
+			!strings.EqualFold(scan.ScanDigest, plan.ProjectScanDigest) {
+			return model.AssistedInstallPlan{}, errors.New(
+				"assisted-install plan is not bound to the approved project scan",
+			)
+		}
 	}
 	if err := codexreview.VerifyAssistedInstallPlan(
 		cloneAssistedPlanForVerification(plan),
@@ -878,6 +930,18 @@ func (m *Manager) preflightAssistedInstall(
 		return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, errors.New(
 			"source install plan has expired",
 		)
+	}
+	if plan.ProjectScanID != "" {
+		scan, scanErr := m.GetProjectScan(plan.ProjectScanID)
+		if scanErr != nil {
+			return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, scanErr
+		}
+		if scan.SourcePlanID != plan.SourcePlanID ||
+			!strings.EqualFold(scan.ScanDigest, plan.ProjectScanDigest) {
+			return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, errors.New(
+				"assisted-install plan is not bound to the approved project scan",
+			)
+		}
 	}
 	if err := codexreview.VerifyAssistedInstallPlan(
 		cloneAssistedPlanForVerification(plan),

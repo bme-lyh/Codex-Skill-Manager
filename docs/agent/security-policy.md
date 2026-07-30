@@ -24,11 +24,19 @@ output. Repository text remains untrusted data; only an explicit human action
 changes ignore state.
 
 Codex assisted installation is also opt-in and must start from the ordinary
-commit-pinned GitHub or explicit-local, scanned source preview. The complete
-prepared source is packaged into the model input; text is verbatim and binary
-files are represented by path, size, and SHA-256. The session disables the shell
-tool and runs from a manager-owned output directory. Its output is only a
-declarative proposal.
+commit-pinned GitHub or explicit-local, scanned source preview. Its first phase
+is a reusable read-only project scan: local findings, bounded summaries for the
+complete eligible text inventory, then deterministic focused-file analysis.
+Credential-like files are metadata-only and large text is truncated before
+cloud submission. The session disables the shell tool and runs from a
+manager-owned output directory. The scan returns only an overview, advisory
+security conclusion, and declarative installation methods.
+
+Project scanning is not installation consent. Plan creation requires a second
+explicit user action and binds the resulting plan to the scan ID, scan digest,
+source digest, and expiry. A sensitive capability that is necessary for the
+declared Skill may be reported as contextual with a warning; it is not
+automatically classified as harmful or granted execution authority.
 
 The global `codexReview.enabled` setting gates Security Center risk review only.
 Selecting the assisted mode in the desktop or passing CLI `--assist` is the

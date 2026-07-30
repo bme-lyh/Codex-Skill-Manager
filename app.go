@@ -130,17 +130,40 @@ func (a *App) ApplyInstall(planID string, skills []string, acceptHighRisk bool) 
 	return a.mgr.ApplyInstall(planID, skills, acceptHighRisk)
 }
 
-func (a *App) AnalyzeInstallWithCodex(planID string) (model.AssistedInstallPlan, error) {
+// ScanProjectWithCodex is the read-only first phase for assisted installation.
+// It returns an overview/security/install-method result without creating an
+// installation plan or applying any mutation.
+func (a *App) ScanProjectWithCodex(planID string) (model.CodexProjectScanResult, error) {
 	if err := a.ready(); err != nil {
-		return model.AssistedInstallPlan{}, err
+		return model.CodexProjectScanResult{}, err
 	}
-	return a.mgr.AnalyzeInstallWithCodex(
+	return a.mgr.ScanProjectWithCodex(
 		a.ctx,
 		planID,
 		func(progress model.AssistedInstallProgress) {
 			wailsruntime.EventsEmit(a.ctx, "assisted-install-progress", progress)
 		},
 	)
+}
+
+func (a *App) AnalyzeInstallFromProjectScan(scanID string) (model.AssistedInstallPlan, error) {
+	if err := a.ready(); err != nil {
+		return model.AssistedInstallPlan{}, err
+	}
+	return a.mgr.AnalyzeInstallFromProjectScan(
+		a.ctx,
+		scanID,
+		func(progress model.AssistedInstallProgress) {
+			wailsruntime.EventsEmit(a.ctx, "assisted-install-progress", progress)
+		},
+	)
+}
+
+func (a *App) GetProjectScan(reference string) (model.CodexProjectScanResult, error) {
+	if err := a.ready(); err != nil {
+		return model.CodexProjectScanResult{}, err
+	}
+	return a.mgr.GetProjectScan(reference)
 }
 
 func (a *App) ApplyAssistedInstall(

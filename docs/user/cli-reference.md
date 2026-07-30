@@ -95,14 +95,22 @@ csm install --local "D:\skills\package"
 
 ## Codex 辅助安装
 
-CLI 同样使用两阶段流程。第一步只分析并输出计划：
+CLI 使用三个明确阶段。第一步只进行只读项目扫描，返回项目概述、安全结论、证据覆盖
+和声明式安装方式：
 
 ```powershell
 csm --json install --url "https://github.com/owner/repo" --assist
 ```
 
-核对返回的 `id`、`skills`、`steps`、`permissions`、`warnings` 和
-`needsProjectRoot`。第二步明确选择 Skills，并逐个传入计划中要批准的权限 ID：
+核对返回的 `id`、`security`、`installationMethods` 和上下文覆盖信息。确认继续后，
+第二步明确授权 Codex 生成结构化安装计划：
+
+```powershell
+csm --json install --assist --project-scan-id PROJECT_SCAN --create-plan
+```
+
+再核对计划中的 `id`、`skills`、`steps`、`permissions`、`warnings` 和
+`needsProjectRoot`。第三步明确选择 Skills，并逐个传入计划中要批准的权限 ID：
 
 ```powershell
 csm --json install --assist --plan-id ASSISTED_PLAN --apply `
@@ -112,8 +120,8 @@ csm --json install --assist --plan-id ASSISTED_PLAN --apply `
 ```
 
 只传计划实际列出的权限；`--all` 可代替多个 `--skill`。只有计划要求 MCP 时才传
-`--project-root`，它必须是真实的 Git 或 SVN 工作目录。不能在创建辅助计划时同时
-使用 `--apply`。
+`--project-root`，它必须是真实的 Git 或 SVN 工作目录。项目扫描阶段不会下载依赖
+或生成安装计划；不能在创建辅助计划时同时使用 `--apply`。
 
 输入 `--assist` 本身就是本次明确启用，不受安全中心“Codex 风险复核”总开关
 控制；它仍使用设置中的 CLI 路径、模型和推理强度，并消耗 Codex 额度。CLI 返回

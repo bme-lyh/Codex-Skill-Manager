@@ -37,14 +37,18 @@ csm --json install --plan-id PLAN_ID --apply --skill SKILL_NAME
 Local installation uses `install --local ABSOLUTE_PATH`, followed by the
 same apply command. Repeat `--skill` to select multiple skills.
 
-Two-phase Codex assisted installation:
+Three-phase Codex assisted installation:
 
 ```powershell
 csm --json install --url https://github.com/OWNER/REPO --assist
+csm --json install --assist --project-scan-id PROJECT_SCAN --create-plan
 csm --json install --assist --plan-id ASSISTED_PLAN --apply `
   --skill SKILL_NAME --grant PERMISSION_ID
 ```
 
+The first command is a reusable read-only project scan. Present its overview,
+security conclusion, coverage limitations, and installation methods before
+asking whether to create a plan. The second command is that explicit consent.
 Use `--all` instead of repeated `--skill` when the user approved every candidate.
 Repeat `--grant` only for permission IDs shown by the plan. Add
 `--project-root ABSOLUTE_GIT_OR_SVN_PATH` only when `needsProjectRoot` is true.

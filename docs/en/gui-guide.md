@@ -24,12 +24,18 @@ requiring the user to rebuild the URL.
 
 **Standard installation** writes only the explicitly selected Skills.
 **Codex assisted installation** first performs the same GitHub commit pinning
-or local-source validation and local scan. The app packages the complete
-prepared source for a signed-in Codex CLI with shell access disabled. Large
-sources are reviewed in deterministic chunks and then synthesized. Codex
-returns a project summary, requirements, typed steps, and permissions. It uses
+or local-source validation and local scan. It then runs a reusable read-only
+project scan: bounded summaries cover the eligible text inventory and a
+deterministic focus set receives deeper analysis. Credential-like files are
+metadata-only and large text is truncated. Codex first returns a project
+overview, security conclusion, evidence limitations, and declarative
+installation methods. It uses
 the configured model and reasoning effort, consumes Codex usage, and treats the
 local risk overview only as supplemental context.
+
+The scan does not create a plan, download dependencies, or authorize
+installation. The user must review it and choose **Approve and create
+installation plan** before Codex can propose typed steps and permissions.
 
 Codex text is never executed as a command. Automatic steps are restricted to
 installing selected Skills, installing a repository-matched exact-version Python
@@ -40,7 +46,7 @@ automatic steps run first, and the result reports `partial` with the remaining
 manual work. MCP setup requires a real Git or SVN target project and will not
 replace an existing same-name MCP entry.
 
-When a Python tool is proposed, analysis downloads its complete Wheel closure
+When a Python tool is proposed, plan creation downloads its complete Wheel closure
 from official PyPI into isolated staging and displays the locked filenames and
 SHA256 values. Nothing is installed or run during analysis. Source
 distributions are rejected; native-code Wheels are marked high risk and need a

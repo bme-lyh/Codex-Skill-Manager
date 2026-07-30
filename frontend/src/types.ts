@@ -292,6 +292,50 @@ export interface InstallPreview {
   expiresAt: string;
 }
 
+export interface CodexProjectSecurity {
+  verdict: string;
+  summary: string;
+  confidence: number;
+  localHighestRisk: Severity;
+  localFindingCount: number;
+  concerns: CodexConcern[];
+}
+
+export interface CodexProjectInstallMethod {
+  kind: string;
+  title: string;
+  description: string;
+  supported: boolean;
+  required: boolean;
+  evidenceFiles: string[];
+}
+
+export interface CodexProjectScanResult {
+  id: string;
+  sourcePlanId: string;
+  status: string;
+  repository: InstallPreview["repository"];
+  summary: string;
+  security: CodexProjectSecurity;
+  installationMethods: CodexProjectInstallMethod[];
+  contextMode: string;
+  contextFileCount: number;
+  summaryFileCount: number;
+  deepAnalysisFileCount: number;
+  omittedFileCount: number;
+  redactedFileCount: number;
+  truncatedFileCount: number;
+  focusFiles: string[];
+  contextDigest: string;
+  scanDigest: string;
+  model?: string;
+  reasoningEffort?: string;
+  startedAt: string;
+  completedAt?: string;
+  expiresAt: string;
+  error?: string;
+}
+
 export type AssistedInstallStatus =
   | "analyzing"
   | "ready"
@@ -370,6 +414,8 @@ export interface AssistedInstallStep {
 export interface AssistedInstallPlan {
   id: string;
   sourcePlanId: string;
+  projectScanId?: string;
+  projectScanDigest?: string;
   status: AssistedInstallStatus | string;
   repository: InstallPreview["repository"];
   summary: string;

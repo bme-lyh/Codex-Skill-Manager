@@ -23,10 +23,12 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    specific repository subtree before creating a plan. Prefer an explicitly
    identified `skills-codex` mirror for Codex only after showing that scope.
 5. When the user explicitly requests assisted installation for a complex
-   repository, use `install --assist` to create a separate Codex plan. Present
-   its repository summary, requirements, warnings, typed steps, exact Skills,
-   permission IDs, manual work, and project-root requirement. Do not apply it in
-   the same command.
+   repository, use `install --assist` to create a read-only Codex project scan.
+   Present its overview, advisory security conclusion, evidence limitations,
+   and declarative installation methods. Only after the user explicitly agrees,
+   use `--assist --project-scan-id ... --create-plan`. Present the resulting
+   requirements, warnings, typed steps, exact Skills, permission IDs, manual
+   work, and project-root requirement. Do not apply it in the same command.
 6. Ask for confirmation of the exact selected skill names. Keep active High and
    Critical clusters blocked until the user explicitly ignores them. Offer one
    cluster or report-wide human decisions for every severity and deterministic
