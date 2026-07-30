@@ -63,6 +63,10 @@ flowchart LR
 不可用时，仍可切回标准安装。详细边界见
 [图形界面指南](docs/user/gui-guide.md) 和 [安全说明](SECURITY.md)。
 
+如果仓库同时提供主线版和 Codex 版同名 Skill，安装窗口会列出冲突路径，并在
+可以确认时提供建议的 Codex 子目录。Codex 计划生成失败也不会丢失已经完成的
+来源检查，可直接改用标准安装。
+
 ## 使用 Codex 风险复核
 
 Codex 风险复核是可选功能，默认关闭。启用前需要：
@@ -89,7 +93,7 @@ Codex 风险复核是可选功能，默认关闭。启用前需要：
 Releases 下载，并用同页的 `SHA256SUMS.txt` 核对压缩包：
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.8.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.8.1-windows-amd64.zip -Algorithm SHA256
 ```
 
 ### 方式二：从源码构建
@@ -124,7 +128,7 @@ pnpm --dir frontend install --frozen-lockfile
 
 ## 项目状态
 
-当前版本为 **0.8.0**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
+当前版本为 **0.8.1**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
 
 欢迎提交问题和改进建议。参与前请阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
 

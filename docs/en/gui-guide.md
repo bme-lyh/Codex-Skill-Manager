@@ -17,6 +17,11 @@ retry path; you do not need to close it to find a global notification. A rate
 limit shows its reset time and countdown, blocks premature retries, and links
 to credential settings.
 
+If different same-name Skills are present in separate repository directories,
+the dialog lists the conflicting paths. When a `skills-codex` mirror is
+detected, **Use suggested Codex directory** retries with that subtree without
+requiring the user to rebuild the URL.
+
 **Standard installation** writes only the explicitly selected Skills.
 **Codex assisted installation** first performs the same GitHub commit pinning
 or local-source validation and local scan. The app packages the complete
@@ -46,6 +51,10 @@ the current step, completed count, activity, and errors. Use the top-right
 button to hide the dialog while work continues in the background; reopening it
 restores the latest progress. A process interrupted by application exit is
 reported explicitly instead of treating a source preview as an install plan.
+When Codex CLI reports a failure event, the dialog shows its actual error
+without storing normal model output or repository text. If no reliable plan can
+be generated, the source check, risk result, and Skill selection remain
+available for standard installation.
 After a failed run, the approval view restores only the exact prior Skill
 subset, permissions, and project root and requires another review before retry.
 Failure or cancellation recovers reversible steps in reverse order. Partial

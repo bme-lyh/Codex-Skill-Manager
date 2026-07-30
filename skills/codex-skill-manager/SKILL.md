@@ -18,7 +18,10 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    evidence, confidence, file snapshot and scan findings, then apply only the
    exact confirmed names.
 4. For GitHub or local installation, create a plan first. Show the resolved
-   repository commit, discovered skills and scan findings.
+   repository commit, discovered skills and scan findings. If different Skill
+   contents share one name, report every conflicting source path and select a
+   specific repository subtree before creating a plan. Prefer an explicitly
+   identified `skills-codex` mirror for Codex only after showing that scope.
 5. When the user explicitly requests assisted installation for a complex
    repository, use `install --assist` to create a separate Codex plan. Present
    its repository summary, requirements, warnings, typed steps, exact Skills,
@@ -68,7 +71,9 @@ transaction IDs, and keep the user informed before any filesystem mutation.
   Approved automatic steps may run even when required manual work remains. Treat
   a `partial` result as incomplete, report every manual item, pass only
   permissions returned by that plan, and never edit or execute internal
-  assisted-plan snapshots.
+  assisted-plan snapshots. If Codex cannot produce a valid assisted plan,
+  preserve the source preview and offer the standard Skill-only plan instead
+  of treating the source analysis as failed.
 - A GUI one-click decision may atomically ignore all active clusters without
   Codex review or a mandatory reason. Preserve explicit cluster targets and a
   recovery path in the transaction journal.

@@ -75,6 +75,7 @@ interface Feedback {
   settingsSuggested?: boolean;
   settingsKind?: "github" | "codex";
   restartRequired?: boolean;
+  suggestedSourceUrl?: string;
 }
 
 interface InstallDraft {
@@ -604,8 +605,13 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     }
   };
 
-  const analyzeSource = async () => {
-    const trimmed = source.trim();
+  const analyzeSource = async (
+    sourceOverride?: string,
+    sourceMethodOverride?: SourceMethod,
+    requestedRefOverride?: string
+  ) => {
+    const effectiveSourceMethod = sourceMethodOverride ?? sourceMethod;
+    const trimmed = (sourceOverride ?? source).trim();
     if (!trimmed) return;
     let codexPhase = false;
     setBusy("source");
@@ -624,8 +630,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     setStandardResult(null);
     setSelectedPermissions([]);
     try {
-      const analyzed = sourceMethod === "github"
-        ? await api.prepareGitHub(trimmed, requestedRef.trim())
+      const analyzed = effectiveSourceMethod === "github"
+        ? await api.prepareGitHub(trimmed, (requestedRefOverride ?? requestedRef).trim())
         : await api.prepareLocal(trimmed);
       setPreview(analyzed);
       setSelectedSkills(analyzed.skills.map(skill => skill.name));
@@ -651,6 +657,14 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     } finally {
       if (!codexPhase) setBusy("");
     }
+  };
+
+  const useSuggestedSource = (url: string) => {
+    if (!url || busy !== "") return;
+    setSourceMethod("github");
+    setSource(url);
+    setRequestedRef("");
+    void analyzeSource(url, "github", "");
   };
 
   const refreshWithinDialog = async (): Promise<boolean> => {
@@ -1301,7 +1315,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         </button>
       </div>
       {feedback && <TaskFeedback feedback={feedback} retryTask={retryTask} retryEnabled={retryEnabled} onRetry={retry}
-        retryWaitMs={retryWaitMs} onOpenSettings={openSettings} />}
+        retryWaitMs={retryWaitMs} onOpenSettings={openSettings} onUseSuggestedSource={useSuggestedSource} />}
       <div className="install-dialog-body">{renderBody()}</div>
       <div className="modal-actions install-dialog-actions">{renderActions()}</div>
     </div>
@@ -1818,13 +1832,22 @@ function TimelineStep({ step, index }: { step: AssistedInstallProgressStep; inde
   </li>;
 }
 
-function TaskFeedback({ feedback, retryTask, retryEnabled, onRetry, retryWaitMs, onOpenSettings }: {
+function TaskFeedback({
+  feedback,
+  retryTask,
+  retryEnabled,
+  onRetry,
+  retryWaitMs,
+  onOpenSettings,
+  onUseSuggestedSource
+}: {
   feedback: Feedback;
   retryTask: RetryTask;
   retryEnabled: boolean;
   onRetry: () => void;
   retryWaitMs: number;
   onOpenSettings?: () => void;
+  onUseSuggestedSource?: (url: string) => void;
 }) {
   const { t } = useI18n();
   return <div className={`install-feedback ${feedback.tone}`}
@@ -1834,7 +1857,9 @@ function TaskFeedback({ feedback, retryTask, retryEnabled, onRetry, retryWaitMs,
         feedback.tone === "warning" ? <AlertTriangle size={20} /> : <LoaderCircle className={feedback.title.includes("正在") ? "spin" : ""} size={20} />}
     <div><strong>{feedback.title}</strong><p>{feedback.message}</p>
       {feedback.detail && <details><summary>{t("技术详情", "Technical details")}</summary><pre>{feedback.detail}</pre></details>}
-      {((retryTask && (retryEnabled || retryWaitMs > 0)) || (feedback.settingsSuggested && onOpenSettings)) && <div className="feedback-actions">
+      {((retryTask && (retryEnabled || retryWaitMs > 0)) ||
+        (feedback.settingsSuggested && onOpenSettings) ||
+        (feedback.suggestedSourceUrl && onUseSuggestedSource)) && <div className="feedback-actions">
         {retryTask && (retryEnabled || retryWaitMs > 0) && <button type="button" onClick={onRetry} disabled={!retryEnabled}>
           <RefreshCw size={15} />{retryWaitMs > 0
             ? t(`${formatRetryWait(retryWaitMs)} 后可重试`, `Retry in ${formatRetryWait(retryWaitMs)}`)
@@ -1843,6 +1868,10 @@ function TaskFeedback({ feedback, retryTask, retryEnabled, onRetry, retryWaitMs,
           <Settings size={15} />{feedback.settingsKind === "github"
             ? t("检查 GitHub 凭据", "Check GitHub credentials")
             : t("打开 Codex 设置", "Open Codex settings")}</button>}
+        {feedback.suggestedSourceUrl && onUseSuggestedSource &&
+          <button type="button" onClick={() => onUseSuggestedSource(feedback.suggestedSourceUrl!)}>
+            <FolderGit2 size={15} />{t("使用建议的 Codex 目录", "Use suggested Codex directory")}
+          </button>}
       </div>}
     </div>
   </div>;
@@ -1866,11 +1895,24 @@ function issueFrom(error: unknown, t: Translate, fallback?: string): Feedback {
     githubForbidden,
     codexUnavailable: unavailable,
     restartRequired,
-    invalidInput
+    invalidInput,
+    skillVariantConflict,
+    suggestedSourceUrl
   } = classifyInstallIssue(error);
   let title = t("操作失败", "Operation failed");
   let message = fallback || rawMessage || t("未收到可用的错误信息。", "No usable error information was returned.");
-  if (rateLimited) {
+  if (skillVariantConflict) {
+    title = t("发现同名 Skill 变体", "Multiple Skill variants found");
+    message = suggestedSourceUrl
+      ? t(
+        "仓库同时提供了内容不同的同名 Skill。请选择具体版本；可直接使用应用识别出的 Codex 目录。",
+        "The repository contains different Skills with the same name. Choose a specific variant or use the detected Codex directory."
+      )
+      : t(
+        "仓库同时提供了内容不同的同名 Skill。请根据技术详情，将来源改为具体的仓库子目录。",
+        "The repository contains different Skills with the same name. Use the paths in Technical details to select a repository subtree."
+      );
+  } else if (rateLimited) {
     title = t("GitHub 访问受限", "GitHub access is limited");
     message = retryHint
       ? t(`GitHub 请求额度暂时不可用，可在 ${retryHint} 后重试。输入内容和当前进度已保留。`,
@@ -1901,10 +1943,11 @@ function issueFrom(error: unknown, t: Translate, fallback?: string): Feedback {
       .filter(Boolean).join("\n"),
     rateLimited,
     retryAt: retryHint,
-    retryable: !(restartRequired || invalidInput),
+    retryable: !(restartRequired || invalidInput || skillVariantConflict),
     settingsSuggested: rateLimited || githubForbidden || unavailable,
     settingsKind: rateLimited || githubForbidden ? "github" : unavailable ? "codex" : undefined,
-    restartRequired
+    restartRequired,
+    suggestedSourceUrl
   };
 }
 

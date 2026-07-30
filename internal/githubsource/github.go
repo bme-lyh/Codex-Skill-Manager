@@ -471,22 +471,44 @@ func Discover(root, sourcePath string) ([]model.CandidateSkill, error) {
 	if err != nil {
 		return nil, err
 	}
-	byName := map[string]model.CandidateSkill{}
+	byName := map[string][]model.CandidateSkill{}
 	for _, candidate := range out {
-		existing, duplicate := byName[candidate.Name]
-		if !duplicate {
-			byName[candidate.Name] = candidate
-			continue
-		}
-		if !sameCandidateFiles(existing.Files, candidate.Files) {
-			return nil, fmt.Errorf("multiple different Skills use the name %q; install a specific repository path", candidate.Name)
-		}
-		if preferredCandidatePath(candidate.SourcePath, existing.SourcePath) {
-			byName[candidate.Name] = candidate
-		}
+		byName[candidate.Name] = append(byName[candidate.Name], candidate)
 	}
 	out = out[:0]
-	for _, candidate := range byName {
+	for name, variants := range byName {
+		candidate := variants[0]
+		conflictingPaths := []string{candidate.SourcePath}
+		for _, variant := range variants[1:] {
+			if !sameCandidateFiles(candidate.Files, variant.Files) {
+				conflictingPaths = append(conflictingPaths, variant.SourcePath)
+				continue
+			}
+			if preferredCandidatePath(variant.SourcePath, candidate.SourcePath) {
+				candidate = variant
+				conflictingPaths[0] = variant.SourcePath
+			}
+		}
+		if len(conflictingPaths) > 1 {
+			for _, variant := range variants[1:] {
+				alreadyIncluded := false
+				for _, path := range conflictingPaths {
+					if path == variant.SourcePath {
+						alreadyIncluded = true
+						break
+					}
+				}
+				if !alreadyIncluded && !sameCandidateFiles(candidate.Files, variant.Files) {
+					conflictingPaths = append(conflictingPaths, variant.SourcePath)
+				}
+			}
+			sort.Strings(conflictingPaths)
+			return nil, &SkillNameConflictError{
+				Name:                name,
+				Paths:               conflictingPaths,
+				SuggestedSourcePath: suggestedCodexSourcePath(conflictingPaths),
+			}
+		}
 		out = append(out, candidate)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -496,6 +518,36 @@ func Discover(root, sourcePath string) ([]model.CandidateSkill, error) {
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+type SkillNameConflictError struct {
+	Name                string
+	Paths               []string
+	SuggestedSourcePath string
+}
+
+func (err *SkillNameConflictError) Error() string {
+	message := fmt.Sprintf(
+		"multiple different Skills use the name %q; conflicting repository paths: %s; install a specific repository path",
+		err.Name,
+		strings.Join(err.Paths, ", "),
+	)
+	if err.SuggestedSourcePath != "" {
+		message += "; suggested Codex source path: " + err.SuggestedSourcePath
+	}
+	return message
+}
+
+func suggestedCodexSourcePath(paths []string) string {
+	for _, path := range paths {
+		parts := strings.Split(filepath.ToSlash(path), "/")
+		for index, part := range parts {
+			if strings.EqualFold(part, "skills-codex") {
+				return strings.Join(parts[:index+1], "/")
+			}
+		}
+	}
+	return ""
 }
 
 func secureDiscoveryBase(root, sourcePath string) (string, string, error) {

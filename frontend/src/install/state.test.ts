@@ -38,6 +38,19 @@ describe("classifyInstallIssue", () => {
     expect(issue.rateLimited).toBe(false);
   });
 
+  it("extracts a suggested Codex subtree from a Skill variant conflict", () => {
+    const issue = classifyInstallIssue(new Error(
+      'multiple different Skills use the name "ablation-planner"; ' +
+      "conflicting repository paths: skills/ablation-planner, skills/skills-codex/ablation-planner; " +
+      "suggested Codex source URL: https://github.com/owner/repo/tree/abc123/skills/skills-codex"
+    ));
+
+    expect(issue.skillVariantConflict).toBe(true);
+    expect(issue.suggestedSourceUrl).toBe(
+      "https://github.com/owner/repo/tree/abc123/skills/skills-codex"
+    );
+  });
+
   it("calculates a bounded retry countdown", () => {
     const retryAt = "2026-07-30T10:15:30Z";
     const timestamp = parseRetryTimestamp(retryAt);
