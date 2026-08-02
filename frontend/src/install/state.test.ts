@@ -6,6 +6,7 @@ import type {
 } from "../types";
 import {
   ACTIVE_INSTALL_REFERENCE_VERSION,
+  assessmentAllowsSelectedTargets,
   assistedPlanDisposition,
   classifyInstallIssue,
   createActiveInstallReference,
@@ -16,6 +17,26 @@ import {
   retryWaitMilliseconds,
   serializeActiveInstallReference
 } from "./state";
+
+describe("layered assessment gate", () => {
+  const targets = [
+    { kind: "codex-skill" as const, displayName: "safe-skill", path: "skills/safe-skill", supported: true, permissionIds: [], reversible: true },
+    { kind: "application" as const, displayName: "app", path: ".", supported: false, permissionIds: [], reversible: false }
+  ];
+
+  it("allows only supported Skill targets after a ready or attention assessment", () => {
+    expect(assessmentAllowsSelectedTargets({ gate: "ready", targets }, ["safe-skill"])).toBe(true);
+    expect(assessmentAllowsSelectedTargets({ gate: "attention", targets }, ["safe-skill"])).toBe(true);
+    expect(assessmentAllowsSelectedTargets({ gate: "ready", targets }, ["app"])).toBe(false);
+  });
+
+  it("fails closed for missing, blocked, incomplete, or empty selections", () => {
+    expect(assessmentAllowsSelectedTargets(null, ["safe-skill"])).toBe(false);
+    expect(assessmentAllowsSelectedTargets({ gate: "blocked", targets }, ["safe-skill"])).toBe(false);
+    expect(assessmentAllowsSelectedTargets({ gate: "incomplete", targets }, ["safe-skill"])).toBe(false);
+    expect(assessmentAllowsSelectedTargets({ gate: "ready", targets }, [])).toBe(false);
+  });
+});
 
 describe("classifyInstallIssue", () => {
   it("classifies a GitHub rate-limit 403 and preserves its retry time", () => {

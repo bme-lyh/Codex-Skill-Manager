@@ -38,12 +38,14 @@ import type {
   Candidate,
   CodexProjectScanResult,
   InstallPreview,
+  ProjectAssessment,
   RiskCluster,
   ScanReport,
   Severity,
   Transaction
 } from "../types";
 import {
+  assessmentAllowsSelectedTargets,
   assistedPlanDisposition,
   classifyInstallIssue,
   createActiveInstallReference,
@@ -55,6 +57,9 @@ import {
   serializeActiveInstallReference
 } from "./state";
 import type { ActiveInstallReference } from "./state";
+import { AssessmentView } from "./components/AssessmentView";
+import { WorkflowStepper } from "./components/WorkflowStepper";
+import type { InstallWorkflowStage } from "./components/WorkflowStepper";
 import "./install.css";
 
 const ACTIVE_PLAN_KEY = "csm.assisted-install.active-plan";
@@ -95,11 +100,12 @@ interface InstallDialogProps {
 export function InstallDialog({ close, refresh, openSettings }: InstallDialogProps) {
   const { t } = useI18n();
   const initialDraft = useRef(readInstallDraft()).current;
-  const [installMethod, setInstallMethod] = useState<InstallMethod>(initialDraft?.installMethod ?? "standard");
+  const [installMethod, setInstallMethod] = useState<InstallMethod>("standard");
   const [sourceMethod, setSourceMethod] = useState<SourceMethod>(initialDraft?.sourceMethod ?? "github");
   const [source, setSource] = useState(initialDraft?.source ?? "");
   const [requestedRef, setRequestedRef] = useState(initialDraft?.requestedRef ?? "");
   const [preview, setPreview] = useState<InstallPreview | null>(null);
+  const [assessment, setAssessment] = useState<ProjectAssessment | null>(null);
   const [projectScan, setProjectScan] = useState<CodexProjectScanResult | null>(null);
   const [plan, setPlan] = useState<AssistedInstallPlan | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
@@ -134,6 +140,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
   const scan = preview?.scan ?? plan?.scan;
   const activeClusters = scan?.clusters?.filter(cluster => !cluster.ignored) ?? [];
   const hasBlockingWarnings = activeClusters.some(cluster => cluster.severity === "critical" || cluster.severity === "high");
+  const assessmentAllowsInstall = useMemo(
+    () => assessmentAllowsSelectedTargets(assessment, selectedSkills),
+    [assessment, selectedSkills]
+  );
   const requiredPermissionIds = useMemo(
     () => (plan?.permissions ?? []).filter(permission => permission.required).map(permission => permission.id),
     [plan]
@@ -173,7 +183,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       retryTask === "rollback" ? rollbackRetryReady :
         retryTask === "codex" ? !!preview || !!projectScan :
           retryTask === "source" ? !!source.trim() :
-            retryTask === "standard" ? !!selectedSkills.length && !hasBlockingWarnings :
+            retryTask === "standard" ? !!selectedSkills.length && !hasBlockingWarnings && assessmentAllowsInstall :
               true
   );
 
@@ -198,6 +208,16 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       restored.permissions.filter(permission => permission.approved).map(permission => permission.id)
     );
     setProjectRoot(restored.projectRoot ?? "");
+    if (restored.sourcePlanId) {
+      void api.getAssessment(restored.sourcePlanId).then(setAssessment).catch(error => {
+        setAssessment(null);
+        setFeedback(issueFrom(error, t, t(
+          "无法恢复必选分层评估。旧计划不可继续，请重新检查来源。",
+          "The required layered assessment could not be restored. Recheck the source before continuing."
+        )));
+        setRetryTask("");
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -538,6 +558,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     restoredAnalysisPollingRef.current = false;
     clearActivePlan();
     setPreview(null);
+    setAssessment(null);
     setProjectScan(null);
     setPlan(null);
     setProgress(null);
@@ -556,6 +577,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
   };
 
   const scanWithCodex = async (sourcePlanId: string) => {
+    setInstallMethod("assisted");
     const generation = ++analysisGeneration.current;
     activeAnalysisReferenceRef.current = sourcePlanId;
     analysisStartedAtRef.current = Date.now();
@@ -609,7 +631,17 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
   };
 
   const createPlanFromProjectScan = async () => {
-    if (!projectScan) return;
+    if (!projectScan || !assessment || (assessment.gate !== "ready" && assessment.gate !== "attention")) {
+      setFeedback({
+        tone: "error",
+        title: t("必选检查未通过", "Required assessment is not available"),
+        message: t("请重新检查来源；未通过本地分层评估时不会调用 Codex 或访问 PyPI。",
+          "Recheck the source. Codex and PyPI are unavailable until the local layered assessment passes."),
+        retryable: false,
+        restartRequired: true
+      });
+      return;
+    }
     const generation = ++analysisGeneration.current;
     activeAnalysisReferenceRef.current = projectScan.sourcePlanId;
     analysisStartedAtRef.current = Date.now();
@@ -693,7 +725,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     }
   };
 
-  const analyzeSource = async (
+  const analyzeSourceUnified = async (
     sourceOverride?: string,
     sourceMethodOverride?: SourceMethod,
     requestedRefOverride?: string
@@ -701,15 +733,13 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     const effectiveSourceMethod = sourceMethodOverride ?? sourceMethod;
     const trimmed = (sourceOverride ?? source).trim();
     if (!trimmed) return;
-    let codexPhase = false;
+    setInstallMethod("standard");
     setBusy("source");
-    setFeedback({
-      tone: "info",
-      title: t("正在分析来源", "Analyzing source"),
-      message: t("正在解析来源、下载到暂存区并运行本地安全检查。", "Resolving the source, staging it, and running local safety checks.")
-    });
+    setFeedback({ tone: "info", title: t("正在准备来源", "Preparing source"),
+      message: t("正在固定来源、创建受管快照并运行本地安全检查。", "Pinning the source, creating a managed snapshot, and running local safety checks.") });
     setRetryTask("");
     setPreview(null);
+    setAssessment(null);
     setProjectScan(null);
     setPlan(null);
     setProgress(null);
@@ -724,27 +754,24 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         : await api.prepareLocal(trimmed);
       setPreview(analyzed);
       setSelectedSkills(analyzed.skills.map(skill => skill.name));
-      if (installMethod === "assisted") {
-        codexPhase = true;
-        await scanWithCodex(analyzed.id);
-      } else {
-        setFeedback({
-          tone: "success",
-          title: t("来源分析完成", "Source analysis complete"),
-          message: t(
-            `发现 ${analyzed.skills.length} 个 Skills。请核对选择和安全提示。`,
-            `Found ${analyzed.skills.length} Skills. Review the selection and safety notices.`
-          )
-        });
-      }
+      setFeedback({ tone: "info", title: t("正在执行必选检查", "Running required checks"),
+        message: t("正在确认项目类型、覆盖范围、安装目标和恢复能力。", "Confirming project type, coverage, install targets, and recovery.") });
+      const assessed = await api.assessSource(analyzed.id);
+      setAssessment(assessed);
+      setFeedback({
+        tone: assessed.gate === "blocked" || assessed.gate === "incomplete" ? "warning" : "success",
+        title: assessed.gate === "ready" ? t("必选检查已通过", "Required checks passed") :
+          assessed.gate === "attention" ? t("检查完成，需要确认", "Assessment complete; review needed") :
+            assessed.gate === "blocked" ? t("安全策略已阻止安装", "Security policy blocked installation") :
+              t("检查尚未完成", "Assessment incomplete"),
+        message: assessed.summary
+      });
     } catch (error) {
-      if (!codexPhase) {
-        const issue = issueFrom(error, t);
-        setFeedback(issue);
-        setRetryTask(issue.retryable === false ? "" : "source");
-      }
+      const issue = issueFrom(error, t);
+      setFeedback(issue);
+      setRetryTask(issue.retryable === false ? "" : "source");
     } finally {
-      if (!codexPhase) setBusy("");
+      setBusy("");
     }
   };
 
@@ -753,7 +780,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     setSourceMethod("github");
     setSource(url);
     setRequestedRef("");
-    void analyzeSource(url, "github", "");
+    void analyzeSourceUnified(url, "github", "");
   };
 
   const refreshWithinDialog = async (): Promise<boolean> => {
@@ -786,7 +813,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     });
     setRetryTask("");
     try {
-      const transaction = await api.apply(preview.id, selectedSkills, false);
+		const transaction = await api.apply(preview.id, selectedSkills,
+			(preview.scan.clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored));
       setStandardResult(transaction);
       if (!await refreshWithinDialog()) return;
       setFeedback({
@@ -798,25 +826,26 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         )
       });
     } catch (error) {
-      setFeedback(issueFrom(error, t));
-      setRetryTask("standard");
+      const issue = issueFrom(error, t);
+      setFeedback(issue);
+      setRetryTask(issue.retryable === false ? "" : "standard");
     } finally {
       setBusy("");
     }
   };
 
-  const updateIgnoredClusters = (report: ScanReport, clusters: RiskCluster[]): ScanReport => {
+  const updateIgnoredClusters = (report: ScanReport, clusters: RiskCluster[], reason: string): ScanReport => {
     const ids = new Set(clusters.map(cluster => cluster.id));
     const nextClusters = report.clusters.map(cluster => ids.has(cluster.id)
       ? {
         ...cluster,
         ignored: true,
-        ignoreReason: "",
-        sampleFindings: cluster.sampleFindings.map(finding => ({ ...finding, ignored: true, ignoreReason: "" }))
+        ignoreReason: reason,
+        sampleFindings: cluster.sampleFindings.map(finding => ({ ...finding, ignored: true, ignoreReason: reason }))
       }
       : cluster);
     const nextFindings = report.findings.map(finding => ids.has(finding.clusterId)
-      ? { ...finding, ignored: true, ignoreReason: "" }
+      ? { ...finding, ignored: true, ignoreReason: reason }
       : finding);
     const active = nextClusters.filter(cluster => !cluster.ignored);
     return {
@@ -832,6 +861,38 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
 
   const ignoreClusters = async (clusters: RiskCluster[]) => {
     if (!clusters.length) return;
+		if (clusters.some(cluster => cluster.severity === "critical")) {
+			setFeedback({
+				tone: "error",
+				title: t("严重风险不可忽略", "Critical risk cannot be ignored"),
+				message: t("Critical 属于强制安全底线。请更换来源或修复风险内容后重新检查。",
+					"Critical findings are a mandatory safety boundary. Fix or replace the source, then reassess."),
+				retryable: false
+			});
+			return;
+		}
+		const highRisk = clusters.filter(cluster => cluster.severity === "high");
+		if (highRisk.length > 0 && clusters.length !== 1) {
+			setFeedback({
+				tone: "warning",
+				title: t("高风险必须逐项确认", "High risk requires individual review"),
+				message: t("请展开详情，逐个阅读并记录接受原因。批量操作不会接受 High 风险。",
+					"Open the details and review each High finding individually. Batch actions cannot accept High risk."),
+				retryable: false
+			});
+			return;
+		}
+		let reason = "";
+		if (highRisk.length === 1) {
+			reason = window.prompt(t(
+				"请输入接受此 High 风险的具体原因（必填）：",
+				"Enter the specific reason for accepting this High risk (required):"
+			))?.trim() ?? "";
+			if (!reason || !window.confirm(t(
+				"确认已理解此 High 风险，并仅接受当前风险簇？",
+				"Confirm that you understand this High risk and accept only this cluster?"
+			))) return;
+		}
     setBusy("risk");
     setFeedback({
       tone: "warning",
@@ -839,9 +900,16 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       message: t(`正在忽略 ${clusters.length} 个警告组。`, `Ignoring ${clusters.length} warning groups.`)
     });
     try {
-      await api.setRiskClustersIgnored(clusters, true, "");
-      setPreview(current => current ? { ...current, scan: updateIgnoredClusters(current.scan, clusters) } : current);
-      setPlan(current => current?.scan ? { ...current, scan: updateIgnoredClusters(current.scan, clusters) } : current);
+			if (highRisk.length === 1) {
+				await api.setRiskClusterIgnored(highRisk[0], true, reason, true);
+			} else {
+				await api.setRiskClustersIgnored(clusters, true, reason);
+			}
+			const assessmentSource = preview?.id || assessment?.sourcePlanId;
+			const refreshedAssessment = assessmentSource ? await api.assessSource(assessmentSource) : null;
+      setPreview(current => current ? { ...current, scan: updateIgnoredClusters(current.scan, clusters, reason) } : current);
+      setPlan(current => current?.scan ? { ...current, scan: updateIgnoredClusters(current.scan, clusters, reason) } : current);
+			if (refreshedAssessment) setAssessment(refreshedAssessment);
       setFeedback({
         tone: "success",
         title: t("警告已忽略", "Warnings ignored"),
@@ -1155,7 +1223,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         });
         setRetryTask("");
       }).catch(error => setFeedback(issueFrom(error, t))).finally(() => setBusy(""));
-    } else if (retryTask === "source") void analyzeSource();
+    } else if (retryTask === "source") void analyzeSourceUnified();
     else if (retryTask === "codex" && projectScan) void createPlanFromProjectScan();
     else if (retryTask === "codex" && preview) void scanWithCodex(preview.id).catch(() => undefined);
     else if (retryTask === "standard") void installStandard();
@@ -1204,28 +1272,33 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
   };
 
   const renderBody = () => {
+		const assessmentPanel = assessment
+			? <AssessmentView assessment={assessment} />
+			: preview ? <AssessmentView assessment={fallbackIncompleteAssessment(preview)} /> : null;
     if (busy === "restore" && !plan && !preview) {
       return <CenteredState icon={<LoaderCircle className="spin" />} title={t("正在恢复安装计划", "Restoring installation plan")}
         detail={t("请稍候。", "Please wait.")} />;
     }
     if (installMethod === "assisted" && busy === "codex" && progress && !plan) {
-      return <AnalysisProgressView progress={progress} />;
+      return <>{assessmentPanel}<AnalysisProgressView progress={progress} /></>;
     }
     if (!preview && !plan) {
-      return <SourceStep
-        installMethod={installMethod}
+      return <UnifiedSourceStep
         sourceMethod={sourceMethod}
         source={source}
         requestedRef={requestedRef}
         busy={busy !== ""}
-        setInstallMethod={setInstallMethod}
         setSourceMethod={setSourceMethod}
         setSource={setSource}
         setRequestedRef={setRequestedRef}
       />;
     }
+    if (preview && !assessment && busy === "source") {
+      return <CenteredState icon={<LoaderCircle className="spin" />} title={t("正在执行必选检查", "Running required checks")}
+        detail={t("正在生成本地分层安全结论；不会调用 Codex 或下载依赖。", "Building the local layered security result without Codex or dependency downloads.")} />;
+    }
     if (installMethod === "standard") {
-      return <StandardReview
+      return <>{assessmentPanel}<StandardReview
         preview={preview}
         candidates={candidates}
         selected={selectedSkills}
@@ -1234,14 +1307,14 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         riskBusy={busy === "risk"}
         onIgnore={ignoreClusters}
         completed={!!standardResult}
-      />;
+      /></>;
     }
     if (projectScan && !plan) {
-      return <ProjectScanView scan={projectScan} />;
+      return <>{assessmentPanel}<ProjectScanView scan={projectScan} /></>;
     }
     if (!plan) {
       if (busy === "codex" && progress) {
-        return <AnalysisProgressView progress={progress} />;
+        return <>{assessmentPanel}<AnalysisProgressView progress={progress} /></>;
       }
       return <CenteredState icon={busy === "codex" ? <LoaderCircle className="spin" /> : <CircleAlert />}
         title={busy === "codex" ? t("Codex 正在生成安装计划", "Codex is generating the installation plan") :
@@ -1251,10 +1324,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
           : t("可重试 Codex 分析，或使用已完成的来源检查切换到标准安装。", "Retry Codex analysis or use the completed source check for standard installation.")} />;
     }
     if (displayProgress || result) {
-      return <ExecutionView plan={plan} progress={displayProgress ?? progress} result={result}
-        rolledBack={rolledBack} />;
+      return <>{assessmentPanel}<ExecutionView plan={plan} progress={displayProgress ?? progress} result={result}
+        rolledBack={rolledBack} /></>;
     }
-    return <AssistedPlanView
+    return <>{assessmentPanel}<AssistedPlanView
       plan={plan}
       candidates={candidates}
       selectedSkills={selectedSkills}
@@ -1268,7 +1341,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       scan={scan}
       riskBusy={busy === "risk"}
       onIgnore={ignoreClusters}
-    />;
+    /></>;
   };
 
   const renderActions = () => {
@@ -1285,13 +1358,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     if (!preview && !plan) {
       return <>
         <button type="button" className="ghost" onClick={dismiss} disabled={cannotClose}>{t("取消", "Cancel")}</button>
-        <button type="button" className="primary" onClick={() => void analyzeSource()}
+        <button type="button" className="primary" onClick={() => void analyzeSourceUnified()}
           disabled={!source.trim() || busy !== "" || rateLimitBlocked}>
-          {busy === "source" || busy === "codex" ? <LoaderCircle className="spin" size={17} /> :
-            installMethod === "assisted" ? <Sparkles size={17} /> : <Search size={17} />}
-          {busy === "source" ? t("正在分析来源…", "Analyzing source…") :
-            busy === "codex" ? t("Codex 正在分析…", "Codex is analyzing…") :
-              installMethod === "assisted" ? t("扫描项目", "Scan project") : t("分析来源", "Analyze source")}
+          {busy === "source" ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}
+          {busy === "source" ? t("正在检查项目…", "Checking project…") : t("检查项目", "Check project")}
         </button>
       </>;
     }
@@ -1303,15 +1373,15 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       }
       return <>
         <button type="button" className="ghost" disabled={busy !== ""} onClick={resetForNewSource}><ArrowLeft size={16} />{t("返回", "Back")}</button>
-        <button type="button" className="ghost" disabled={busy !== "" || !preview}
+        <button type="button" className="ghost" disabled={busy !== "" || !preview || !assessment || assessment.gate === "blocked" || assessment.gate === "incomplete"}
           onClick={() => {
             if (!preview) return;
             setInstallMethod("assisted");
             void scanWithCodex(preview.id).catch(() => undefined);
           }}>
-          <Sparkles size={16} />{t("生成一键安装计划", "Create assisted plan")}
+          <Sparkles size={16} />{t("运行增强项目扫描", "Run enhanced project scan")}
         </button>
-        <button type="button" className="primary" disabled={busy !== "" || !selectedSkills.length || hasBlockingWarnings}
+        <button type="button" className="primary" disabled={busy !== "" || !selectedSkills.length || hasBlockingWarnings || !assessmentAllowsInstall}
           onClick={() => void installStandard()}>
           {busy === "standard" ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
           {busy === "standard" ? t("正在安装…", "Installing…") : t(`安装选中的 ${selectedSkills.length} 个`, `Install ${selectedSkills.length} selected`)}
@@ -1326,9 +1396,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         <button type="button" className="ghost" disabled={busy !== "" || !preview} onClick={switchToStandard}>
           {t("切换到标准安装", "Switch to standard installation")}
         </button>
-        <button type="button" className="primary" disabled={busy !== ""}
+        <button type="button" className="primary" disabled={busy !== "" || !assessment ||
+			(assessment.gate !== "ready" && assessment.gate !== "attention")}
           onClick={() => void createPlanFromProjectScan()}>
-          <Sparkles size={17} />{t("同意并生成安装计划", "Approve and create installation plan")}
+          <Sparkles size={17} />{t("继续生成计划（可能访问 PyPI）", "Continue to plan generation (may access PyPI)")}
         </button>
       </>;
     }
@@ -1386,7 +1457,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       </button>
       <button type="button" className="primary" disabled={busy !== "" || !permissionsReady ||
         !!permissionDependencyIssue || !rootReady ||
-        (candidates.length > 0 && !selectedSkills.length) || hasBlockingWarnings || manualOnly}
+		(candidates.length > 0 && !selectedSkills.length) || hasBlockingWarnings || manualOnly || !assessmentAllowsInstall}
         onClick={() => void executeAssisted()}>
         <ChevronRight size={17} />{manualOnly
           ? t("没有可自动执行的步骤", "No automatic steps are available")
@@ -1402,10 +1473,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       aria-labelledby="install-dialog-title" tabIndex={-1}>
       <div className="modal-head install-dialog-head">
         <div>
-          <h2 id="install-dialog-title">{t("安装 Skills", "Install Skills")}</h2>
-          <span>{installMethod === "assisted"
-            ? t("Codex 一键安装", "Codex assisted installation")
-            : t("标准安装", "Standard installation")}</span>
+          <h2 id="install-dialog-title">{t("检查并添加项目", "Check and add project")}</h2>
+          <span>{t("先理解和检查，再确认任何系统变更", "Understand and assess before any system change")}</span>
         </div>
         <button type="button" onClick={canHideInBackground ? close : dismiss}
           disabled={cannotClose && !canHideInBackground}
@@ -1424,68 +1493,91 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       </div>
       {feedback && <TaskFeedback feedback={feedback} retryTask={retryTask} retryEnabled={retryEnabled} onRetry={retry}
         retryWaitMs={retryWaitMs} onOpenSettings={openSettings} onUseSuggestedSource={useSuggestedSource} />}
-      <div className="install-dialog-body">{renderBody()}</div>
+      <div className="install-dialog-body">
+        <WorkflowStepper current={currentWorkflowStage(preview, assessment, projectScan, plan, standardResult, result, displayProgress)} />
+        {renderBody()}
+      </div>
       <div className="modal-actions install-dialog-actions">{renderActions()}</div>
     </div>
   </div>;
 }
 
-function SourceStep({ installMethod, sourceMethod, source, requestedRef, busy, setInstallMethod, setSourceMethod, setSource, setRequestedRef }: {
-  installMethod: InstallMethod;
+function currentWorkflowStage(
+  preview: InstallPreview | null,
+  assessment: ProjectAssessment | null,
+  projectScan: CodexProjectScanResult | null,
+  plan: AssistedInstallPlan | null,
+  standardResult: Transaction | null,
+  result: AssistedInstallResult | null,
+  progress: AssistedInstallProgress | null
+): InstallWorkflowStage {
+  if (standardResult || result || (progress && plan && isExecutionProgress(progress))) return "apply";
+  if (assessment || projectScan || plan) return "review";
+  if (preview) return "assess";
+  return "source";
+}
+
+function fallbackIncompleteAssessment(preview: InstallPreview): ProjectAssessment {
+  return {
+    id: "assessment-unavailable",
+    sourcePlanId: preview.id,
+    repository: preview.repository,
+    classification: "unknown",
+    classificationEvidence: [],
+    gate: "incomplete",
+    summary: "The mandatory local assessment is unavailable. Start over before installing.",
+    highestRisk: preview.scan.activeHighestSeverity,
+    coverage: { filesInventoried: 0, filesScanned: preview.scan.filesScanned, evidenceLimited: true },
+    checks: [{
+      id: "assessment-unavailable", layer: "baseline", requirement: "required", status: "blocked",
+      title: "Local assessment", summary: "The backend assessment result could not be loaded.",
+      provider: "local", evidenceFiles: []
+    }],
+    targets: [],
+    enhancedScanRecommended: false,
+    sourceDigest: "",
+    assessmentDigest: "",
+    createdAt: preview.createdAt,
+    expiresAt: preview.expiresAt
+  };
+}
+
+function UnifiedSourceStep({ sourceMethod, source, requestedRef, busy, setSourceMethod, setSource, setRequestedRef }: {
   sourceMethod: SourceMethod;
   source: string;
   requestedRef: string;
   busy: boolean;
-  setInstallMethod: (value: InstallMethod) => void;
   setSourceMethod: (value: SourceMethod) => void;
   setSource: (value: string) => void;
   setRequestedRef: (value: string) => void;
 }) {
   const { t } = useI18n();
-  return <div className="install-source-step">
-    <section className="install-methods" aria-label={t("安装方式", "Installation method")}>
-      <button type="button" className={installMethod === "standard" ? "active" : ""}
-        aria-pressed={installMethod === "standard"} disabled={busy} onClick={() => setInstallMethod("standard")}>
-        <ShieldCheck size={21} /><span><strong>{t("标准安装", "Standard installation")}</strong>
-          <span>{t("发现、检查并安装 Skills", "Discover, check, and install Skills")}</span></span>
-      </button>
-      <button type="button" className={installMethod === "assisted" ? "active" : ""}
-        aria-pressed={installMethod === "assisted"} disabled={busy} onClick={() => setInstallMethod("assisted")}>
-        <Sparkles size={21} /><span><strong>{t("Codex 一键安装", "Codex assisted installation")}</strong>
-          <span>{t("同时分析 MCP、依赖和配置", "Also analyze MCP, dependencies, and configuration")}</span></span>
-      </button>
-    </section>
-    <div className="install-source-tabs" role="tablist" aria-label={t("来源类型", "Source type")}>
-      <button type="button" role="tab" aria-selected={sourceMethod === "github"}
+  return <div className="install-source-step unified-source-step">
+    <div className="source-intro"><ShieldCheck size={24} /><div>
+      <span className="eyebrow">{t("统一安全流程", "Unified security workflow")}</span>
+      <h3>{t("添加需要检查的项目", "Add a project to assess")}</h3>
+      <p>{t("应用会先理解项目、执行本地必选检查，再向你展示安装目标和任何附加检查。",
+        "The app first understands the project and runs required local checks, then shows install targets and any additional checks.")}</p>
+    </div></div>
+    <div className="install-source-tabs" aria-label={t("来源类型", "Source type")}>
+      <button type="button" aria-pressed={sourceMethod === "github"}
         className={sourceMethod === "github" ? "active" : ""} disabled={busy}
         onClick={() => setSourceMethod("github")}><FolderGit2 size={17} />{t("GitHub 链接", "GitHub link")}</button>
-      <button type="button" role="tab" aria-selected={sourceMethod === "local"}
+      <button type="button" aria-pressed={sourceMethod === "local"}
         className={sourceMethod === "local" ? "active" : ""} disabled={busy}
         onClick={() => setSourceMethod("local")}><FileCode2 size={17} />{t("本地目录", "Local directory")}</button>
     </div>
-    <label className="install-field">
-      <span>{sourceMethod === "github"
-        ? t("GitHub 仓库、目录或 SKILL.md 链接", "GitHub repository, directory, or SKILL.md link")
-        : t("包含一个或多个 Skills 的绝对路径", "Absolute path containing one or more Skills")}</span>
+    <label className="install-field"><span>{sourceMethod === "github"
+      ? t("GitHub 仓库、目录或 SKILL.md 链接", "GitHub repository, directory, or SKILL.md link")
+      : t("包含一个或多个 Skills 的绝对路径", "Absolute path containing one or more Skills")}</span>
       <input autoFocus value={source} disabled={busy} onChange={event => setSource(event.target.value)}
-        placeholder={sourceMethod === "github" ? "https://github.com/owner/repository" : "D:\\skills\\my-package"} />
-    </label>
-    {sourceMethod === "github" && <label className="install-field">
-      <span>{t("分支、标签或 Commit（可选）", "Branch, tag, or commit (optional)")}</span>
+        placeholder={sourceMethod === "github" ? "https://github.com/owner/repository" : "D:\\skills\\my-package"} /></label>
+    {sourceMethod === "github" && <label className="install-field"><span>{t("分支、标签或 Commit（可选）", "Branch, tag, or commit (optional)")}</span>
       <input value={requestedRef} disabled={busy} onChange={event => setRequestedRef(event.target.value)}
-        placeholder={t("留空时使用链接版本或默认分支", "Leave blank to use the linked version or default branch")} />
-    </label>}
-    <div className="install-safety-note">
-      <ShieldCheck size={21} />
-      <div><strong>{t("先分析，再执行", "Analyze before execution")}</strong>
-        <p>{installMethod === "assisted"
-          ? t(
-            "点击分析后，应用会把仓库上下文安全打包给 Codex。若识别到 Python 工具，还会从官方 PyPI 下载 Wheel 到隔离暂存区以生成依赖锁；此时不会安装或运行这些内容。",
-            "The first stage performs a bounded, read-only project scan and does not create a plan or download dependencies. Only after you approve continuing may Codex create a typed plan and stage official PyPI Wheels when needed; nothing is installed or run before separate permission approval."
-          )
-          : t("仓库先下载到暂存区并运行本地安全检查，不执行仓库脚本。",
-            "The repository is staged and checked locally. Repository scripts are not executed.")}</p></div>
-    </div>
+        placeholder={t("留空时使用链接版本或默认分支", "Leave blank to use the linked version or default branch")} /></label>}
+    <div className="install-safety-note"><ShieldCheck size={21} /><div><strong>{t("本地检查优先", "Local checks first")}</strong>
+      <p>{t("这一步只固定来源、创建受管快照并运行本地检查；不会调用 Codex、下载依赖或执行仓库脚本。",
+        "This step only pins the source, creates a managed snapshot, and runs local checks. It does not call Codex, download dependencies, or execute repository scripts.")}</p></div></div>
   </div>;
 }
 
@@ -1807,6 +1899,7 @@ function CompactRiskReview({ report, busy, onIgnore }: {
   const active = [...(report.clusters ?? [])].filter(cluster => !cluster.ignored)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
   const ignored = (report.clusters ?? []).filter(cluster => cluster.ignored);
+	const batchDismissible = active.filter(cluster => cluster.severity !== "high" && cluster.severity !== "critical");
   const grouped = severityOrder.map(severity => ({
     severity,
     clusters: active.filter(cluster => cluster.severity === severity)
@@ -1818,9 +1911,9 @@ function CompactRiskReview({ report, busy, onIgnore }: {
         t("没有待处理警告", "No open warnings")}</h3>
         <p>{t(`本地规则扫描了 ${report.filesScanned} 个文件；${ignored.length} 个警告组已忽略。`,
           `Local rules scanned ${report.filesScanned} files; ${ignored.length} warning groups are ignored.`)}</p></div>
-      {active.length > 0 && <button type="button" disabled={busy} onClick={() => void onIgnore(active)}>
+      {batchDismissible.length > 0 && <button type="button" disabled={busy} onClick={() => void onIgnore(batchDismissible)}>
         {busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}
-        {t("一键忽略全部", "Ignore all")}
+        {t(`忽略可处理项（${batchDismissible.length}）`, `Ignore eligible (${batchDismissible.length})`)}
       </button>}
     </div>
     {grouped.length > 0 && <details className="risk-details">
@@ -1830,7 +1923,11 @@ function CompactRiskReview({ report, busy, onIgnore }: {
           <em>{group.clusters.length}</em></h4>
         {group.clusters.map(cluster => <article key={cluster.id}>
           <div><strong>{cluster.title}</strong><span>{cluster.ruleId} · {cluster.affectedFiles.length} {t("个文件", "files")}</span></div>
-          <button type="button" disabled={busy} onClick={() => void onIgnore([cluster])}>{t("忽略", "Ignore")}</button>
+			{cluster.severity === "critical"
+				? <span className="risk-policy-label critical">{t("不可忽略", "Cannot ignore")}</span>
+				: <button type="button" disabled={busy} onClick={() => void onIgnore([cluster])}>
+					{cluster.severity === "high" ? t("审阅并接受", "Review and accept") : t("忽略", "Ignore")}
+				</button>}
         </article>)}
       </section>)}</div>
     </details>}

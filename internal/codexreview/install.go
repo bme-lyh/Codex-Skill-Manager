@@ -1761,7 +1761,9 @@ func validateAllowedSkills(
 	allowed := make(map[string]model.CandidateSkill, len(skills))
 	for _, skill := range skills {
 		name := strings.TrimSpace(skill.Name)
-		if name == "" || name == ".system" || filepath.Base(name) != name ||
+		canonical := strings.TrimRight(name, " .")
+		if name == "" || name == "." || name == ".." || canonical != name ||
+			strings.EqualFold(canonical, ".system") || filepath.Base(name) != name ||
 			strings.ContainsAny(name, `*?/\`) || containsControl(name) {
 			return nil, fmt.Errorf("invalid candidate Skill name: %q", skill.Name)
 		}

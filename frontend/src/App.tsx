@@ -379,16 +379,19 @@ function AdoptionDialog({ preview, close, refresh, runOperation, onCompleted }: 
   const [reviewing, setReviewing] = useState("");
   const [scan, setScan] = useState(preview.scan);
   const toggleCluster = async (cluster: RiskCluster) => {
+		const decision = requestRiskDecision(cluster, !cluster.ignored, t);
+		if (!decision) return;
     setReviewing(cluster.id);
     try {
-      await api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true);
-      setScan(current => updateClusterState(current, cluster.id, !cluster.ignored, ""));
+			await api.setRiskClusterIgnored(cluster, !cluster.ignored, decision.reason, decision.confirmHighRisk);
+			setScan(current => updateClusterState(current, cluster.id, !cluster.ignored, decision.reason));
     } finally {
       setReviewing("");
     }
   };
   const ignoreAll = async (clusters: RiskCluster[]) => {
-    if (!clusters.length) return;
+		clusters = batchDismissibleClusters(clusters);
+		if (!clusters.length) return;
     setReviewing("manual-batch");
     try {
       await api.setRiskClustersIgnored(clusters, true, "");
@@ -704,12 +707,14 @@ function UpdateDialog({ items, close, refresh }: {
   const hasBlockingWarnings = items.some(({ value }) =>
     ["critical", "high"].includes(scans[value.id].activeHighestSeverity) && (selected[value.id]?.length ?? 0) > 0);
   const toggleCluster = async (planID: string, cluster: RiskCluster) => {
+		const decision = requestRiskDecision(cluster, !cluster.ignored, t);
+		if (!decision) return;
     setReviewing(cluster.id);
     try {
-      await api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true);
+			await api.setRiskClusterIgnored(cluster, !cluster.ignored, decision.reason, decision.confirmHighRisk);
       setScans(current => ({
         ...current,
-        [planID]: updateClusterState(current[planID], cluster.id, !cluster.ignored, "")
+				[planID]: updateClusterState(current[planID], cluster.id, !cluster.ignored, decision.reason)
       }));
     } catch (error: any) {
       setFailures(current => [`${t("风险核查记录失败", "Failed to record risk review")}: ${error?.message ?? String(error)}`, ...current]);
@@ -718,7 +723,8 @@ function UpdateDialog({ items, close, refresh }: {
     }
   };
   const ignoreAll = async (planID: string, clusters: RiskCluster[]) => {
-    if (!clusters.length) return;
+		clusters = batchDismissibleClusters(clusters);
+		if (!clusters.length) return;
     setReviewing("manual-batch");
     try {
       await api.setRiskClustersIgnored(clusters, true, "");
@@ -769,7 +775,8 @@ function UpdateDialog({ items, close, refresh }: {
         setProgress(t(`正在更新 ${displayGroupName(group.name, locale)}（${attempted}/${targets.length}）`,
           `Updating ${displayGroupName(group.name, locale)} (${attempted}/${targets.length})`));
         try {
-          await api.apply(value.id, selected[value.id], false);
+					await api.apply(value.id, selected[value.id],
+						(scans[value.id].clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored));
           succeeded.push(value.id);
         } catch (error: any) {
           errors.push(`${displayGroupName(group.name, locale)}: ${error?.message ?? String(error)}`);
@@ -817,7 +824,7 @@ function UpdateDialog({ items, close, refresh }: {
           onApplyCodexSuggestions={clusters => applyCodexSuggestions(value.id, clusters)}
           onIgnoreAll={clusters => ignoreAll(value.id, clusters)} />
         {blocking && <div className="error-banner inline"><CircleAlert size={17} />
-          {t("仍有未处理的高风险或严重风险。请先处理或忽略警告。", "High or critical warnings are still unresolved. Review or ignore them before updating.")}</div>}
+          {t("仍有 High 或 Critical 风险。High 必须逐项确认，Critical 必须修复。", "High or Critical findings remain. Confirm High individually and fix Critical findings.")}</div>}
       </section>;
     })}</div>
     {progress && <div className="batch-progress"><LoaderCircle className="spin" size={17} /><span>{progress}</span></div>}
@@ -846,18 +853,19 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
   const codexByCluster = new Map((report.codexReview?.reviews ?? []).map(review => [review.clusterId, review]));
   const suggestedClusters = codexSuggestedClusters(report);
   const activeClusters = clusters.filter(cluster => !cluster.ignored);
+	const batchClusters = batchDismissibleClusters(activeClusters);
   return <>
     {clusters.length ? <RiskOverview report={report} /> :
       <div className="scan-clean"><CheckCircle2 size={16} />{t("本地规则未发现警告。可选用 Codex 复核完整上下文。",
         "Local rules found no warnings. You can optionally ask Codex to review the full context.")}</div>}
-    {onIgnoreAll && activeClusters.length > 0 && <div className="manual-review-action"><div>
+    {onIgnoreAll && batchClusters.length > 0 && <div className="manual-review-action"><div>
       <strong>{t("批量处理警告", "Review warnings in bulk")}</strong>
-      <small>{t(`一次忽略本报告中全部 ${activeClusters.length} 个待处理警告。`,
-        `Ignore all ${activeClusters.length} open warnings in this report at once.`)}</small>
+      <small>{t(`可批量忽略 ${batchClusters.length} 个 Medium 及以下警告；High 必须逐项确认，Critical 不可忽略。`,
+        `Ignore ${batchClusters.length} eligible Medium-or-lower warnings; High requires individual confirmation and Critical cannot be ignored.`)}</small>
     </div><button className="primary compact" disabled={reviewing !== "" || codexWorking}
-      onClick={() => void onIgnoreAll(activeClusters)}>
+      onClick={() => void onIgnoreAll(batchClusters)}>
       {reviewing === "manual-batch" ? <LoaderCircle className="spin" size={14} /> : <CheckSquare2 size={14} />}
-      {reviewing === "manual-batch" ? t("正在记录…", "Saving…") : t("一键忽略全部警告", "Ignore all warnings")}
+      {reviewing === "manual-batch" ? t("正在记录…", "Saving…") : t("忽略可处理项", "Ignore eligible")}
     </button></div>}
     {onCodexReview && <div className="codex-review-action"><div><strong>{t("Codex 复核", "Codex review")}</strong>
       <small>{t("按分组读取完整上下文，本地规则结果作为参考。",
@@ -951,12 +959,14 @@ function GroupedRiskDetails({ report, clusters, codexByCluster, reviewing, onTog
                   {codex && <div className="codex-cluster"><Sparkles size={14} /><span><b>Codex: {codexVerdictLabel(codex.verdict, locale)}</b>
                     <small>{codex.rationale}</small><small>{codex.recommendation}</small></span></div>}
                   {cluster.ignoreReason && <p className="ignore-reason"><b>{t("人工核查记录：", "Manual review record: ")}</b>{cluster.ignoreReason}</p>}</div>
-                {onToggle && <button className="ghost finding-review" disabled={reviewing !== ""}
+				{onToggle && (cluster.ignored || cluster.severity !== "critical") && <button className="ghost finding-review" disabled={reviewing !== ""}
                   onClick={() => void onToggle(cluster)}>
                   {reviewing === cluster.id ? <LoaderCircle className="spin" size={14} /> :
                     cluster.ignored ? <RotateCcw size={14} /> : <ShieldCheck size={14} />}
-                  {cluster.ignored ? t("恢复", "Restore") : t("忽略", "Ignore")}
-                </button>}
+					{cluster.ignored ? t("恢复", "Restore") : cluster.severity === "high" ? t("审阅并接受", "Review and accept") : t("忽略", "Ignore")}
+				</button>}
+				{onToggle && !cluster.ignored && cluster.severity === "critical" &&
+					<span className="hard-baseline">{t("不可忽略", "Cannot ignore")}</span>}
               </article>;
             }) : <Empty text={t("这个 Skill 没有规则警告", "This Skill has no rule warnings")} />}</div>
           </details>;
@@ -1104,22 +1114,25 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     .filter(skill => !selectedSkills.has(skill.name)).map(skill => skill.name)));
   const selectRecommended = () => setSelectedSkills(new Set(recommendedNames()));
   const toggleIgnore = async (cluster: RiskCluster) => {
+		const decision = requestRiskDecision(cluster, !cluster.ignored, t);
+		if (!decision) return;
     setReviewing(cluster.id);
     const changed = await runOperation(
       cluster.ignored ? t("恢复警告", "Restore warning") : t("记录人工决定", "Record manual decision"),
-      () => api.setRiskClusterIgnored(cluster, !cluster.ignored, "", true),
+			() => api.setRiskClusterIgnored(cluster, !cluster.ignored, decision.reason, decision.confirmHighRisk),
       cluster.ignored ? t("警告已恢复", "Warning restored") : t("警告已忽略", "Warning ignored")
     );
     setReviewing("");
     if (!changed) return;
-    setReport(current => current ? updateClusterState(current, cluster.id, !cluster.ignored, "") : current);
+		setReport(current => current ? updateClusterState(current, cluster.id, !cluster.ignored, decision.reason) : current);
     await refresh();
   };
   const ignoreAll = async (clusters: RiskCluster[]) => {
-    if (!report || !clusters.length) return;
+		clusters = batchDismissibleClusters(clusters);
+		if (!report || !clusters.length) return;
     setReviewing("manual-batch");
     const changed = await runOperation(
-      t("一键忽略全部安全警告", "Ignore all security warnings"),
+			t("批量忽略可处理警告", "Ignore eligible warnings in bulk"),
       () => api.setRiskClustersIgnored(clusters, true, ""),
       t(`已忽略 ${clusters.length} 个待处理警告`, `Ignored ${clusters.length} open warnings`)
     );
@@ -1297,11 +1310,39 @@ function codexSuggestedClusters(report: ScanReport): RiskCluster[] {
   if (!report.codexReview || !["completed", "partial"].includes(report.codexReview.status)) return [];
   const reviews = new Map(report.codexReview.reviews.map(review => [review.clusterId, review]));
   return (report.clusters ?? []).filter(cluster => {
-    if (cluster.ignored) return false;
+		if (cluster.ignored || cluster.severity === "high" || cluster.severity === "critical") return false;
     const verdict = reviews.get(cluster.id)?.verdict;
     return verdict === "false-positive" || verdict === "documentation-or-example" ||
       verdict === "manual-override-required";
   });
+}
+
+function batchDismissibleClusters(clusters: RiskCluster[]): RiskCluster[] {
+	return clusters.filter(cluster => cluster.severity !== "high" && cluster.severity !== "critical");
+}
+
+function requestRiskDecision(cluster: RiskCluster, ignored: boolean, t: Translate): {
+	reason: string;
+	confirmHighRisk: boolean;
+} | null {
+	if (!ignored) return { reason: "", confirmHighRisk: false };
+	if (cluster.severity === "critical") {
+		window.alert(t(
+			"Critical 风险不可忽略。请修复风险内容或更换来源后重新检查。",
+			"Critical risk cannot be ignored. Fix the content or replace the source, then reassess."
+		));
+		return null;
+	}
+	if (cluster.severity !== "high") return { reason: "", confirmHighRisk: false };
+	const reason = window.prompt(t(
+		"请输入接受此 High 风险的具体原因（必填）：",
+		"Enter the specific reason for accepting this High risk (required):"
+	))?.trim() ?? "";
+	if (!reason || !window.confirm(t(
+		"确认已理解此 High 风险，并仅接受当前风险簇？",
+		"Confirm that you understand this High risk and accept only this cluster?"
+	))) return null;
+	return { reason, confirmHighRisk: true };
 }
 
 function codexBatchReason(report: ScanReport, clusters: RiskCluster[], locale: AppLocale): string {

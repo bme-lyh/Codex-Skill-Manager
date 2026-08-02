@@ -1,7 +1,8 @@
 import type {
   AssistedInstallPlan,
   AssistedInstallProgress,
-  AssistedInstallStep
+  AssistedInstallStep,
+  ProjectAssessment
 } from "../types";
 
 export const ACTIVE_INSTALL_REFERENCE_VERSION = 1 as const;
@@ -38,6 +39,21 @@ export interface AssistedPlanDisposition {
   manualOnly: boolean;
   partial: boolean;
   supportedStepCount: number;
+}
+
+export function assessmentAllowsSelectedTargets(
+  assessment: Pick<ProjectAssessment, "gate" | "targets"> | null,
+  selectedNames: string[]
+): boolean {
+  if (!assessment || (assessment.gate !== "ready" && assessment.gate !== "attention")) {
+    return false;
+  }
+  const supported = new Set(
+    assessment.targets
+      .filter(target => target.kind === "codex-skill" && target.supported)
+      .map(target => target.displayName)
+  );
+  return selectedNames.length > 0 && selectedNames.every(name => supported.has(name));
 }
 
 export function createActiveInstallReference(

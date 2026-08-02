@@ -9,8 +9,10 @@ import type {
   Finding,
   CodexProjectScanResult,
   InstallPreview,
+  ProjectAssessment,
   RiskCluster,
   ScanReport,
+  Severity,
   Transaction,
   UpdateCheckResult
 } from "./types";
@@ -37,6 +39,8 @@ type Backend = {
   MoveSkillsToGroup(names: string[], groupId: string): Promise<Transaction>;
   PrepareGitHub(url: string, ref: string): Promise<InstallPreview>;
   PrepareLocal(path: string): Promise<InstallPreview>;
+  AssessInstallSource?(sourcePlanId: string): Promise<ProjectAssessment>;
+  GetProjectAssessment?(reference: string): Promise<ProjectAssessment>;
   ApplyInstall(plan: string, skills: string[], acceptHighRisk: boolean): Promise<Transaction>;
   AuditSkill(name: string): Promise<ScanReport>;
   AuditSkills(names: string[]): Promise<ScanReport>;
@@ -93,7 +97,18 @@ function normalizeDashboard(value: Dashboard): Dashboard {
 }
 
 function normalizeScan(value: ScanReport): ScanReport {
-  const findings = value?.findings ?? [];
+  const findings = (value?.findings ?? []).map(finding => ({
+    ...finding,
+    severity: normalizeSeverity(finding.severity)
+  }));
+	const clusters = (value?.clusters ?? []).map(cluster => ({
+		...cluster,
+		severity: normalizeSeverity(cluster.severity),
+		sampleFindings: (cluster.sampleFindings ?? []).map(finding => ({
+			...finding,
+			severity: normalizeSeverity(finding.severity)
+		}))
+	}));
   const codexReview = value?.codexReview ? {
     ...value.codexReview,
     reviews: value.codexReview.reviews ?? [],
@@ -106,12 +121,18 @@ function normalizeScan(value: ScanReport): ScanReport {
     ...value,
     findings,
     codexReview,
-    clusters: value?.clusters ?? [],
+    clusters,
     skills: value?.skills ?? [],
-    activeHighestSeverity: value?.activeHighestSeverity ?? value?.highestSeverity ?? "informational",
+    activeHighestSeverity: normalizeSeverity(value?.activeHighestSeverity ?? value?.highestSeverity),
     activeFindingCount: value?.activeFindingCount ?? findings.filter(f => !f.ignored).length,
     ignoredFindingCount: value?.ignoredFindingCount ?? findings.filter(f => f.ignored).length
   };
+}
+
+const severityValues = new Set<Severity>(["informational", "low", "medium", "high", "critical"]);
+
+function normalizeSeverity(value: unknown): Severity {
+  return severityValues.has(value as Severity) ? value as Severity : "critical";
 }
 
 function normalizeAssistedPlan(value: AssistedInstallPlan): AssistedInstallPlan {
@@ -138,7 +159,7 @@ function normalizeProjectScan(value: CodexProjectScanResult): CodexProjectScanRe
       verdict: value?.security?.verdict ?? "insufficient-context",
       summary: value?.security?.summary ?? "",
       confidence: value?.security?.confidence ?? 0,
-      localHighestRisk: value?.security?.localHighestRisk ?? "informational",
+      localHighestRisk: normalizeSeverity(value?.security?.localHighestRisk),
       localFindingCount: value?.security?.localFindingCount ?? 0,
       concerns: value?.security?.concerns ?? []
     },
@@ -153,6 +174,71 @@ function normalizeProjectScan(value: CodexProjectScanResult): CodexProjectScanRe
     contextDigest: value?.contextDigest ?? "",
     scanDigest: value?.scanDigest ?? ""
   };
+}
+
+const assessmentGates = new Set(["ready", "attention", "blocked", "incomplete"]);
+const assessmentRequirements = new Set(["required", "triggered", "optional"]);
+const assessmentStatuses = new Set(["passed", "attention", "blocked", "pending", "not-applicable"]);
+
+function normalizeAssessment(value: ProjectAssessment): ProjectAssessment {
+  const knownGate = assessmentGates.has(value?.gate) ? value.gate : "incomplete";
+  return {
+    ...value,
+    repository: value?.repository ?? demoInstallPreview.repository,
+    classification: value?.classification ?? "unknown",
+    classificationEvidence: value?.classificationEvidence ?? [],
+    gate: knownGate,
+    summary: knownGate === value?.gate ? value?.summary ?? "" : "The backend returned an unknown assessment state. Installation is unavailable.",
+    highestRisk: normalizeSeverity(value?.highestRisk),
+    coverage: {
+      filesInventoried: value?.coverage?.filesInventoried ?? 0,
+      filesScanned: value?.coverage?.filesScanned ?? 0,
+      evidenceLimited: value?.coverage?.evidenceLimited ?? true
+    },
+    checks: (value?.checks ?? []).map(check => ({
+      ...check,
+      requirement: (assessmentRequirements.has(check.requirement) ? check.requirement : "required") as ProjectAssessment["checks"][number]["requirement"],
+      status: (assessmentStatuses.has(check.status) ? check.status : "blocked") as ProjectAssessment["checks"][number]["status"],
+      evidenceFiles: check.evidenceFiles ?? []
+    })),
+    targets: (value?.targets ?? []).map(target => ({
+      ...target,
+      supported: target.kind === "codex-skill" && target.supported === true,
+      permissionIds: target.permissionIds ?? []
+    })),
+    enhancedScanRecommended: value?.enhancedScanRecommended ?? false,
+    sourceDigest: value?.sourceDigest ?? "",
+    assessmentDigest: value?.assessmentDigest ?? ""
+  };
+}
+
+function demoAssessment(sourcePlanId: string): ProjectAssessment {
+  const now = new Date();
+  return normalizeAssessment({
+    id: "assessment-demo",
+    sourcePlanId,
+    repository: demoInstallPreview.repository,
+    classification: "skill",
+    classificationEvidence: ["SKILL.md"],
+    gate: "ready",
+    summary: "Required local checks passed.",
+    highestRisk: demoInstallPreview.scan.activeHighestSeverity,
+    coverage: { filesInventoried: 1, filesScanned: 1, evidenceLimited: false },
+    checks: [{
+      id: "local-scan", layer: "baseline", requirement: "required", status: "passed",
+      title: "Built-in security scan", summary: "No active blocking risk was found.",
+      provider: "builtin-scanner", evidenceFiles: []
+    }],
+    targets: demoInstallPreview.skills.map(skill => ({
+      kind: "codex-skill", displayName: skill.name, path: skill.name,
+      supported: true, permissionIds: ["skills-write"], reversible: true
+    })),
+    enhancedScanRecommended: false,
+    sourceDigest: "demo-source",
+    assessmentDigest: "demo-assessment",
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 86400000).toISOString()
+  });
 }
 
 function demoProjectScan(sourcePlanId: string): CodexProjectScanResult {
@@ -254,6 +340,22 @@ export const api = {
     const b = backend();
     if (!b) return demoInstallPreview;
     return b.PrepareLocal(path);
+  },
+  assessSource: async (sourcePlanId: string): Promise<ProjectAssessment> => {
+    const b = backend();
+    if (!b) return demoAssessment(sourcePlanId);
+    if (typeof b.AssessInstallSource !== "function") {
+      throw new Error("当前桌面后端不支持分层本地评估，请升级应用");
+    }
+    return normalizeAssessment(await b.AssessInstallSource(sourcePlanId));
+  },
+  getAssessment: async (reference: string): Promise<ProjectAssessment> => {
+    const b = backend();
+    if (!b) return demoAssessment(reference);
+    if (typeof b.GetProjectAssessment !== "function") {
+      throw new Error("当前桌面后端不支持恢复分层评估，请重新分析来源");
+    }
+    return normalizeAssessment(await b.GetProjectAssessment(reference));
   },
   apply: async (plan: string, skills: string[], accept: boolean) => {
     const b = backend();

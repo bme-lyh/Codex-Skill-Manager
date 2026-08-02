@@ -27,15 +27,16 @@ partial group failures. Selected Skills in the same application group share one
 review task. Groups are serial by default, and a failed or incomplete group is
 retried once. Local rules are sent only as a compact count overview.
 
-Two-phase GitHub installation:
+Layered GitHub installation:
 
 ```powershell
 csm --json install --url https://github.com/OWNER/REPO
+csm --json install --plan-id PLAN_ID --assess
 csm --json install --plan-id PLAN_ID --apply --skill SKILL_NAME
 ```
 
-Local installation uses `install --local ABSOLUTE_PATH`, followed by the
-same apply command. Repeat `--skill` to select multiple skills.
+Local installation uses `install --local ABSOLUTE_PATH`, followed by the same
+assessment and apply commands. Repeat `--skill` to select multiple skills.
 
 Three-phase Codex assisted installation:
 
@@ -91,8 +92,13 @@ csm --json warning --report SCAN_ID --dry-run
 csm --json warning --report SCAN_ID
 ```
 
-Reasons are optional. Report-wide decisions apply atomically to every active
-cluster of every severity, including deterministic rules.
+Reasons are optional below High. High requires an individual non-empty
+`--reason` plus `--confirm-deterministic`, and standard apply then requires
+`--accept-high-risk` as a final acknowledgement. Critical cannot be ignored.
+Report-wide decisions apply atomically only to eligible Medium-or-lower clusters.
+The JSON result lists excluded High, Critical, or unknown cluster IDs in
+`skippedClusterIds`. Report-wide restore may reverse matching persisted
+decisions at any known severity.
 
 Reversible lifecycle:
 

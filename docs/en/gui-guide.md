@@ -10,6 +10,18 @@ Search and inspect complete source, status, and version information. Hover or fo
 
 ## Install Skill
 
+The dialog has one **Source → Assess → Review → Apply** workflow. After a GitHub
+or local source is entered, mandatory checks run automatically and end in a
+plain `ready`, `attention`, `blocked`, or `incomplete` decision. The assessment
+groups required, conditionally triggered, and optional checks and shows project
+classification, documentation, Codex Skills, evidence, exact write targets, and
+reversibility. Ordinary Skill repositories do not require choosing an install mode.
+
+GitHub sources are bound to a full commit. Local sources are copied to a managed
+snapshot so review and apply never read a changing original directory. Unknown
+states, digest mismatch, unsupported targets, and every case variant of `.system`
+fail closed. Only `ready` and `attention` assessments can proceed.
+
 The installation dialog keeps source input, analysis, permissions, execution
 progress, and errors in one workflow. GitHub 403 responses, invalid input,
 staging failures, and scan errors appear inside the dialog with an appropriate
@@ -22,9 +34,9 @@ the dialog lists the conflicting paths. When a `skills-codex` mirror is
 detected, **Use suggested Codex directory** retries with that subtree without
 requiring the user to rebuild the URL.
 
-**Standard installation** writes only the explicitly selected Skills.
-**Codex assisted installation** first performs the same GitHub commit pinning
-or local-source validation and local scan. It then runs a reusable read-only
+**Standard installation** writes only the explicitly selected Skills. For a
+complex repository, the review page offers an explicit **Run enhanced project
+scan** action. Codex reuses the same mandatory assessment and then runs a reusable read-only
 project scan: bounded summaries cover the eligible text inventory and a
 deterministic focus set receives deeper analysis. Credential-like files are
 metadata-only and large text is truncated. Codex first returns a project
@@ -82,9 +94,16 @@ Each source is applied as an independent transaction with its own backup and rol
 
 Skills with no trusted scan record or changed content are selected by default. Checked and unchanged Skills are skipped by default, but can be added with checkboxes, Select all, or Invert. Results and counts follow Group → Skill → Warning. Groups, Skill details, and Codex conclusions are collapsed by default so large reports remain readable.
 
-Repeated scans do not inflate the badge: it counts unique active High/Critical findings from the latest effective report per target. Every severity and deterministic rule can be ignored individually or all at once, without running Codex first or entering a mandatory reason.
+Repeated scans do not inflate the badge: it counts unique active High/Critical
+findings from the latest effective report per target. Critical findings cannot
+be ignored and always block writes. High findings require per-cluster explicit
+confirmation and a non-empty reason. Batch actions cannot bypass either rule;
+the backend resolves persisted severity instead of trusting UI metadata.
 
-Active High/Critical findings block installation and update. A human ignore action clears the applicable gate; restoring a cluster immediately reactivates it. Optional Codex review packages the complete selected group with shell access disabled and treats local rule hits as supplemental leads.
+Active High/Critical findings block installation and update. A confirmed High
+decision clears only that cluster; restoring it immediately reactivates the gate.
+Critical remains blocked. Optional Codex review packages the complete selected
+group with shell access disabled and treats local rule hits as supplemental leads.
 
 ## History, quarantine, and reports
 

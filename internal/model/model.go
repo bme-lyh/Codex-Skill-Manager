@@ -371,13 +371,14 @@ type CandidateSkill struct {
 }
 
 type InstallPreview struct {
-	ID          string           `json:"id"`
-	Repository  Repository       `json:"repository"`
-	Skills      []CandidateSkill `json:"skills"`
-	Scan        ScanReport       `json:"scan"`
-	StagingPath string           `json:"stagingPath"`
-	CreatedAt   time.Time        `json:"createdAt"`
-	ExpiresAt   time.Time        `json:"expiresAt"`
+	ID            string           `json:"id"`
+	Repository    Repository       `json:"repository"`
+	Skills        []CandidateSkill `json:"skills"`
+	Scan          ScanReport       `json:"scan"`
+	StagingPath   string           `json:"stagingPath"`
+	PreviewDigest string           `json:"previewDigest"`
+	CreatedAt     time.Time        `json:"createdAt"`
+	ExpiresAt     time.Time        `json:"expiresAt"`
 }
 
 // CodexProjectSecurity is the read-only security portion of a project scan.

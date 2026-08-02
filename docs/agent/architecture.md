@@ -28,8 +28,10 @@ lock updates and reports are tied together by transaction IDs.
 Scanner findings remain immutable evidence. The manager decorates them into
 stable clusters by effective group, Skill, rule, category and file class. A human cluster decision
 expands to every member fingerprint. Multi-cluster decisions use one SQLite
-transaction and one journal entry. Reasons are optional, deterministic rules use
-the same human action as every other severity, and model output is always
+transaction and one journal entry. Critical clusters cannot be ignored. High
+clusters require an explicit confirmation and a non-empty reason; lower severities
+use the ordinary human decision path. The backend resolves persisted findings and
+severity instead of trusting client-supplied risk metadata. Model output is always
 advisory. Codex review packages the complete selected group into the model input,
 disables the shell tool, and runs from a manager-owned output directory. One
 application group is one review task; all selected Skills in that group remain
@@ -44,6 +46,17 @@ that state so unchanged Skills can be skipped by default without hiding changed 
 untracked content.
 
 ## Assisted installation boundary
+
+Every source first passes a persisted local `ProjectAssessment`, regardless of
+whether Codex assistance is used. GitHub sources are bound to a full commit SHA;
+local sources are copied into a bounded, manager-owned snapshot that rejects
+links and special files. The preview digest binds the immutable source identity,
+scan, candidates, and expiry. The assessment classifies the repository, inventories
+documentation and installation markers, confirms Skill discovery and safe targets,
+groups checks as required/triggered/optional, and returns a fail-closed
+`ready`/`attention`/`blocked`/`incomplete` gate. Apply recomputes the assessment
+from the bound source and refuses changed, expired, unknown, unsupported, or
+case-variant `.system` targets.
 
 Codex assisted installation is a consent-gated manager workflow exposed through
 the Wails desktop facade and the CLI's explicit `install --assist` contract. It

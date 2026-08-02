@@ -123,6 +123,22 @@ func (a *App) PrepareLocal(path string) (model.InstallPreview, error) {
 	return a.mgr.PrepareLocal(path)
 }
 
+// AssessInstallSource performs the mandatory deterministic local assessment.
+// It does not call Codex, download dependencies, or mutate installation targets.
+func (a *App) AssessInstallSource(planID string) (model.ProjectAssessment, error) {
+	if a.mgr == nil {
+		return model.ProjectAssessment{}, errors.New("manager not initialized")
+	}
+	return a.mgr.AssessInstallSource(planID)
+}
+
+func (a *App) GetProjectAssessment(reference string) (model.ProjectAssessment, error) {
+	if a.mgr == nil {
+		return model.ProjectAssessment{}, errors.New("manager not initialized")
+	}
+	return a.mgr.GetProjectAssessment(reference)
+}
+
 func (a *App) ApplyInstall(planID string, skills []string, acceptHighRisk bool) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
