@@ -1,29 +1,25 @@
 param(
     [string]$InputDirectory = (Join-Path $PSScriptRoot "..\docs\images\ui-screens"),
-    [string]$OutputPath = (Join-Path $PSScriptRoot "..\docs\images\ui-gallery.png")
+    [string]$OutputPath = "",
+    [ValidateSet("en-US", "zh-CN")]
+    [string]$Locale = "en-US",
+    [string]$ManifestPath = (Join-Path $PSScriptRoot "screenshot-frames.json")
 )
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
-$screens = @(
-    @{ File = "overview.png"; Label = "Overview" },
-    @{ File = "skills.png"; Label = "Skills" },
-    @{ File = "skills-batch.png"; Label = "Batch Skill Actions" },
-    @{ File = "groups.png"; Label = "Groups & Relations" },
-    @{ File = "updates.png"; Label = "Update Center" },
-    @{ File = "security-summary.png"; Label = "Security Summary" },
-    @{ File = "security-clusters.png"; Label = "Risk Clusters & Codex Review" },
-    @{ File = "install-source.png"; Label = "Install from GitHub or a Local Folder" },
-    @{ File = "assisted-plan.png"; Label = "Layered Assessment & Install Targets" },
-    @{ File = "assisted-permissions.png"; Label = "Codex Enhanced Review & Plan Consent" },
-    @{ File = "assisted-result.png"; Label = "Execution Progress, Result & Recovery" },
-    @{ File = "history.png"; Label = "History & Rollback" },
-    @{ File = "quarantine.png"; Label = "Quarantine" },
-    @{ File = "reports.png"; Label = "Reports" },
-    @{ File = "settings.png"; Label = "Settings (Chinese)" },
-    @{ File = "settings-en.png"; Label = "Settings (English)" }
-)
+$manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $ManifestPath | ConvertFrom-Json
+$screens = @($manifest.frames | ForEach-Object {
+    @{
+        File = $_.file
+        Label = $_.label.PSObject.Properties[$Locale].Value
+    }
+})
+$InputDirectory = Join-Path $InputDirectory $Locale
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $OutputPath = Join-Path $PSScriptRoot "..\docs\images\ui-gallery.$Locale.png"
+}
 
 $columns = 4
 $rows = [Math]::Ceiling($screens.Count / $columns)

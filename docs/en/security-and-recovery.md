@@ -1,10 +1,10 @@
 # Security and recovery
 
-Every source first passes a required local layered assessment. Codex enhanced
-analysis is optional and stays read-only until you approve a plan and its
-permissions. Critical findings can never be ignored; High findings need
-per-cluster confirmation and a non-empty reason; report-wide ignore handles
-known Medium-or-lower findings only.
+Every source first passes a required local assessment. The optional Enhanced
+project scan stays read-only until you approve its plan and permissions.
+Critical findings cannot be ignored. High findings require confirmation and a
+reason for each cluster. Report-wide ignore handles known Medium or lower
+findings only.
 
 All downloaded Skill content is untrusted. The manager never executes repository scripts and never modifies `.codex/skills/.system`.
 
@@ -58,7 +58,7 @@ output directory as the working directory. Local rule clusters are supplemental
 leads. The user may accept applicable Codex suggestions or use the ordinary
 human decision flow for eligible findings.
 
-Codex assisted installation is a separate, opt-in workflow. It first creates
+Planned installation is a separate, opt-in workflow. It first creates
 the normal commit-pinned GitHub or explicit-local source preview and local scan,
 then packages the complete prepared source for Codex with shell access disabled
 and a manager-owned output directory as the working directory. Codex can
@@ -84,8 +84,8 @@ downloaded filename, URL, and hash must match official PyPI metadata. This is
 application-level egress control rather than an operating-system sandbox, so
 the local Python and pip installation must still be trusted.
 
-The Settings toggle controls Security Center risk review only. Choosing Codex
-assisted installation in the GUI or using CLI `--assist` is the explicit opt-in
+The Settings toggle controls Security Center risk review only. Choosing the
+Enhanced project scan in the GUI or using CLI `--assist` is the explicit opt-in
 for that installation. Both use the configured CLI path, model, and reasoning
 effort and consume Codex usage.
 

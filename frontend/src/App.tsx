@@ -218,8 +218,8 @@ function transactionTypeLabel(value: string, locale: AppLocale): string {
   const labels: Record<string, [string, string]> = {
     install: ["安装", "Install"], update: ["更新", "Update"], manage: ["管理", "Manage"], adopt: ["管理", "Manage"],
     quarantine: ["移至隔离区", "Quarantine"], rollback: ["回滚", "Rollback"], restore: ["恢复", "Restore"],
-    "assisted-install": ["Codex 一键安装", "Codex assisted installation"],
-    "rollback-assisted-install": ["回滚一键安装", "Roll back assisted installation"],
+    "assisted-install": ["计划安装", "Planned installation"],
+    "rollback-assisted-install": ["回滚计划安装", "Roll back planned installation"],
     "group-layout": ["调整分组布局", "Change group layout"], "group-create": ["新建分组", "Create group"],
     "group-rename": ["重命名分组", "Rename group"], "group-move": ["移动 Skill", "Move Skill"],
     "group-reorder": ["调整分组顺序", "Reorder groups"]
@@ -274,7 +274,7 @@ function Timeline({ data }: { data: Dashboard["recentHistory"] }) {
   const { t, locale, formatDate, join } = useI18n();
   if (!data.length) return <Empty text={t("暂无最近操作", "No recent actions")} />;
   return <div className="timeline">{data.map(tx => <div key={tx.id}><span className={tx.status} />
-    <div><strong>{transactionTypeLabel(tx.type, locale)} · {join(tx.targets.map(target => displayGroupName(target, locale))) || "—"}</strong><small>{formatDate(tx.startedAt)}</small></div>
+    <div><strong>{transactionTypeLabel(tx.type, locale)} · {join(tx.targets.map(target => displayGroupName(target, locale))) || "-"}</strong><small>{formatDate(tx.startedAt)}</small></div>
     <em>{transactionStatusLabel(tx.status, locale)}</em></div>)}</div>;
 }
 
@@ -360,7 +360,7 @@ function SkillsPage({ data, selected, setSelected, refresh, runOperation }: {
           [t("安全状态", "Security"), skillStatusLabel(skill.securityStatus || "not-scanned", locale)],
           [t("更新状态", "Updates"), skillStatusLabel(skill.updateStatus || "unknown", locale)]
         ]} />
-        <DetailCell summary={<code>{skill.installedCommit?.slice(0, 8) || "—"}</code>}
+        <DetailCell summary={<code>{skill.installedCommit?.slice(0, 8) || "-"}</code>}
           rows={[[t("完整 Commit", "Full commit"), skill.installedCommit || t("尚未记录", "Not recorded")], [t("来源路径", "Source path"), skill.sourcePath || t("无", "None")]]} />
       </div>)}
     </div>
@@ -442,7 +442,7 @@ function DetailCell({ summary, rows }: { summary: React.ReactNode; rows: Array<[
   return <div className="detail-cell" tabIndex={0}>
     {summary}
     <div className="detail-popover" role="tooltip">
-      {rows.map(([label, value]) => <div key={label}><b>{label}</b><span>{value || "—"}</span></div>)}
+      {rows.map(([label, value]) => <div key={label}><b>{label}</b><span>{value || "-"}</span></div>)}
     </div>
   </div>;
 }
@@ -634,7 +634,7 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
         </div>
         <div className="update-actions"><span className={`badge ${presentation.badge}`}>{presentation.label}</span>
           {status?.status === "update-available" && <button className="ghost compact" disabled={working} onClick={() => void prepare([g])}>
-            <ShieldCheck size={15} />{t("单独检查", "Check separately")}
+            <ShieldCheck size={15} />{t("单独复核", "Review separately")}
           </button>}
           {(status?.status === "error" || status?.status === "rate-limited") &&
             <button className="ghost compact" disabled={working}
@@ -654,7 +654,7 @@ function updatePresentation(status: UpdateStatus | undefined, t: Translate) {
   if (status.status === "up-to-date") return { label: t("已是最新", "Up to date"), tone: "current", badge: "green", icon: <CheckCircle2 size={19} /> };
   if (status.status === "update-available") return { label: t("发现新版本", "Update available"), tone: "available", badge: "amber", icon: <ArrowUpCircle size={19} /> };
   if (status.status === "error") return { label: t("检查失败", "Check failed"), tone: "failed", badge: "red", icon: <CircleAlert size={19} /> };
-  if (status.status === "rate-limited") return { label: t("GitHub 已限流", "GitHub rate limited"), tone: "failed", badge: "red", icon: <Clock3 size={19} /> };
+  if (status.status === "rate-limited") return { label: t("GitHub 已限流", "GitHub rate limit reached"), tone: "failed", badge: "red", icon: <Clock3 size={19} /> };
   return { label: t("不支持在线更新", "Online updates unavailable"), tone: "unsupported", badge: "gray", icon: <Link2 size={19} /> };
 }
 
@@ -1149,7 +1149,7 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
       const reviewed = await runOperation(
         t("Codex 风险复核", "Codex risk review"),
         () => api.reviewWithCodex(report, (report.skills ?? []).map(skill => skill.skillName)),
-        t("Codex 风险归纳已完成", "Codex risk review completed")
+        t("Codex 风险复核已完成", "Codex risk review completed")
       );
       if (reviewed) { setReport(reviewed); await refresh(); }
     } finally { setCodexWorking(false); }
@@ -1183,7 +1183,7 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     <section className="panel security-queue"><PanelHead title={t("选择要检查的 Skills", "Choose Skills to scan")}
       subtitle={t("默认选择未检查或内容已变化的 Skills。", "Skills not yet scanned or changed since their last scan are selected by default.")} />
       <div className="selection-tools">
-        <button className="ghost compact" onClick={selectRecommended}>{t("恢复推荐", "Recommended")}</button>
+        <button className="ghost compact" onClick={selectRecommended}>{t("恢复推荐", "Use recommended")}</button>
         <button className="ghost compact" onClick={selectAll}>{t("全选", "Select all")}</button>
         <button className="ghost compact" onClick={invertSelection}>{t("反选", "Invert")}</button>
         <button className="ghost compact" onClick={() => setSelectedSkills(new Set())}>{t("清空", "Clear")}</button>
@@ -1391,7 +1391,7 @@ function HistoryPage({ data, refresh, runOperation }: { data: Dashboard; refresh
         (tx.type === "install" || tx.type === "adopt" || tx.type === "manage" || tx.type.startsWith("group-"));
       const badgeClass = tx.status === "completed" ? "green" : tx.status === "partial" ? "amber" : "red";
       return <article key={tx.id}>
-      <div className={`tx-icon ${tx.status}`}><Clock3 size={19} /></div><div className="grow"><strong>{transactionTypeLabel(tx.type, locale)}</strong><span>{join(tx.targets) || "—"}</span>
+      <div className={`tx-icon ${tx.status}`}><Clock3 size={19} /></div><div className="grow"><strong>{transactionTypeLabel(tx.type, locale)}</strong><span>{join(tx.targets) || "-"}</span>
         <small>{formatDate(tx.startedAt)} · {tx.id}</small>
         {tx.type === "assisted-install" && !!tx.steps?.length && <details className="assisted-history-details">
           <summary>{t("查看安装步骤", "View installation steps")}</summary>
@@ -1585,7 +1585,7 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
           {scheduling ? <LoaderCircle className="spin" size={16} /> : <Clock3 size={16} />}{scheduling ? t("正在应用…", "Applying…") : t("应用计划任务", "Apply schedule")}</button>
       </div>
     </section>
-    <section className="panel"><PanelHead title={t("GitHub 连接", "GitHub connection")} subtitle={t("访问公共和私有仓库；凭据保存在 Windows 本地", "Access public and private repositories; credentials stay in Windows")} />
+    <section className="panel"><PanelHead title={t("GitHub 连接", "GitHub connection")} subtitle={t("访问公共和私有仓库；凭据保存在 Windows 凭据管理器", "Access public and private repositories. Credentials are stored in Windows Credential Manager.")} />
       <div className="credential-form">
         <label><span>{t("用户名（可选）", "Username (optional)")}</span><input value={githubUser} onChange={e => setGitHubUser(e.target.value)} placeholder={t("GitHub 用户名", "GitHub username")} /></label>
         <label><span>Personal Access Token</span><input type="password" value={githubToken} onChange={e => setGitHubToken(e.target.value)} placeholder={t("输入后不会再次显示", "Hidden after saving")} /></label>

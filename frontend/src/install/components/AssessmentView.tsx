@@ -21,12 +21,12 @@ export function AssessmentView({ assessment }: { assessment: ProjectAssessment }
       <span className="assessment-kind">{projectKindLabel(assessment.classification, t)}</span>
     </div>
     <div className="assessment-metrics">
-      <span><strong>{assessment.coverage.filesInventoried}</strong>{t("已清点文件", " inventoried")}</span>
-      <span><strong>{assessment.coverage.filesScanned}</strong>{t("已扫描文件", " scanned")}</span>
+      <span><strong>{assessment.coverage.filesInventoried}</strong>{t("已清点文件", " files inventoried")}</span>
+      <span><strong>{assessment.coverage.filesScanned}</strong>{t("已扫描文件", " files scanned")}</span>
       <span><strong>{assessment.targets.filter(target => target.supported).length}</strong>{t("可安装目标", " supported targets")}</span>
     </div>
     {assessment.coverage.evidenceLimited && <div className="assessment-limit"><AlertTriangle size={16} />
-      {t("仓库超过本地证据预算，结果按未完成处理。", "The repository exceeded the local evidence budget, so the result is incomplete.")}</div>}
+      {t("仓库超过扫描上限，本次评估不完整。", "The repository exceeded the scan limit, so this assessment is incomplete.")}</div>}
     <div className="assessment-groups">
       {requirementOrder.map(requirement => {
         const checks = assessment.checks.filter(check => check.requirement === requirement);
@@ -46,7 +46,7 @@ export function AssessmentView({ assessment }: { assessment: ProjectAssessment }
       {assessment.targets.map(target => <div key={`${target.kind}:${target.displayName}`} className={target.supported ? "supported" : "unsupported"}>
         <span>{target.displayName}</span><code>{target.path}</code>
         <small>{target.supported
-          ? target.reversible ? t("支持安装 · 可回滚", "Supported · reversible") : t("支持安装 · 不可回滚", "Supported · not reversible")
+          ? target.reversible ? t("支持安装 · 可回滚", "Supported · reversible") : t("支持安装 · 不可回滚", "Supported · cannot roll back")
           : target.reason || t("当前不支持自动安装", "Automatic installation is not supported")}</small>
       </div>)}</div>}
   </section>;
@@ -54,7 +54,7 @@ export function AssessmentView({ assessment }: { assessment: ProjectAssessment }
 
 function requirementLabel(requirement: AssessmentRequirement, t: Translate) {
   if (requirement === "required") return t("必选检查", "Required checks");
-  if (requirement === "triggered") return t("已触发的附加检查", "Triggered checks");
+  if (requirement === "triggered") return t("条件检查", "Conditional checks");
   return t("可选深度检查", "Optional deep checks");
 }
 

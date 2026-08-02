@@ -143,7 +143,9 @@ function Copy-ReleaseContents {
         Copy-Item -LiteralPath $sourcePath -Destination $destinationPath
     }
 
-    $trackedImages = & git -C $projectRoot ls-files "docs/images/*"
+    # Release packages need only the language-specific carousels referenced by
+    # the READMEs. Source screenshots and contact sheets stay in the source repo.
+    $trackedImages = & git -C $projectRoot ls-files "docs/images/ui-carousel.*.gif"
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to enumerate tracked documentation images"
     }

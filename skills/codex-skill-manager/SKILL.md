@@ -25,7 +25,7 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    contents share one name, report every conflicting source path and select a
    specific repository subtree before creating a plan. Prefer an explicitly
    identified `skills-codex` mirror for Codex only after showing that scope.
-5. When the user explicitly requests assisted installation for a complex
+5. When the user explicitly requests planned installation for a complex
    repository, use `install --assist` to create a read-only Codex project scan.
    Present its overview, advisory security conclusion, evidence limitations,
    and declarative installation methods. Only after the user explicitly agrees,

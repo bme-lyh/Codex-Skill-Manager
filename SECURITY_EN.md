@@ -10,8 +10,8 @@ Known Medium-or-lower findings may be ignored individually or for a whole
 report. High requires per-cluster confirmation and a non-empty reason. Critical
 cannot be ignored. Every exact decision target remains journaled.
 
-Codex risk review and assisted installation are explicit opt-in features. They
-require a signed-in Codex CLI and consume account usage. Assisted installation
+Codex risk review and planned installation are explicit opt-in features. They
+require a signed-in Codex CLI and consume account usage. Planned installation
 packages every prepared source file: text is included verbatim, while binary
 files are represented by path, size, and SHA-256. Only root-level `.git`, `.hg`,
 or `.svn` directories confirmed as real VCS metadata are skipped. Ordinary
@@ -27,7 +27,7 @@ The Settings toggle controls Security Center review only; choosing assisted
 installation in the GUI or using CLI `--assist` is the opt-in for that
 installation.
 
-Assisted installation treats Codex output only as a declarative proposal. Local
+Planned installation treats Codex output only as a declarative proposal. Local
 validation restricts execution to selected Skill installation, an exact-version
 Wheel tool whose official PyPI metadata matches the GitHub repository, and a
 manager-owned Codex MCP entry. Repository scripts, arbitrary shell, source
@@ -48,7 +48,7 @@ metadata.
 
 This is application-level egress control for a normal Python/pip process, not
 an operating-system network sandbox. A locally compromised Python or pip could
-still open its own connection, so assisted installation requires a trusted
+still open its own connection, so planned installation requires a trusted
 local Python environment.
 
 Every automatic step requires explicit permission and is journaled. Failure or

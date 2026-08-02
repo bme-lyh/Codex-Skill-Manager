@@ -303,10 +303,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
           tone: "warning",
           title: t("检测到未完成的安装", "An unfinished installation was found"),
           message: restoredPlan.transactionId
-            ? t("请先回滚已完成步骤，再重新分析或新建计划。旧计划不会被直接重试。",
-              "Roll back completed steps before analyzing again or creating a new plan. The old plan will not be retried directly.")
-            : t("该计划已中断且没有可用事务记录。请开始新的分析，不要直接重试旧计划。",
-              "This plan was interrupted without an available transaction journal. Start a new analysis instead of retrying the old plan.")
+            ? t("请先回滚已完成步骤，再重新扫描或新建计划。旧计划不会被直接重试。",
+              "Roll back completed steps before starting a new scan or plan. The old plan will not be retried directly.")
+            : t("该计划已中断且没有可用事务记录。请重新扫描，不要直接重试旧计划。",
+              "This plan was interrupted without a transaction journal. Start a new scan instead of retrying the old plan.")
         } : {
           tone: "success",
           title: t("已恢复安装计划", "Installation plan restored"),
@@ -344,10 +344,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
             if (!snapshot.terminal) {
               setFeedback({
                 tone: "info",
-                title: t("Codex 分析仍在进行", "Codex analysis is still running"),
+                title: t("增强项目扫描仍在运行", "Enhanced project scan is still running"),
                 message: t(
-                  "已恢复后台分析进度。可以继续查看，也可以隐藏窗口后稍后再打开。",
-                  "Background analysis progress was restored. Keep watching or hide the dialog and reopen it later."
+                  "已恢复后台扫描进度。可以继续查看，也可以隐藏窗口后稍后再打开。",
+                  "Background scan progress was restored. Keep watching or hide the dialog and reopen it later."
                 )
               });
               setRetryTask("");
@@ -360,10 +360,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
             activeAnalysisReferenceRef.current = "";
             setFeedback({
               tone: snapshot.phase === "cancelled" ? "warning" : "error",
-              title: t("Codex 分析未完成", "Codex analysis did not complete"),
+              title: t("增强项目扫描未完成", "Enhanced project scan did not complete"),
               message: snapshot.message || t(
-                "上次分析已中断，请重新分析来源。",
-                "The previous analysis was interrupted. Analyze the source again."
+                "上次扫描已中断，请重新运行增强项目扫描。",
+                "The previous scan was interrupted. Run the enhanced project scan again."
               ),
               detail: snapshot.error
             });
@@ -424,7 +424,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         setFeedback({
           tone: "success",
           title: t("安装计划已生成", "Installation plan ready"),
-          message: t("后台分析已完成，请核对步骤和权限。", "Background analysis completed. Review the steps and permissions.")
+          message: t("后台扫描已完成，请核对步骤和权限。", "Background scan completed. Review the steps and permissions.")
         });
         setRetryTask("");
         return;
@@ -459,8 +459,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       setBusy("");
       setFeedback({
         tone: snapshot?.phase === "cancelled" ? "warning" : "error",
-        title: t("Codex 分析未完成", "Codex analysis did not complete"),
-        message: snapshot?.message || t("请重新分析来源。", "Analyze the source again."),
+        title: t("增强项目扫描未完成", "Enhanced project scan did not complete"),
+        message: snapshot?.message || t("请重新运行增强项目扫描。", "Run the enhanced project scan again."),
         detail: snapshot?.error
       });
       setRetryTask(source.trim() ? "source" : "");
@@ -619,8 +619,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       // or retries. If the dialog was hidden, the persisted terminal progress
       // is then available when the task is reopened.
       const issue = issueFrom(error, t, t(
-	    "Codex 未能完成项目扫描。已保留本地来源分析结果，可重试或切换到标准安装。",
-	    "Codex could not complete the project scan. The local source analysis is preserved; retry or switch to standard installation."
+	    "Codex 未能完成项目扫描。已保留本地来源评估结果，可重试或切换到标准安装。",
+	    "Codex could not complete the project scan. The local source assessment is preserved. Retry or switch to standard installation."
       ));
       setFeedback(issue);
       setRetryTask(issue.retryable === false ? "" : "codex");
@@ -697,8 +697,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     setBusy("cancel");
     setFeedback({
       tone: "warning",
-      title: t("正在取消 Codex 分析", "Cancelling Codex analysis"),
-      message: t("取消后会保留本地来源分析和安全检查结果。", "Local source analysis and safety results will be preserved.")
+      title: t("正在取消增强项目扫描", "Cancelling the enhanced project scan"),
+      message: t("取消后会保留本地来源评估和安全检查结果。", "The local source assessment and safety results will be preserved.")
     });
     try {
       await api.cancelAssisted(referenceId);
@@ -709,8 +709,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       clearActivePlan();
       setFeedback({
         tone: "warning",
-        title: t("Codex 分析已取消", "Codex analysis cancelled"),
-        message: t("可重新分析，或直接切换到标准安装。", "Analyze again or switch directly to standard installation.")
+        title: t("增强项目扫描已取消", "Enhanced project scan cancelled"),
+        message: t("可重新扫描，或直接切换到标准安装。", "Run the scan again or switch directly to standard installation.")
       });
       setRetryTask("codex");
       setBusy("");
@@ -1005,7 +1005,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       setFeedback({
         tone: completed.transaction.status === "completed" ? "success" : "warning",
         title: completed.transaction.status === "completed"
-          ? t("一键安装完成", "Assisted installation completed")
+          ? t("计划安装完成", "Planned installation completed")
           : t("安装部分完成", "Installation partially completed"),
         message: completed.transaction.status === "completed"
           ? t("Skills、配置和验证步骤已完成。", "Skills, configuration, and verification steps completed.")
@@ -1062,7 +1062,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         setFeedback({
           tone: authoritativePhase === "completed" ? "success" : "warning",
           title: authoritativePhase === "completed"
-            ? t("一键安装完成", "Assisted installation completed")
+            ? t("计划安装完成", "Planned installation completed")
             : t("自动步骤已完成", "Automatic steps completed"),
           message: terminalProgress?.message || (authoritativePhase === "completed" ? t(
             "后端已完成安装，界面已读取最新状态。",
@@ -1124,8 +1124,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     const transactionId = result?.transaction?.id || plan?.transactionId || "";
     if (!transactionId || rolledBack || plan?.recoveryStatus === "completed") return;
     if (!window.confirm(t(
-      "回滚本次一键安装？应用会使用事务记录恢复可逆修改。",
-      "Roll back this assisted installation? Reversible changes will be restored from the transaction journal."
+      "回滚本次计划安装？应用会使用事务记录恢复可逆修改。",
+      "Roll back this planned installation? Reversible changes will be restored from the transaction journal."
     ))) return;
     setBusy("rollback");
     setRetryTask("");
@@ -1166,8 +1166,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       setFeedback({
         tone: "success",
         title: t("回滚完成", "Rollback completed"),
-        message: t("可逆修改已按事务记录恢复。现在可以重新分析或新建计划。",
-          "Reversible changes were restored from the transaction journal. You can now analyze again or create a new plan.")
+        message: t("可逆修改已按事务记录恢复。现在可以重新扫描或新建计划。",
+          "Reversible changes were restored from the transaction journal. You can run the scan again or create a new plan.")
       });
     } catch (error) {
       setFeedback(issueFrom(error, t));
@@ -1265,8 +1265,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       tone: "info",
       title: t("已切换到标准安装", "Switched to standard installation"),
       message: t(
-        "已保留来源分析、安全检查和 Skill 选择，不会配置 MCP 或额外依赖。",
-        "Source analysis, safety checks, and Skill selection were preserved. MCP and extra dependencies will not be configured."
+        "已保留来源评估、安全检查和 Skill 选择，不会配置 MCP 或额外依赖。",
+        "The source assessment, safety checks, and Skill selection were preserved. MCP and extra dependencies will not be configured."
       )
     } : null);
   };
@@ -1321,7 +1321,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
           t("安装计划尚未生成", "Installation plan is not available")}
         detail={busy === "codex"
           ? t("正在按固定预算分层处理仓库上下文。", "Processing repository context in bounded layers.")
-          : t("可重试 Codex 分析，或使用已完成的来源检查切换到标准安装。", "Retry Codex analysis or use the completed source check for standard installation.")} />;
+          : t("可重试增强项目扫描，或使用已完成的来源评估切换到标准安装。", "Retry the enhanced project scan or use the completed source assessment for standard installation.")} />;
     }
     if (displayProgress || result) {
       return <>{assessmentPanel}<ExecutionView plan={plan} progress={displayProgress ?? progress} result={result}
@@ -1352,7 +1352,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       return <button type="button" className="danger-button" disabled={busy === "cancel"}
         onClick={() => void cancelCodexAnalysis()}>
         {busy === "cancel" ? <LoaderCircle className="spin" size={17} /> : <Square size={15} />}
-        {busy === "cancel" ? t("正在取消分析…", "Cancelling analysis…") : t("取消分析", "Cancel analysis")}
+        {busy === "cancel" ? t("正在取消扫描…", "Cancelling scan…") : t("取消扫描", "Cancel scan")}
       </button>;
     }
     if (!preview && !plan) {
@@ -1408,7 +1408,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         return <button type="button" className="danger-button" disabled={busy === "cancel"}
           onClick={() => void cancelCodexAnalysis()}>
           {busy === "cancel" ? <LoaderCircle className="spin" size={17} /> : <Square size={15} />}
-          {busy === "cancel" ? t("正在取消分析…", "Cancelling analysis…") : t("取消分析", "Cancel analysis")}
+          {busy === "cancel" ? t("正在取消扫描…", "Cancelling scan…") : t("取消扫描", "Cancel scan")}
         </button>;
       }
       return <>
@@ -1417,7 +1417,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         </button>
         <button type="button" className="primary" disabled={busy !== "" || !preview}
           onClick={() => preview && void scanWithCodex(preview.id).catch(() => undefined)}>
-          <RefreshCw size={17} />{t("重试 Codex 分析", "Retry Codex analysis")}
+          <RefreshCw size={17} />{t("重试增强项目扫描", "Retry enhanced project scan")}
         </button>
       </>;
     }
@@ -1473,8 +1473,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       aria-labelledby="install-dialog-title" tabIndex={-1}>
       <div className="modal-head install-dialog-head">
         <div>
-          <h2 id="install-dialog-title">{t("检查并添加项目", "Check and add project")}</h2>
-          <span>{t("先理解和检查，再确认任何系统变更", "Understand and assess before any system change")}</span>
+          <h2 id="install-dialog-title">{t("检查并安装 Skills", "Review and install Skills")}</h2>
+          <span>{t("先评估来源，再复核并安装", "Assess the source, then review and install")}</span>
         </div>
         <button type="button" onClick={canHideInBackground ? close : dismiss}
           disabled={cannotClose && !canHideInBackground}
@@ -1556,8 +1556,8 @@ function UnifiedSourceStep({ sourceMethod, source, requestedRef, busy, setSource
     <div className="source-intro"><ShieldCheck size={24} /><div>
       <span className="eyebrow">{t("统一安全流程", "Unified security workflow")}</span>
       <h3>{t("添加需要检查的项目", "Add a project to assess")}</h3>
-      <p>{t("应用会先理解项目、执行本地必选检查，再向你展示安装目标和任何附加检查。",
-        "The app first understands the project and runs required local checks, then shows install targets and any additional checks.")}</p>
+      <p>{t("应用先读取项目并运行本地必选检查，再显示安装目标和可选检查。",
+        "The app first reads the project and runs required local checks, then shows install targets and optional checks.")}</p>
     </div></div>
     <div className="install-source-tabs" aria-label={t("来源类型", "Source type")}>
       <button type="button" aria-pressed={sourceMethod === "github"}
@@ -1627,7 +1627,7 @@ function ProjectScanView({ scan }: { scan: CodexProjectScanResult }) {
     </div>
 
     <PlanSection title={t("安全注意事项", "Security notes")} icon={<AlertTriangle size={19} />}
-      subtitle={t("敏感内容仅保留元数据；结论区分合理功能与实际危害。", "Sensitive content is metadata-only; conclusions distinguish legitimate capability from harmful behavior.")}>
+      subtitle={t("敏感文件只提供元数据；结论会区分正常功能和实际危害。", "Sensitive files contribute metadata only. Findings separate normal features from actual harm.")}>
       {security.concerns.length ? <div className="plan-step-list">
         {security.concerns.map((concern, index) => <div className="plan-step" key={`${concern.title}-${index}`}>
           <span className={`risk-dot ${concern.severity}`} />
@@ -1641,7 +1641,7 @@ function ProjectScanView({ scan }: { scan: CodexProjectScanResult }) {
     </PlanSection>
 
     <PlanSection title={t("识别到的安装方式", "Detected installation methods")} icon={<Download size={19} />}
-      subtitle={t("这里只描述可能的方式，不执行命令、下载或安装。", "These are declarative options only; no command, download, or installation is performed.")}>
+      subtitle={t("这里只说明可用方式，不运行命令、不下载、不安装。", "These options are informational. No command, download, or install runs.")}>
       <div className="plan-step-list">{scan.installationMethods.length ? scan.installationMethods.map((method, index) =>
         <div className="plan-step" key={`${method.kind}-${index}`}>
           {method.supported ? <CheckCircle2 size={18} /> : <CircleDashed size={18} />}
@@ -1685,7 +1685,7 @@ function AssistedPlanView({ plan, candidates, selectedSkills, setSelectedSkills,
   return <div className="assisted-plan">
     <div className="assisted-overview">
       <div className="assisted-overview-head">
-        <div><span className="eyebrow">{t("Codex 分析概览", "Codex analysis overview")}</span>
+        <div><span className="eyebrow">{t("增强项目扫描概览", "Enhanced project scan overview")}</span>
           <h3>{plan.repository?.fullName || t("本地 Skill 包", "Local Skill package")}</h3></div>
         <span className={`complexity ${plan.complexity || "unknown"}`}>{complexityLabel(plan.complexity, t)}</span>
       </div>
@@ -1819,7 +1819,7 @@ function AnalysisProgressView({ progress }: { progress: AssistedInstallProgress 
   const steps = progress.steps.map(step => ({
     ...step,
     title: step.id === "inventory" ? t("仓库盘点", "Repository inventory") :
-      step.id === "codex-analysis" ? t("Codex 分析", "Codex analysis") :
+      step.id === "codex-analysis" ? t("增强项目扫描", "Enhanced project scan") :
         step.id === "validation" ? t("本地验证", "Local validation") :
           step.id === "dependency-lock" ? t("依赖锁定", "Dependency lock") :
             step.id === "finalizing" && isProjectScan ? t("保存项目扫描", "Persist project scan") :
@@ -1830,7 +1830,7 @@ function AnalysisProgressView({ progress }: { progress: AssistedInstallProgress 
       <LoaderCircle className="spin" size={25} />
       <div><span className="eyebrow">{isProjectScan
         ? t("项目扫描进度", "Project scan progress")
-        : t("安装分析进度", "Installation analysis progress")}</span>
+        : t("安装计划进度", "Installation planning progress")}</span>
         <h3>{progress.message || (isProjectScan
           ? t("Codex 正在扫描项目", "Codex is scanning the project")
           : t("Codex 正在生成安装计划", "Codex is generating the installation plan"))}</h3>
@@ -1840,11 +1840,11 @@ function AnalysisProgressView({ progress }: { progress: AssistedInstallProgress 
       <strong>{total ? Math.min(100, Math.round(completed / total * 100)) : 0}%</strong>
     </div>
     <div className="execution-progress-track" role="progressbar"
-      aria-label={t("安装分析完成进度", "Installation analysis progress")}
+      aria-label={t("安装计划完成进度", "Installation planning progress")}
       aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}>
       <i aria-hidden="true" style={{ width: `${total ? Math.min(100, completed / total * 100) : 0}%` }} />
     </div>
-    <ol className="execution-timeline analysis-timeline" aria-label={t("安装分析阶段", "Installation analysis stages")}>
+    <ol className="execution-timeline analysis-timeline" aria-label={t("安装计划阶段", "Installation planning stages")}>
       {steps.map((step, index) => <TimelineStep key={step.id || index} step={step} index={index} />)}
     </ol>
   </div>;
@@ -2049,8 +2049,8 @@ function localizedPermission(
       return {
         title: t("使用已锁定的 PyPI Wheel", "Use locked PyPI Wheels"),
         description: t(
-          "完整依赖已在分析阶段从官方 PyPI 暂存；执行时只离线接受计划中的名称、版本、文件名和 SHA256。",
-          "The complete dependency set was staged from official PyPI during analysis; execution is offline and accepts only the listed names, versions, filenames, and SHA256 values."
+          "完整依赖已在计划阶段从官方 PyPI 暂存；执行时只离线接受计划中的名称、版本、文件名和 SHA256。",
+          "The complete dependency set was staged from official PyPI during planning. Execution is offline and accepts only the listed names, versions, filenames, and SHA256 values."
         )
       };
     case "managed-tool-write":
@@ -2199,7 +2199,7 @@ function issueFrom(error: unknown, t: Translate, fallback?: string): Feedback {
       : t("GitHub 拒绝了当前请求，常见原因是未验证凭据或请求额度已用尽。输入内容和当前进度已保留。",
         "GitHub rejected the request, usually because credentials are not verified or the rate limit is exhausted. Your input and progress were preserved.");
   } else if (unavailable) {
-    title = t("Codex 一键安装暂不可用", "Codex assisted installation is unavailable");
+    title = t("计划安装暂不可用", "Planned installation is unavailable");
   } else if (githubForbidden) {
     title = t("GitHub 无法访问该来源", "GitHub source access was denied");
     message = t(
@@ -2207,7 +2207,7 @@ function issueFrom(error: unknown, t: Translate, fallback?: string): Feedback {
       "Check repository access and GitHub credentials. Your input and current progress were preserved."
     );
   } else if (restartRequired) {
-    title = t("需要重新分析来源", "Source analysis must be repeated");
+    title = t("需要重新评估来源", "Source assessment must be repeated");
     message = t(
       "来源、计划或配置已发生变化。为避免使用过期授权，请返回并重新生成安装计划。",
       "The source, plan, or configuration changed. Go back and create a new installation plan instead of reusing stale approval."
@@ -2342,7 +2342,7 @@ function completedProgress(
     phase: partial ? "partial" : "completed",
     message: partial
       ? t("自动步骤已完成，人工步骤仍待处理", "Automatic steps completed; manual work remains")
-      : t("一键安装已完成", "Assisted installation completed"),
+      : t("计划安装已完成", "Planned installation completed"),
     completedSteps: plan.steps.filter(step =>
       ["completed", "skipped", "manual-pending", "rolled-back"].includes(step.status) || step.supported
     ).length,
@@ -2405,7 +2405,7 @@ function persistedPlanProgress(plan: AssistedInstallPlan, t: Translate): Assiste
   ).length;
   const terminal = status !== "running";
   const message = status === "completed"
-    ? t("一键安装已完成", "Assisted installation completed")
+    ? t("计划安装已完成", "Planned installation completed")
     : status === "partial"
       ? t("自动步骤已完成，人工步骤仍待处理", "Automatic steps completed; manual work remains")
     : status === "running"

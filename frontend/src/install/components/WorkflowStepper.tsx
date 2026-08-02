@@ -5,8 +5,8 @@ export type InstallWorkflowStage = "source" | "assess" | "review" | "apply";
 
 const stages: Array<{ id: InstallWorkflowStage; zh: string; en: string }> = [
   { id: "source", zh: "来源", en: "Source" },
-  { id: "assess", zh: "检查", en: "Assess" },
-  { id: "review", zh: "确认", en: "Review" },
+  { id: "assess", zh: "评估", en: "Assess" },
+  { id: "review", zh: "复核", en: "Review" },
   { id: "apply", zh: "执行", en: "Apply" }
 ];
 

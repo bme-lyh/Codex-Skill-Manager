@@ -4,6 +4,7 @@
 .gocache/
 .gomodcache/
 .tmp/
+.vite/
 .pnpm-store/
 /node_modules/
 frontend/node_modules/

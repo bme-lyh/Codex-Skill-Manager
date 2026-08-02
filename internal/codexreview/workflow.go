@@ -136,7 +136,7 @@ func reviewInBatches(
 		progress: progress, reviewID: result.ID, reportID: report.ID, startedAt: started,
 		active: map[int]model.CodexActiveBatch{}, locale: cfg.OutputLocale,
 	}
-	tracker.emit("preparing", localized(cfg.OutputLocale, "正在验证 Codex CLI 并盘点 Skill", "Validating Codex CLI and inventorying Skills"), true)
+	tracker.emit("preparing", localized(cfg.OutputLocale, "正在检查 Codex CLI 并查找 Skills", "Checking Codex CLI and finding Skills"), true)
 
 	reviewRoot, err := trustedReviewRoot(report.Target)
 	if err != nil {
@@ -310,8 +310,8 @@ func reviewInBatches(
 	if failedBatches == len(batches) {
 		result.Status = "failed"
 		result.Error = strings.Join(batchErrors, localized(cfg.OutputLocale, "；", "; "))
-		tracker.emit("failed", localized(cfg.OutputLocale, "Codex 复核失败，未生成可用的 Skill 结论",
-			"Codex review failed and produced no usable Skill conclusions"), true)
+		tracker.emit("failed", localized(cfg.OutputLocale, "Codex 复核失败，未生成可用的 Skill 结果",
+			"Codex review could not produce usable Skill results"), true)
 		return result, errors.New(result.Error)
 	}
 	if failedBatches > 0 {

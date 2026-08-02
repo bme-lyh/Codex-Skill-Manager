@@ -369,7 +369,7 @@ func analyzeInstall(
 		cfg.OutputLocale, "安装计划已完成本地安全验证", "The installation plan passed local validation",
 	))
 	tracker.finish(localized(
-		cfg.OutputLocale, "复杂安装分析已完成", "Assisted installation analysis completed",
+		cfg.OutputLocale, "安装计划生成完成", "Installation planning completed",
 	))
 	return plan, nil
 }
@@ -416,7 +416,7 @@ func runInstallAnalysisAttempt(
 	if waitErr != nil {
 		if errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
 			return generatedInstallPlan{}, fmt.Errorf(
-				"Codex assisted-install analysis exceeded the %d second attempt limit", timeout,
+				"Codex installation planning exceeded the %d second attempt limit", timeout,
 			)
 		}
 		message := strings.TrimSpace(diagnostic.String())
@@ -429,10 +429,10 @@ func runInstallAnalysisAttempt(
 		if len(message) > 4000 {
 			message = message[len(message)-4000:]
 		}
-		return generatedInstallPlan{}, fmt.Errorf("Codex assisted-install analysis failed: %s", message)
+		return generatedInstallPlan{}, fmt.Errorf("Codex installation planning failed: %s", message)
 	}
 	if streamErr != nil {
-		return generatedInstallPlan{}, fmt.Errorf("read Codex assisted-install progress: %w", streamErr)
+		return generatedInstallPlan{}, fmt.Errorf("read Codex installation planning progress: %w", streamErr)
 	}
 	data, err := readBoundedOutput(outputPath, 1<<20)
 	if err != nil {
@@ -442,7 +442,7 @@ func runInstallAnalysisAttempt(
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&generated); err != nil {
-		return generatedInstallPlan{}, fmt.Errorf("decode Codex assisted-install result: %w", err)
+		return generatedInstallPlan{}, fmt.Errorf("decode Codex installation plan: %w", err)
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
 		return generatedInstallPlan{}, err
@@ -554,9 +554,9 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return errors.New("Codex assisted-install result contains multiple JSON values")
+			return errors.New("Codex installation plan contains multiple JSON values")
 		}
-		return fmt.Errorf("decode trailing Codex assisted-install data: %w", err)
+		return fmt.Errorf("decode trailing Codex installation plan data: %w", err)
 	}
 	return nil
 }
@@ -2418,7 +2418,7 @@ func newAssistedInstallProgressTracker(
 			Phase: "preparing", Message: "", TotalSteps: 3,
 			Steps: []model.AssistedInstallProgressStep{
 				{ID: "inventory", Kind: "inventory", Title: "Repository inventory", Status: "queued"},
-				{ID: "codex-analysis", Kind: "codex-analysis", Title: "Codex analysis", Status: "queued"},
+				{ID: "codex-analysis", Kind: "codex-analysis", Title: "Installation planning", Status: "queued"},
 				{ID: "validation", Kind: "validation", Title: "Local validation", Status: "queued"},
 			},
 			StartedAt: started, UpdatedAt: started,

@@ -1,0 +1,46 @@
+{
+  "frames": [
+    {
+      "file": "overview.png",
+      "label": {
+        "zh-CN": "概览",
+        "en-US": "Overview"
+      }
+    },
+    {
+      "file": "skills.png",
+      "label": {
+        "zh-CN": "Skills",
+        "en-US": "Skills"
+      }
+    },
+    {
+      "file": "security.png",
+      "label": {
+        "zh-CN": "安全中心",
+        "en-US": "Security"
+      }
+    },
+    {
+      "file": "install-source.png",
+      "label": {
+        "zh-CN": "安全安装流程",
+        "en-US": "Safe installation"
+      }
+    },
+    {
+      "file": "history.png",
+      "label": {
+        "zh-CN": "历史与回滚",
+        "en-US": "History and rollback"
+      }
+    },
+    {
+      "file": "updates.png",
+      "label": {
+        "zh-CN": "更新中心",
+        "en-US": "Updates"
+      }
+    }
+  ]
+}

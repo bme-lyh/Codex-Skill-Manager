@@ -1,7 +1,7 @@
 # Desktop GUI guide
 
 The GUI uses one workflow for every source: required local assessment, optional
-Codex enhanced analysis, explicit review, and apply. Review the exact targets
+an Enhanced project scan, explicit review, and apply. Review the exact targets
 and permissions before writing. Critical findings cannot be ignored; High
 findings need per-cluster confirmation and a non-empty reason; every replacement
 and removal has a recovery path.

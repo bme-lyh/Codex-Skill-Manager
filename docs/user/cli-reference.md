@@ -99,7 +99,7 @@ csm --json install --plan-id PLAN --assess
 不带 `--assist` 时，上述命令始终使用标准的两阶段 Skill 安装，不安装额外工具，
 也不修改 Codex MCP。
 
-## Codex 辅助安装
+## 计划安装
 
 CLI 使用三个明确阶段。第一步只进行只读项目扫描，返回项目概述、安全结论、证据覆盖
 和声明式安装方式：

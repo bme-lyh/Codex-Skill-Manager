@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"image"
@@ -13,33 +14,30 @@ import (
 	"path/filepath"
 )
 
-var frames = []string{
-	"overview.png",
-	"skills.png",
-	"skills-batch.png",
-	"groups.png",
-	"updates.png",
-	"security-summary.png",
-	"security-clusters.png",
-	"install-source.png",
-	"assisted-plan.png",
-	"assisted-permissions.png",
-	"assisted-result.png",
-	"history.png",
-	"quarantine.png",
-	"reports.png",
-	"settings.png",
-	"settings-en.png",
+type screenshotManifest struct {
+	Frames []screenshotFrame
+}
+
+type screenshotFrame struct {
+	File string
 }
 
 func main() {
 	input := flag.String("input", filepath.FromSlash("docs/images/ui-screens"), "directory containing source PNG screenshots")
-	output := flag.String("output", filepath.FromSlash("docs/images/ui-carousel.gif"), "output GIF path")
+	output := flag.String("output", "", "output GIF path")
+	locale := flag.String("locale", "en-US", "screenshot locale: en-US or zh-CN")
+	manifestPath := flag.String("manifest", filepath.FromSlash("scripts/screenshot-frames.json"), "carousel frame manifest")
 	width := flag.Int("width", 1440, "output width in pixels")
 	height := flag.Int("height", 900, "output height in pixels")
 	delay := flag.Int("delay", 220, "delay per frame in hundredths of a second")
 	flag.Parse()
 
+	if *locale != "en-US" && *locale != "zh-CN" {
+		fail(fmt.Errorf("locale must be en-US or zh-CN"))
+	}
+	if *output == "" {
+		*output = filepath.FromSlash("docs/images/ui-carousel." + *locale + ".gif")
+	}
 	if *width < 320 {
 		fail(fmt.Errorf("width must be at least 320 pixels"))
 	}
@@ -50,9 +48,18 @@ func main() {
 		fail(fmt.Errorf("delay must be at least 20 hundredths of a second"))
 	}
 
+	manifest, err := readManifest(*manifestPath)
+	if err != nil {
+		fail(err)
+	}
+	if len(manifest.Frames) == 0 {
+		fail(fmt.Errorf("manifest contains no frames"))
+	}
+
+	inputDirectory := filepath.Join(*input, *locale)
 	animation := &gif.GIF{LoopCount: 0}
-	for _, name := range frames {
-		sourcePath := filepath.Join(*input, name)
+	for _, item := range manifest.Frames {
+		sourcePath := filepath.Join(inputDirectory, item.File)
 		source, err := readImage(sourcePath)
 		if err != nil {
 			fail(err)
@@ -82,6 +89,23 @@ func main() {
 		fail(fmt.Errorf("encode animation: %w", err))
 	}
 	fmt.Printf("Screenshot carousel created: %s\n", *output)
+}
+
+func readManifest(path string) (screenshotManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return screenshotManifest{}, fmt.Errorf("read manifest %s: %w", path, err)
+	}
+	var manifest screenshotManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return screenshotManifest{}, fmt.Errorf("parse manifest %s: %w", path, err)
+	}
+	for index, frame := range manifest.Frames {
+		if filepath.Base(frame.File) != frame.File || frame.File == "" {
+			return screenshotManifest{}, fmt.Errorf("frame %d has an invalid filename", index+1)
+		}
+	}
+	return manifest, nil
 }
 
 func composeFrame(source image.Image, width, height int) *image.RGBA {

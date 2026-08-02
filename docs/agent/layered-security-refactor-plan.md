@@ -18,7 +18,7 @@ progressive project intake workflow:
 7. verify the result or offer recovery.
 
 The common low-risk Skill flow should require no knowledge of the terms
-"standard installation" or "assisted installation". Codex analysis remains an
+"standard installation" or "planned installation". The Enhanced project scan remains an
 explicitly consented enhancement and never becomes an implicit network action.
 
 ## 2. Safety invariants

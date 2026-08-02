@@ -24,7 +24,7 @@ commit pinning, SHA-256 inventory, transactional backups, reversible quarantine,
 credential-manager use and redacted operational reports. Static analysis cannot
 prove semantic safety; user review remains required for high-risk code.
 
-Assisted installation adds a separate model-output trust boundary. The manager
+Planned installation adds a separate model-output trust boundary. The manager
 packages the complete commit-pinned GitHub staging directory or explicit local
 source into a Codex session whose shell tool is disabled and whose working
 directory contains only manager-owned output files. Codex emits

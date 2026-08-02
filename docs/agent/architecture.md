@@ -45,7 +45,7 @@ for each successfully scanned Skill. Dashboard inventory hashes are compared wit
 that state so unchanged Skills can be skipped by default without hiding changed or
 untracked content.
 
-## Assisted installation boundary
+## Planned installation boundary
 
 Every source first passes a persisted local `ProjectAssessment`, regardless of
 whether Codex assistance is used. GitHub sources are bound to a full commit SHA;
@@ -58,7 +58,7 @@ groups checks as required/triggered/optional, and returns a fail-closed
 from the bound source and refuses changed, expired, unknown, unsupported, or
 case-variant `.system` targets.
 
-Codex assisted installation is a consent-gated manager workflow exposed through
+Planned installation is a consent-gated manager workflow exposed through
 the Wails desktop facade and the CLI's explicit `install --assist` contract. It
 is layered on the ordinary installation preview. The standard resolver first pins GitHub
 input to a full commit SHA and extracts it safely, or validates an explicit

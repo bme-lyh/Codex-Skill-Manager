@@ -27,6 +27,7 @@ import {
   demoQuarantine,
   demoScanReport
 } from "./demo";
+import { demoLocaleFromLocation, localizeDemo } from "./demoLocale";
 
 type Backend = {
   GetDashboard(): Promise<Dashboard>;
@@ -76,7 +77,12 @@ type Backend = {
   ListQuarantine(): Promise<Array<{ skill: string; transactionId: string; path: string }>>;
 };
 
-const demo: Dashboard = demoDashboard;
+const browserDemoLocale = demoLocaleFromLocation();
+const localizedDemo = <T>(value: T): T => localizeDemo(value, browserDemoLocale);
+const apiError = (zhCN: string, enUS: string): Error =>
+  new Error(browserDemoLocale === "en-US" ? enUS : zhCN);
+const disconnectedError = (): Error => apiError("桌面后端尚未连接", "The desktop backend is not connected");
+const demo: Dashboard = localizedDemo(demoDashboard);
 
 function backend(): Backend | undefined {
   return (window as any).go?.main?.App;
@@ -303,88 +309,88 @@ export const api = {
   bootstrap: async () => backend()?.BootstrapCurrentSkills(),
   prepareAdoption: async (names: string[]) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.PrepareAdoption(names);
   },
   applyAdoption: async (plan: string, names: string[]) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.ApplyAdoption(plan, names);
   },
   createGroup: async (name: string) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.CreateGroup(name);
   },
   renameGroup: async (id: string, name: string) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.RenameGroup(id, name);
   },
   reorderGroups: async (ids: string[]) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.ReorderGroups(ids);
   },
   moveSkills: async (names: string[], groupId: string) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.MoveSkillsToGroup(names, groupId);
   },
   prepareGitHub: async (url: string, ref = "") => {
     const b = backend();
-    if (!b) return demoInstallPreview;
+    if (!b) return localizedDemo(demoInstallPreview);
     return b.PrepareGitHub(url, ref);
   },
   prepareLocal: async (path: string) => {
     const b = backend();
-    if (!b) return demoInstallPreview;
+    if (!b) return localizedDemo(demoInstallPreview);
     return b.PrepareLocal(path);
   },
   assessSource: async (sourcePlanId: string): Promise<ProjectAssessment> => {
     const b = backend();
-    if (!b) return demoAssessment(sourcePlanId);
+    if (!b) return localizedDemo(demoAssessment(sourcePlanId));
     if (typeof b.AssessInstallSource !== "function") {
-      throw new Error("当前桌面后端不支持分层本地评估，请升级应用");
+      throw apiError("当前桌面后端不支持分层本地评估，请升级应用", "This desktop backend does not support layered local assessment. Update the app.");
     }
     return normalizeAssessment(await b.AssessInstallSource(sourcePlanId));
   },
   getAssessment: async (reference: string): Promise<ProjectAssessment> => {
     const b = backend();
-    if (!b) return demoAssessment(reference);
+    if (!b) return localizedDemo(demoAssessment(reference));
     if (typeof b.GetProjectAssessment !== "function") {
-      throw new Error("当前桌面后端不支持恢复分层评估，请重新分析来源");
+      throw apiError("当前桌面后端不支持恢复分层评估，请重新分析来源", "This desktop backend cannot restore the layered assessment. Assess the source again.");
     }
     return normalizeAssessment(await b.GetProjectAssessment(reference));
   },
   apply: async (plan: string, skills: string[], accept: boolean) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.ApplyInstall(plan, skills, accept);
   },
   audit: async (name: string) => {
     const b = backend();
-    if (!b) return demoScanReport;
+    if (!b) return localizedDemo(demoScanReport);
     return normalizeScan(await b.AuditSkill(name));
   },
   auditSkills: async (names: string[]) => {
     const b = backend();
-    if (!b) return demoScanReport;
+    if (!b) return localizedDemo(demoScanReport);
     return normalizeScan(await b.AuditSkills(names));
   },
   setFindingIgnored: async (finding: Finding, ignored: boolean, reason = "") => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.SetFindingIgnored(finding, ignored, reason);
   },
   setRiskClusterIgnored: async (cluster: RiskCluster, ignored: boolean, reason = "", confirmDeterministic = false) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.SetRiskClusterIgnored(cluster, ignored, reason, confirmDeterministic);
   },
   setRiskClustersIgnored: async (clusters: RiskCluster[], ignored: boolean, reason = "") => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.SetRiskClustersIgnored(clusters, ignored, reason);
   },
   check: async () => {
@@ -404,72 +410,72 @@ export const api = {
   },
   prepareUpdate: async (groupId: string) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.PrepareUpdate(groupId);
   },
   quarantine: async (names: string[]) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.QuarantineSkills(names);
   },
   restore: async (name: string, tx: string) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.RestoreSkill(name, tx);
   },
   rollback: async (tx: string) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.Rollback(tx);
   },
   config: async () => {
     const b = backend();
-    return b ? b.GetConfig() : demoConfig;
+    return b ? b.GetConfig() : { ...localizedDemo(demoConfig), locale: browserDemoLocale };
   },
   saveConfig: async (cfg: any) => backend()?.SaveConfig(cfg),
   schedule: async (enabled: boolean, frequency: string, at: string) =>
     backend()?.ConfigureSchedule(enabled, frequency, at),
   saveGitHubToken: async (token: string, username: string) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.SaveGitHubToken(token, username);
   },
   validateGitHub: async () => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return b.ValidateGitHubCredentials();
   },
   codexStatus: async (): Promise<CodexCLIStatus> => {
     const b = backend();
-    if (!b) return demoCodexStatus;
+    if (!b) return localizedDemo(demoCodexStatus);
     return b.GetCodexCLIStatus();
   },
   reviewWithCodex: async (report: ScanReport, skillNames: string[] = []) => {
     const b = backend();
-    if (!b) throw new Error("桌面后端尚未连接");
+    if (!b) throw disconnectedError();
     return normalizeScan(await b.ReviewScanWithCodex(report, skillNames));
   },
   scanProject: async (sourcePlanId: string): Promise<CodexProjectScanResult> => {
     const b = backend();
-    if (!b) return demoProjectScan(sourcePlanId);
+    if (!b) return localizedDemo(demoProjectScan(sourcePlanId));
     if (typeof b.ScanProjectWithCodex !== "function") {
-      throw new Error("当前桌面后端不支持可复用的 Codex 项目扫描，请升级应用");
+      throw apiError("当前桌面后端不支持可复用的 Codex 项目扫描，请升级应用", "This desktop backend does not support reusable Codex project scans. Update the app.");
     }
     return normalizeProjectScan(await b.ScanProjectWithCodex(sourcePlanId));
   },
   createAssistedPlanFromScan: async (projectScanId: string): Promise<AssistedInstallPlan> => {
     const b = backend();
-    if (!b) return normalizeAssistedPlan(demoAssistedInstallPlan);
+    if (!b) return normalizeAssistedPlan(localizedDemo(demoAssistedInstallPlan));
     if (typeof b.AnalyzeInstallFromProjectScan !== "function") {
-      throw new Error("当前桌面后端不支持在项目扫描后生成 Codex 安装计划，请升级应用");
+      throw apiError("当前桌面后端不支持在项目扫描后生成 Codex 安装计划，请升级应用", "This desktop backend cannot create a Codex installation plan from the project scan. Update the app.");
     }
     return normalizeAssistedPlan(await b.AnalyzeInstallFromProjectScan(projectScanId));
   },
   getProjectScan: async (reference: string): Promise<CodexProjectScanResult> => {
     const b = backend();
-    if (!b) return demoProjectScan(reference);
+    if (!b) return localizedDemo(demoProjectScan(reference));
     if (typeof b.GetProjectScan !== "function") {
-      throw new Error("当前桌面后端不支持恢复 Codex 项目扫描，请升级应用");
+      throw apiError("当前桌面后端不支持恢复 Codex 项目扫描，请升级应用", "This desktop backend cannot restore the Codex project scan. Update the app.");
     }
     return normalizeProjectScan(await b.GetProjectScan(reference));
   },
@@ -480,15 +486,15 @@ export const api = {
     projectRoot = ""
   ): Promise<AssistedInstallResult> => {
     const b = backend();
-    if (!b) return {
+    if (!b) return localizedDemo({
       ...demoAssistedInstallResult,
       plan: normalizeAssistedPlan(demoAssistedInstallResult.plan),
       progress: demoAssistedInstallResult.progress
         ? normalizeAssistedProgress(demoAssistedInstallResult.progress)
         : undefined
-    };
+    });
     if (typeof b.ApplyAssistedInstall !== "function") {
-      throw new Error("当前桌面后端不支持执行 Codex 一键安装，请升级应用或切换到标准安装");
+      throw apiError("当前桌面后端不支持执行计划安装，请升级应用或切换到标准安装", "This desktop backend cannot run planned installation. Update the app or use standard installation.");
     }
     const result = await b.ApplyAssistedInstall(planId, skills, permissionIds, projectRoot);
     return {
@@ -499,15 +505,15 @@ export const api = {
   },
   getAssistedPlan: async (planId: string): Promise<AssistedInstallPlan> => {
     const b = backend();
-    if (!b) return normalizeAssistedPlan({ ...demoAssistedInstallPlan, id: planId || demoAssistedInstallPlan.id });
+    if (!b) return normalizeAssistedPlan(localizedDemo({ ...demoAssistedInstallPlan, id: planId || demoAssistedInstallPlan.id }));
     if (typeof b.GetAssistedInstallPlan !== "function") {
-      throw new Error("当前桌面后端不支持恢复 Codex 一键安装计划");
+      throw apiError("当前桌面后端不支持恢复计划安装", "This desktop backend cannot restore the planned installation.");
     }
     return normalizeAssistedPlan(await b.GetAssistedInstallPlan(planId));
   },
   getAssistedProgress: async (referenceId: string): Promise<AssistedInstallProgress> => {
     const b = backend();
-    if (!b) return normalizeAssistedProgress({
+    if (!b) return normalizeAssistedProgress(localizedDemo({
       ...demoAssistedInstallProgress,
       referenceId,
       runId: "",
@@ -521,9 +527,9 @@ export const api = {
         ...step,
         status: step.id === "initialize-project-index" ? "manual-pending" : "queued"
       }))
-    });
+    }));
     if (typeof b.GetAssistedInstallProgress !== "function") {
-      throw new Error("当前桌面后端不支持恢复 Codex 一键安装进度");
+      throw apiError("当前桌面后端不支持恢复计划安装进度", "This desktop backend cannot restore planned installation progress.");
     }
     return normalizeAssistedProgress(await b.GetAssistedInstallProgress(referenceId));
   },
@@ -531,7 +537,7 @@ export const api = {
     const b = backend();
     if (!b) return;
     if (typeof b.CancelAssistedInstall !== "function") {
-      throw new Error("当前桌面后端不支持取消 Codex 一键安装");
+      throw apiError("当前桌面后端不支持取消计划安装", "This desktop backend cannot cancel planned installation.");
     }
     await b.CancelAssistedInstall(referenceId);
   },
@@ -559,6 +565,6 @@ export const api = {
   },
   quarantineList: async () => {
     const b = backend();
-    return b ? (await b.ListQuarantine()) ?? [] : demoQuarantine;
+    return b ? (await b.ListQuarantine()) ?? [] : localizedDemo(demoQuarantine);
   }
 };
