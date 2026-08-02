@@ -71,6 +71,46 @@ The long-term navigation is reduced to five destinations:
 This change is staged. The first implementation changes the add/install dialog
 and its terminology without removing existing pages or stored data.
 
+## 4A. Implementation gate amendment
+
+Independent plan review found pre-existing contracts that must be corrected
+before the unified UI can honestly present an authoritative result. These are
+blocking tasks, not optional cleanup:
+
+1. **Persist and bind the local assessment.** The assessment has its own ID,
+   source-plan ID, source digest, assessment digest, creation time, and expiry.
+   Add `GetProjectAssessment`. Both standard and assisted apply paths must load
+   or regenerate the assessment, verify its identity and digest, and fail closed
+   unless the backend gate allows the selected target. Existing CLI callers keep
+   their method signatures and receive the same backend enforcement.
+2. **Snapshot local sources.** `PrepareLocal` must no longer retain the user's
+   live directory as its staging root. It creates a managed, bounded snapshot,
+   rejects links/reparse points and special files, and discovers/scans only that
+   snapshot. The original local path remains provenance metadata. Apply-time
+   file-record verification still runs against the managed snapshot.
+3. **Bind preview identity.** Persist a preview digest over its immutable
+   planning fields. `loadPreview` must validate the requested ID, embedded ID,
+   digest, expiry shape, and managed staging containment. GitHub commit SHAs
+   must match the full immutable SHA format.
+4. **Repair risk-decision semantics.** Backend code must look up persisted
+   findings/clusters instead of trusting client-supplied severity or
+   deterministic flags. Critical deterministic clusters cannot be ignored.
+   High-risk acceptance requires an explicit confirmation and non-empty reason;
+   batch generic ignore must reject High and Critical clusters. Restore remains
+   available and journaled.
+5. **Make consent boundaries explicit.** Local assessment performs no Codex,
+   PyPI, dependency download, or other network-provider action. Codex project
+   scanning starts only from an explicit user action. Plan generation must
+   explain that official PyPI metadata/Wheel staging may use the network and
+   require a separate explicit continuation before it begins.
+6. **Harden reserved targets.** Reject `.system` case-insensitively across
+   install, update, removal, restore, adoption, and assisted target validation.
+   Unknown gate, requirement, status, target-kind, or permission enum values
+   fail closed. All evidence lists remain bounded and path-redacted.
+
+The implementation may be split into commits, but the new assessment UI must
+not ship without all six backend gates.
+
 ## 5. Unified workflow states
 
 The frontend presents four user-facing stages while the backend retains finer
@@ -136,11 +176,11 @@ of this implementation.
 Add model types with JSON-compatible fields:
 
 - `ProjectAssessment`
-  - assessment/source IDs, repository, classification, evidence;
+  - assessment/source IDs, repository, classification, bounded evidence;
   - required/triggered/optional checks;
   - gate status, summary, highest risk, coverage;
   - supported targets and enhanced-scan recommendation;
-  - creation and expiry timestamps.
+  - source and assessment digests, creation and expiry timestamps.
 - `LayeredSecurityCheck`
   - ID, layer, requirement, status, title, summary, reason, provider, evidence;
   - values use bounded enums with unknown-value-safe clients.
@@ -151,11 +191,13 @@ Add a read-only Wails/manager operation:
 
 ```text
 AssessInstallSource(sourcePlanID) -> ProjectAssessment
+GetProjectAssessment(assessmentID or sourcePlanID) -> ProjectAssessment
 ```
 
-The operation loads the persisted preview, verifies expiry and identity, walks
-only the verified staging root, derives deterministic markers, summarizes the
-existing local scan, and returns no mutation permissions.
+The operation loads the persisted preview, verifies expiry, identity, digest,
+and managed staging containment, walks only the verified staging root, derives
+deterministic markers, summarizes the existing local scan, persists a bounded
+digest-bound result, and returns no mutation permissions.
 
 The existing operations remain compatible during migration:
 
@@ -166,6 +208,13 @@ AnalyzeInstallFromProjectScan
 ApplyInstall / ApplyAssistedInstall
 CancelAssistedInstall / Rollback
 ```
+
+`ApplyInstall` retains its compatibility signature but no longer ignores the
+approval argument: it treats the value only as explicit High-risk acceptance,
+requires a recorded reason through the risk-decision workflow, never permits a
+Critical bypass, and always enforces an assessment on the backend. Assisted
+preflight performs the same assessment enforcement in addition to its existing
+scan, plan, permission, and configuration digest checks.
 
 No arbitrary-project execution path is added. Supported actions remain Skill
 installation, locked official PyPI Wheels, Codex MCP configuration, and manual
@@ -220,11 +269,17 @@ and receive unit tests. API normalization remains in `frontend/src/api.ts`.
 
 ### Phase B - local assessment backend
 
+- snapshot local sources into managed staging and add source/preview digests;
+- repair persisted risk-decision lookup, Critical blocking, High confirmation,
+  batch-ignore rejection, and case-insensitive reserved-target checks;
 - add the bounded assessment model and local classifier;
-- expose the read-only manager and Wails methods;
+- persist assessments and expose the read-only manager and Wails methods;
+- enforce assessment gates from both standard and assisted apply paths while
+  retaining existing public method signatures;
 - verify staging-root containment, symlink handling, expiry, and stable output;
 - add table-driven tests for Skill, plugin marker, application/library marker,
-  mixed, ambiguous, high-risk, and expired-plan cases.
+  mixed, ambiguous, high-risk, Critical, expired-plan, tampered preview,
+  changed local source, `.SYSTEM`, and unknown-enum cases.
 
 ### Phase C - unified frontend
 
@@ -234,6 +289,8 @@ and receive unit tests. API normalization remains in `frontend/src/api.ts`.
 - render the four-state assessment summary and workflow stepper;
 - retain explicit Codex consent, background progress, restoration, cancel,
   retry, apply, and rollback behavior;
+- show a second explicit consent step before plan generation when dependency
+  metadata or Wheel staging may use the network;
 - extract view components without changing security decisions.
 
 ### Phase D - documentation and migration
@@ -267,6 +324,11 @@ and receive unit tests. API normalization remains in `frontend/src/api.ts`.
 | Recovery | cancellation, orphan recovery, rollback success and failure |
 | UI | keyboard/focus, one primary action, bilingual copy, narrow viewport |
 | Compatibility | existing CLI JSON, existing Wails methods, saved active references |
+
+Additional mandatory negative tests cover local-source TOCTOU, mismatched
+preview/assessment IDs and digests, Critical ignore attempts, unconfirmed High
+risk, batch High/Critical ignore, `.SYSTEM` across every mutation route, and
+proof that no Codex/PyPI action occurs before its explicit consent boundary.
 
 ## 11. Acceptance criteria
 
