@@ -1,12 +1,15 @@
 # English documentation
 
-- [Getting started](getting-started.md)
-- [Desktop GUI guide](gui-guide.md)
-- [CLI reference](cli-reference.md)
-- [Security and recovery](security-and-recovery.md)
-- [Architecture and Agent development](../agent/AGENT-ENTRYPOINT.md)
+Start with the page that matches your task:
 
-The English user guides cover both standard and Codex assisted installation,
-plus management, updates, security, and recovery. The Chinese documentation is
-the primary and most detailed reference; engineering contracts are
-language-neutral.
+1. [Getting started](getting-started.md) — download, first run, and installation.
+2. [Desktop GUI guide](gui-guide.md) — every page and action.
+3. [Security and recovery](security-and-recovery.md) — risk gates, backups, quarantine, and rollback.
+4. [CLI reference](cli-reference.md) — automation and JSON output.
+5. [Private GitHub repositories](private-repositories.md) — credentials and rate limits.
+6. [Troubleshooting](troubleshooting.md) — common startup, GitHub, Codex, and recovery errors.
+
+The English documentation is the primary project reference. The
+[Chinese documentation](../README.md) covers the same user workflow. Developer
+and Agent contracts are language-neutral and start at the
+[Agent entry point](../agent/AGENT-ENTRYPOINT.md).

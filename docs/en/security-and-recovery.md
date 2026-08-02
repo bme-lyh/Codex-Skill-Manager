@@ -1,5 +1,11 @@
 # Security and recovery
 
+Every source first passes a required local layered assessment. Codex enhanced
+analysis is optional and stays read-only until you approve a plan and its
+permissions. Critical findings can never be ignored; High findings need
+per-cluster confirmation and a non-empty reason; report-wide ignore handles
+known Medium-or-lower findings only.
+
 All downloaded Skill content is untrusted. The manager never executes repository scripts and never modifies `.codex/skills/.system`.
 
 The built-in scanner checks prompt injection, credential access, dynamic execution, download-and-execute patterns, destructive commands, persistence, external URLs, obfuscation, global Codex configuration changes, symbolic links, path escape, file size, and unsupported file types.
@@ -35,8 +41,12 @@ discover Codex Skills, scan exact targets, and group checks as required,
 triggered, or optional. Apply recomputes this assessment from the bound source.
 Changed, expired, digest-mismatched, unknown, unsupported, and case-variant
 `.system` targets fail closed.
+Discovered Skills install under the configured Skills root, which defaults to
+`%USERPROFILE%\.codex\skills`; `.system` is always read-only. A project with
+no Codex Skill is not copied to that global folder. Unsupported work remains
+manual, and an MCP project directory must be selected explicitly.
 
-Optional Codex semantic review requires an independently executable and
+Optional Codex risk review requires an independently executable and
 authenticated CLI. The application probes every PATH candidate plus the
 current user's npm directory, skipping a WindowsApps executable that
 third-party processes cannot launch. A manually configured CLI path must be
@@ -44,8 +54,9 @@ absolute and executable. Compatibility is capability-based and does not pin a
 specific CLI version. After authentication, the model picker is populated from
 the visible catalog returned by the current CLI. The app packages the complete
 selected group into model input, disables shell access, and uses a manager-owned
-output directory as the working directory. Local rule clusters are supplemental leads. The user may accept applicable
-Codex suggestions or use the independent human ignore-all action.
+output directory as the working directory. Local rule clusters are supplemental
+leads. The user may accept applicable Codex suggestions or use the ordinary
+human decision flow for eligible findings.
 
 Codex assisted installation is a separate, opt-in workflow. It first creates
 the normal commit-pinned GitHub or explicit-local source preview and local scan,

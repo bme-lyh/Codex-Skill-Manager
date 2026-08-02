@@ -104,6 +104,7 @@ $rootDocuments = @(
     "LICENSE",
     "README.md",
     "README_EN.md",
+    "README_ZH.md",
     "SECURITY.md",
     "SECURITY_EN.md",
     "SUPPORT.md"

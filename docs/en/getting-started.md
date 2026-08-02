@@ -9,8 +9,14 @@
 
 Portable releases contain `portable.marker` and store configuration and runtime state under the release directory. Standard installations store application state under `%USERPROFILE%\.codex\skill-manager`.
 
-The first-run interface is Simplified Chinese. Open **设置 → 语言** and choose
-**English** to switch immediately; the selection is saved automatically.
+The first-run interface is Simplified Chinese. Open **Settings → Language** and
+choose **English**. On first run, those labels appear as **设置 → 语言**. The
+change is immediate and saved automatically.
+
+The release also includes `agent-skill\codex-skill-manager`. To install this
+helper into the global Codex Skills directory, open **Install Skill**, choose
+**Local folder**, select the release's `agent-skill` directory, review the
+assessment, and apply the Skill.
 
 ## Install a source build to a chosen directory
 
@@ -51,6 +57,11 @@ triggered, or optional. Only `ready` and `attention` assessments can continue.
 Expired, replaced, digest-mismatched, unknown, or case-variant `.system` targets
 fail closed and require a fresh assessment.
 
+Discovered Skills are installed under the configured Skills root, which defaults
+to `%USERPROFILE%\.codex\skills`. A project with no Codex Skill is not copied
+there as an ordinary application. Unsupported work remains manual; an MCP
+project directory, when needed, must be chosen explicitly.
+
 **Standard installation** copies only the selected Skill directories. It does
 not install extra tools, configure MCP, or execute repository scripts.
 
@@ -86,8 +97,8 @@ after the dialog is hidden. Reopening restores its progress. A failed retry
 returns to approval with only the exact prior Skill subset, permissions, and
 project root. Partial manual work and its rollback entry remain in History.
 
-The CLI exposes the same three-phase scan, plan-consent, and apply workflow; see the
-[CLI reference](cli-reference.md#codex-assisted-installation).
+The CLI exposes the same layered source, assessment, review, and apply workflow;
+see the [CLI reference](cli-reference.md#codex-assisted-installation).
 
 ## Check for updates
 

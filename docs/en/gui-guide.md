@@ -1,5 +1,11 @@
 # Desktop GUI guide
 
+The GUI uses one workflow for every source: required local assessment, optional
+Codex enhanced analysis, explicit review, and apply. Review the exact targets
+and permissions before writing. Critical findings cannot be ignored; High
+findings need per-cluster confirmation and a non-empty reason; every replacement
+and removal has a recovery path.
+
 ## Overview
 
 Shows managed, unmanaged, and system Skill counts, active high-risk findings, source groups, and recent transactions.
@@ -21,6 +27,10 @@ GitHub sources are bound to a full commit. Local sources are copied to a managed
 snapshot so review and apply never read a changing original directory. Unknown
 states, digest mismatch, unsupported targets, and every case variant of `.system`
 fail closed. Only `ready` and `attention` assessments can proceed.
+Discovered Skills install under the configured Skills root, which defaults to
+`%USERPROFILE%\.codex\skills`; `.system` is read-only. Projects with no Codex
+Skill are not copied to that global folder. Unsupported work remains manual,
+and an MCP project directory must be selected explicitly.
 
 The installation dialog keeps source input, analysis, permissions, execution
 progress, and errors in one workflow. GitHub 403 responses, invalid input,
@@ -36,9 +46,9 @@ requiring the user to rebuild the URL.
 
 **Standard installation** writes only the explicitly selected Skills. For a
 complex repository, the review page offers an explicit **Run enhanced project
-scan** action. Codex reuses the same mandatory assessment and then runs a reusable read-only
-project scan: bounded summaries cover the eligible text inventory and a
-deterministic focus set receives deeper analysis. Credential-like files are
+scan** action. Codex reuses the same mandatory assessment and then runs a
+read-only project scan: bounded summaries cover the eligible text inventory and
+a deterministic focus set receives deeper analysis. Credential-like files are
 metadata-only and large text is truncated. Codex first returns a project
 overview, security conclusion, evidence limitations, and declarative
 installation methods. It uses
@@ -102,8 +112,9 @@ the backend resolves persisted severity instead of trusting UI metadata.
 
 Active High/Critical findings block installation and update. A confirmed High
 decision clears only that cluster; restoring it immediately reactivates the gate.
-Critical remains blocked. Optional Codex review packages the complete selected
-group with shell access disabled and treats local rule hits as supplemental leads.
+Critical remains blocked. Optional Codex risk review packages the complete
+selected group with shell access disabled and treats local rule hits as
+supplemental leads.
 
 ## History, quarantine, and reports
 
@@ -119,9 +130,9 @@ unchanged.
 
 Configure absolute paths, scheduled read-only checks, private GitHub
 credentials, optional Codex review, and diagnostics. The enable toggle controls
-Security Center risk review only. Choosing Codex assisted installation in the
-Install Skill dialog is the opt-in for that installation; it still uses the CLI
-path, model, and reasoning effort configured here.
+Security Center risk review only. Choosing **Run enhanced project scan** in the
+Install Skill dialog, or using CLI `--assist`, is the opt-in for that installation;
+it still uses the CLI path, model, and reasoning effort configured here.
 
 When the CLI path is blank, the application skips unusable WindowsApps
 candidates and probes PATH plus the current user's npm directory for a working
