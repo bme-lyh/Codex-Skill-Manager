@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### English
+
+- Reorganized the sidebar into Home, Assets, Security, Activity, and Settings.
+- Added grouped tabs for asset and activity views.
+- Reframed installation as a four-step **Add project** flow with secondary actions tucked into **More options**.
+
+### 中文
+
+- 将侧栏整理为“首页、资产、安全、活动、设置”五项。
+- 为资产和活动增加分组标签页。
+- 将安装入口改为四步“添加项目”流程，并将次级操作收进“更多选项”。
+
 ## 0.10.1
 
 ### English

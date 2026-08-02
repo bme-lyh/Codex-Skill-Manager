@@ -5,9 +5,9 @@ export type InstallWorkflowStage = "source" | "assess" | "review" | "apply";
 
 const stages: Array<{ id: InstallWorkflowStage; zh: string; en: string }> = [
   { id: "source", zh: "来源", en: "Source" },
-  { id: "assess", zh: "评估", en: "Assess" },
-  { id: "review", zh: "复核", en: "Review" },
-  { id: "apply", zh: "执行", en: "Apply" }
+  { id: "assess", zh: "理解与计划", en: "Understand & plan" },
+  { id: "review", zh: "检查与确认", en: "Check & confirm" },
+  { id: "apply", zh: "安装与结果", en: "Install & result" }
 ];
 
 export function WorkflowStepper({ current }: { current: InstallWorkflowStage }) {
