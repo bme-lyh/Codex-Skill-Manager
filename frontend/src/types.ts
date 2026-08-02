@@ -288,6 +288,57 @@ export interface InstallPreview {
   };
   skills: Candidate[];
   scan: ScanReport;
+  previewDigest?: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export type AssessmentGate = "ready" | "attention" | "blocked" | "incomplete";
+export type AssessmentRequirement = "required" | "triggered" | "optional";
+export type AssessmentCheckStatus = "passed" | "attention" | "blocked" | "pending" | "not-applicable";
+
+export interface LayeredSecurityCheck {
+  id: string;
+  layer: string;
+  requirement: AssessmentRequirement;
+  status: AssessmentCheckStatus;
+  title: string;
+  summary: string;
+  reason?: string;
+  provider: string;
+  evidenceFiles: string[];
+}
+
+export interface InstallTargetPreview {
+  kind: "codex-skill" | string;
+  displayName: string;
+  path: string;
+  supported: boolean;
+  reason?: string;
+  permissionIds: string[];
+  reversible: boolean;
+}
+
+export interface ProjectAssessment {
+  id: string;
+  sourcePlanId: string;
+  repository: InstallPreview["repository"];
+  classification: "skill" | "plugin" | "application" | "library" | "mixed" | "unknown" | string;
+  classificationEvidence: string[];
+  checks: LayeredSecurityCheck[];
+  gate: AssessmentGate;
+  summary: string;
+  highestRisk: Severity;
+  coverage: {
+    filesInventoried: number;
+    filesScanned: number;
+    evidenceLimited: boolean;
+  };
+  targets: InstallTargetPreview[];
+  enhancedScanRecommended: boolean;
+  enhancedScanReason?: string;
+  sourceDigest: string;
+  assessmentDigest: string;
   createdAt: string;
   expiresAt: string;
 }
