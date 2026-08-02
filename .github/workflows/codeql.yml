@@ -35,7 +35,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - uses: github/codeql-action/init@v4
+      - uses: github/codeql-action/init@v4.37.3
         with:
           languages: go,javascript-typescript
 
@@ -47,5 +47,5 @@ jobs:
       - name: Type-check and build frontend
         run: pnpm --dir frontend run build
 
-      - uses: github/codeql-action/autobuild@v4
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/autobuild@v4.37.3
+      - uses: github/codeql-action/analyze@v4.37.3
