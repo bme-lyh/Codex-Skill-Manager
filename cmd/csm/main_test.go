@@ -37,6 +37,8 @@ func TestRunCLIRejectsInvalidCommandUsage(t *testing.T) {
 		{name: "schedule time", args: []string{"schedule", "--at=tomorrow"}},
 		{name: "assisted plan consent missing scan", args: []string{"install", "--assist", "--create-plan"}},
 		{name: "assisted plan consent missing flag", args: []string{"install", "--assist", "--project-scan-id", "project-scan-demo"}},
+		{name: "assessment missing plan", args: []string{"install", "--assess"}},
+		{name: "assessment mixed with apply", args: []string{"install", "--plan-id", "plan-demo", "--assess", "--apply", "--skill", "demo"}},
 		{name: "assisted plan consent mixed source", args: []string{
 			"install", "--assist", "--project-scan-id", "project-scan-demo", "--create-plan",
 			"--local", `D:\skills`,
@@ -64,6 +66,43 @@ func TestRunCLIRejectsInvalidCommandUsage(t *testing.T) {
 	}
 	if scheduleCalls != 0 {
 		t.Fatalf("invalid schedule usage invoked the scheduler %d time(s)", scheduleCalls)
+	}
+}
+
+func TestRunCLIAssessesExistingInstallPlan(t *testing.T) {
+	configPath := writeCLIConfig(t)
+	source := filepath.Join(t.TempDir(), "source")
+	skillRoot := filepath.Join(source, "demo")
+	if err := os.MkdirAll(skillRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillRoot, "SKILL.md"), []byte("---\nname: demo\ndescription: demo skill\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := executeCLI([]string{"--config", configPath, "--json", "install", "--local", source})
+	if code != 0 || stderr != "" {
+		t.Fatalf("create plan failed: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var planResponse struct {
+		Data model.InstallPreview `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &planResponse); err != nil || planResponse.Data.ID == "" {
+		t.Fatalf("decode plan response: %v; output=%q", err, stdout)
+	}
+	code, stdout, stderr = executeCLI([]string{
+		"--config", configPath, "--json", "install", "--plan-id", planResponse.Data.ID, "--assess",
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("assess plan failed: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var assessmentResponse struct {
+		Data model.ProjectAssessment `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &assessmentResponse); err != nil {
+		t.Fatalf("decode assessment response: %v; output=%q", err, stdout)
+	}
+	if assessmentResponse.Data.SourcePlanID != planResponse.Data.ID || assessmentResponse.Data.Gate == "" {
+		t.Fatalf("unexpected assessment response: %#v", assessmentResponse.Data)
 	}
 }
 

@@ -146,7 +146,10 @@ func (m *Manager) ReviewScanWithCodex(
 		Type: "codex-risk-review", Status: "running",
 		Targets: []string{report.ID}, StartedAt: time.Now().UTC(),
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		m.mu.Unlock()
+		return report, fmt.Errorf("start Codex review transaction: %w", err)
+	}
 	m.mu.Unlock()
 
 	review, err := codexreview.Review(ctx, cfg, report, stagingRoot, requestedSkills, progress)
@@ -165,7 +168,10 @@ func (m *Manager) ReviewScanWithCodex(
 		tx.Status = "partial"
 		tx.Error = review.Error
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		_, failErr := m.fail(tx, fmt.Errorf("complete Codex review transaction: %w", err))
+		return report, failErr
+	}
 	m.recordTransaction(tx)
 	return report, nil
 }
@@ -598,7 +604,7 @@ func (m *Manager) MoveSkillsToGroup(names []string, groupID string) (model.Trans
 	unique := make([]string, 0, len(names))
 	seen := map[string]bool{}
 	for _, name := range names {
-		if filepath.Base(name) != name || strings.ContainsAny(name, "*?") {
+		if !validMutableSkillName(name) {
 			return model.Transaction{}, fmt.Errorf("invalid skill name: %s", name)
 		}
 		skill, ok := skills[name]
@@ -638,7 +644,9 @@ func (m *Manager) applyGroupLayoutChange(kind string, targets []string, layout m
 		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
 		Type: kind, Status: "running", Targets: targets, StartedAt: time.Now().UTC(),
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return model.Transaction{}, fmt.Errorf("start group layout transaction: %w", err)
+	}
 	snapshot, err := m.snapshotGroupLayout(tx.ID)
 	if err != nil {
 		return m.fail(tx, err)
@@ -648,7 +656,10 @@ func (m *Manager) applyGroupLayoutChange(kind string, targets []string, layout m
 		return m.fail(tx, err)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		tx.RecoveryStatus = "required"
+		return m.fail(tx, fmt.Errorf("complete group layout transaction: %w", err))
+	}
 	m.recordTransaction(tx)
 	return tx, nil
 }
@@ -789,7 +800,18 @@ func (m *Manager) SetFindingIgnored(finding model.Finding, ignored bool, reason 
 	if decoded, err := hex.DecodeString(finding.Fingerprint); err != nil || len(decoded) != sha256.Size {
 		return errors.New("invalid finding fingerprint")
 	}
+	persisted, err := m.persistedFinding(finding)
+	if err != nil {
+		return err
+	}
+	finding = persisted
 	reason = strings.TrimSpace(reason)
+	if !validRiskSeverity(finding.Severity) {
+		return errors.New("finding has an unknown severity and cannot be modified")
+	}
+	if ignored && (finding.Severity == model.RiskCritical || finding.Severity == model.RiskHigh) {
+		return errors.New("High and Critical findings require the audited risk-cluster decision workflow")
+	}
 	txType := "ignore-warning"
 	if !ignored {
 		txType = "restore-warning"
@@ -798,13 +820,17 @@ func (m *Manager) SetFindingIgnored(finding model.Finding, ignored bool, reason 
 		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), Type: txType,
 		Status: "running", Targets: []string{finding.Fingerprint}, StartedAt: time.Now().UTC(),
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return fmt.Errorf("start warning decision transaction: %w", err)
+	}
 	if err := m.store.SetFindingIgnored(finding, ignored, reason); err != nil {
 		_, failErr := m.fail(tx, err)
 		return failErr
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return fmt.Errorf("complete warning decision transaction: %w", err)
+	}
 	m.recordTransaction(tx)
 	return nil
 }
@@ -812,20 +838,38 @@ func (m *Manager) SetFindingIgnored(finding model.Finding, ignored bool, reason 
 func (m *Manager) SetRiskClusterIgnored(cluster model.RiskCluster, ignored bool, reason string, confirmDeterministic bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_ = confirmDeterministic // Kept for API compatibility; a human action is now sufficient for every severity.
-	return m.setRiskClustersIgnoredLocked([]model.RiskCluster{cluster}, ignored, reason)
+	return m.setRiskClustersIgnoredLocked([]model.RiskCluster{cluster}, ignored, reason, confirmDeterministic)
 }
 
 func (m *Manager) SetRiskClustersIgnored(clusters []model.RiskCluster, ignored bool, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.setRiskClustersIgnoredLocked(clusters, ignored, reason)
+	return m.setRiskClustersIgnoredLocked(clusters, ignored, reason, false)
 }
 
-func (m *Manager) setRiskClustersIgnoredLocked(clusters []model.RiskCluster, ignored bool, reason string) error {
+func (m *Manager) setRiskClustersIgnoredLocked(clusters []model.RiskCluster, ignored bool, reason string, confirmHighRisk bool) error {
 	if len(clusters) == 0 {
 		return errors.New("at least one risk cluster is required")
 	}
+	reason = strings.TrimSpace(reason)
+	resolved := make([]model.RiskCluster, 0, len(clusters))
+	for _, requested := range clusters {
+		cluster, err := m.persistedRiskCluster(requested)
+		if err != nil {
+			return err
+		}
+		if !validRiskSeverity(cluster.Severity) {
+			return errors.New("risk cluster has an unknown severity and cannot be modified")
+		}
+		if ignored && cluster.Severity == model.RiskCritical {
+			return errors.New("Critical risk clusters cannot be ignored")
+		}
+		if ignored && cluster.Severity == model.RiskHigh && (!confirmHighRisk || reason == "") {
+			return errors.New("High risk acceptance requires explicit confirmation and a non-empty reason")
+		}
+		resolved = append(resolved, cluster)
+	}
+	clusters = resolved
 	targets := make([]string, 0, len(clusters))
 	for index := range clusters {
 		cluster := &clusters[index]
@@ -841,7 +885,6 @@ func (m *Manager) setRiskClustersIgnoredLocked(clusters []model.RiskCluster, ign
 			cluster.RuleID == "CSM-FILE-002" || cluster.RuleID == "CSM-DEL-001"
 		targets = append(targets, cluster.ID)
 	}
-	reason = strings.TrimSpace(reason)
 	txType := "ignore-risk-cluster"
 	if !ignored {
 		txType = "restore-risk-cluster"
@@ -853,15 +896,63 @@ func (m *Manager) setRiskClustersIgnoredLocked(clusters []model.RiskCluster, ign
 		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), Type: txType,
 		Status: "running", Targets: targets, StartedAt: time.Now().UTC(),
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return fmt.Errorf("start risk decision transaction: %w", err)
+	}
 	if err := m.store.SetClustersIgnored(clusters, ignored, reason); err != nil {
 		_, failErr := m.fail(tx, err)
 		return failErr
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return fmt.Errorf("complete risk decision transaction: %w", err)
+	}
 	m.recordTransaction(tx)
 	return nil
+}
+
+func (m *Manager) persistedFinding(requested model.Finding) (model.Finding, error) {
+	reports, err := m.store.RecentScans(100)
+	if err != nil {
+		return model.Finding{}, err
+	}
+	for _, report := range reports {
+		for _, finding := range report.Findings {
+			if finding.Fingerprint != requested.Fingerprint {
+				continue
+			}
+			if requested.RuleID != "" && finding.RuleID != requested.RuleID {
+				return model.Finding{}, errors.New("finding identity does not match persisted scan evidence")
+			}
+			if requested.File != "" && filepath.ToSlash(finding.File) != filepath.ToSlash(requested.File) {
+				return model.Finding{}, errors.New("finding identity does not match persisted scan evidence")
+			}
+			return finding, nil
+		}
+	}
+	return model.Finding{}, errors.New("finding was not found in persisted scan evidence")
+}
+
+func (m *Manager) persistedRiskCluster(requested model.RiskCluster) (model.RiskCluster, error) {
+	if strings.TrimSpace(requested.ID) == "" {
+		return model.RiskCluster{}, errors.New("risk cluster ID is required")
+	}
+	reports, err := m.store.RecentScans(100)
+	if err != nil {
+		return model.RiskCluster{}, err
+	}
+	for _, report := range reports {
+		for _, cluster := range report.Clusters {
+			if cluster.ID != requested.ID {
+				continue
+			}
+			if requested.RuleID != "" && cluster.RuleID != requested.RuleID {
+				return model.RiskCluster{}, errors.New("risk cluster identity does not match persisted scan evidence")
+			}
+			return cluster, nil
+		}
+	}
+	return model.RiskCluster{}, errors.New("risk cluster was not found in persisted scan evidence")
 }
 
 func (m *Manager) PrepareGitHub(ctx context.Context, rawURL, ref string) (model.InstallPreview, error) {
@@ -876,6 +967,9 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 	repo, err := m.github.Resolve(ctx, rawURL, ref)
 	if err != nil {
 		return model.InstallPreview{}, err
+	}
+	if !immutableGitHubSHA.MatchString(repo.CommitSHA) {
+		return model.InstallPreview{}, errors.New("GitHub source did not resolve to a full immutable commit SHA")
 	}
 	id := "plan-" + time.Now().UTC().Format("20060102T150405.000000000")
 	stage := filepath.Join(m.Config.Paths.StagingRoot, id)
@@ -937,6 +1031,9 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 		ID: id, Repository: repo, Skills: candidates, Scan: report,
 		StagingPath: root, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 	}
+	if err := sealInstallPreview(&preview); err != nil {
+		return model.InstallPreview{}, err
+	}
 	if err := savePreview(m.Config.Paths.DataRoot, preview); err != nil {
 		return model.InstallPreview{}, err
 	}
@@ -951,6 +1048,13 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
+	linkInfo, err := os.Lstat(abs)
+	if err != nil {
+		return model.InstallPreview{}, err
+	}
+	if linkInfo.Mode()&os.ModeSymlink != 0 {
+		return model.InstallPreview{}, errors.New("local source root cannot be a link or reparse point")
+	}
 	info, err := os.Stat(abs)
 	if err != nil {
 		return model.InstallPreview{}, err
@@ -958,14 +1062,19 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 	if !info.IsDir() {
 		return model.InstallPreview{}, errors.New("local source must be a directory")
 	}
-	candidates, err := githubsource.Discover(abs, "")
+	id := "plan-" + time.Now().UTC().Format("20060102T150405.000000000")
+	stage := filepath.Join(m.Config.Paths.StagingRoot, id)
+	if err := snapshotLocalSource(abs, stage, m.Config.MaxFiles, m.Config.MaxFileBytes); err != nil {
+		return model.InstallPreview{}, fmt.Errorf("snapshot local source: %w", err)
+	}
+	candidates, err := githubsource.Discover(stage, "")
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
 	if len(candidates) == 0 {
 		return model.InstallPreview{}, errors.New("no valid SKILL.md directories found")
 	}
-	report, err := scanCandidateSkills(abs, candidates, m.Config.MaxFiles, m.Config.MaxFileBytes)
+	report, err := scanCandidateSkills(stage, candidates, m.Config.MaxFiles, m.Config.MaxFileBytes)
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
@@ -980,15 +1089,17 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 	summarizeScanSkills(&report)
 	_ = m.store.SaveScan(report)
 	m.recordScan(report)
-	id := "plan-" + time.Now().UTC().Format("20060102T150405.000000000")
 	preview := model.InstallPreview{
 		ID: id,
 		Repository: model.Repository{
 			Provider: "local", Name: filepath.Base(abs), FullName: "local:" + filepath.Base(abs),
 			LocalPath: abs, SourcePath: "", ResolvedRef: "local",
 		},
-		Skills: candidates, Scan: report, StagingPath: abs,
+		Skills: candidates, Scan: report, StagingPath: stage,
 		CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+	}
+	if err := sealInstallPreview(&preview); err != nil {
+		return model.InstallPreview{}, err
 	}
 	if err := savePreview(m.Config.Paths.DataRoot, preview); err != nil {
 		return model.InstallPreview{}, err
@@ -1129,7 +1240,9 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), Type: "manage",
 		Status: "running", Targets: selected, StartedAt: time.Now().UTC(),
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return model.Transaction{}, fmt.Errorf("start adoption transaction: %w", err)
+	}
 	lock, err := m.store.LoadLock()
 	if err != nil {
 		return m.fail(tx, err)
@@ -1143,7 +1256,7 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 			return m.fail(tx, fmt.Errorf("%s is already managed", name))
 		}
 		target := filepath.Join(m.Config.Paths.SkillsRoot, name)
-		if filepath.Base(target) != name || name == ".system" {
+		if !validMutableSkillName(name) {
 			return m.fail(tx, fmt.Errorf("invalid skill name: %s", name))
 		}
 		files, err := inventory.HashTree(target)
@@ -1188,19 +1301,33 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 		return m.fail(tx, err)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return m.fail(tx, fmt.Errorf("complete adoption transaction: %w", err))
+	}
 	m.recordTransaction(tx)
 	return tx, nil
 }
 
-func (m *Manager) ApplyInstall(planID string, selected []string, _ bool) (model.Transaction, error) {
-	return m.applyInstallWithTransactionID(planID, selected, "")
+// ApplyInstall requires both the persisted, audited High-risk cluster decision
+// and a final caller acknowledgement. The boolean cannot create an acceptance
+// record and therefore cannot bypass the backend decision workflow.
+func (m *Manager) ApplyInstall(planID string, selected []string, acceptHighRisk bool) (model.Transaction, error) {
+	return m.applyInstallWithTransactionIDAndRisk(planID, selected, "", acceptHighRisk)
 }
 
 func (m *Manager) applyInstallWithTransactionID(
 	planID string,
 	selected []string,
 	transactionID string,
+) (model.Transaction, error) {
+	return m.applyInstallWithTransactionIDAndRisk(planID, selected, transactionID, true)
+}
+
+func (m *Manager) applyInstallWithTransactionIDAndRisk(
+	planID string,
+	selected []string,
+	transactionID string,
+	acceptHighRisk bool,
 ) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1215,22 +1342,29 @@ func (m *Manager) applyInstallWithTransactionID(
 	if time.Now().UTC().After(preview.ExpiresAt) {
 		return model.Transaction{}, errors.New("install plan has expired")
 	}
+	if err := m.verifyInstallPreviewMetadata(preview, planID); err != nil {
+		return model.Transaction{}, err
+	}
+	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
+		return model.Transaction{}, err
+	}
 	ignored, err := m.store.IgnoredFindings()
 	if err != nil {
 		return model.Transaction{}, err
 	}
 	preview.Scan = m.decorateScan(preview.Scan, ignored)
-	if preview.Scan.ActiveHighestSeverity == model.RiskCritical ||
-		preview.Scan.ActiveHighestSeverity == model.RiskHigh {
+	if scanContainsAcceptedHighRisk(preview.Scan) && !acceptHighRisk {
+		return model.Transaction{}, errors.New("accepted High risk requires final apply confirmation")
+	}
+	if isBlockingRiskSeverity(preview.Scan.ActiveHighestSeverity) {
 		activeBlockingClusters := 0
 		for _, cluster := range preview.Scan.Clusters {
-			if !cluster.Ignored &&
-				(cluster.Severity == model.RiskCritical || cluster.Severity == model.RiskHigh) {
+			if !cluster.Ignored && isBlockingRiskSeverity(cluster.Severity) {
 				activeBlockingClusters++
 			}
 		}
 		return model.Transaction{}, fmt.Errorf(
-			"仍有 %d 个未忽略的高风险或严重风险簇；请使用统一的人工忽略操作后再安装",
+			"仍有 %d 个阻断风险簇：Critical 不可忽略，High 必须逐簇确认并填写原因",
 			activeBlockingClusters,
 		)
 	}
@@ -1299,7 +1433,7 @@ func (m *Manager) applyInstallWithTransactionID(
 	}
 	for _, c := range chosen {
 		target := filepath.Join(m.Config.Paths.SkillsRoot, c.Name)
-		if filepath.Base(target) != c.Name || c.Name == ".system" {
+		if !validMutableSkillName(c.Name) {
 			return m.failInstall(tx, touched, backups, fmt.Errorf("invalid skill name: %s", c.Name))
 		}
 		source := filepath.Join(preview.StagingPath, filepath.FromSlash(c.SourcePath))
@@ -1336,12 +1470,15 @@ func (m *Manager) applyInstallWithTransactionID(
 		if !recoveryTracked {
 			touched = append(touched, c.Name)
 		}
-		if err := copyTree(source, target); err != nil {
+		if err := snapshotLocalSource(source, target, m.Config.MaxFiles, m.Config.MaxFileBytes); err != nil {
 			return m.failInstall(tx, touched, backups, err)
 		}
 		files, err := inventory.HashTree(target)
 		if err != nil {
 			return m.failInstall(tx, touched, backups, err)
+		}
+		if !sameFileRecords(files, c.Files) {
+			return m.failInstall(tx, touched, backups, fmt.Errorf("%s changed while being copied; installation was recovered", c.Name))
 		}
 		hashes := map[string]string{}
 		for _, f := range files {
@@ -1386,7 +1523,7 @@ func (m *Manager) verifyInstallPreview(preview model.InstallPreview, chosen []mo
 	}
 	for _, candidate := range chosen {
 		source := filepath.Join(preview.StagingPath, filepath.FromSlash(candidate.SourcePath))
-		if err := ensureWithinOrEqual(preview.StagingPath, source); err != nil {
+		if err := ensureResolvedWithinOrEqual(preview.StagingPath, source); err != nil {
 			return fmt.Errorf("invalid source path for %s: %w", candidate.Name, err)
 		}
 		files, err := inventory.HashTree(source)
@@ -1417,6 +1554,9 @@ func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappin
 		UpdatedAt: time.Now().UTC(), Skills: map[string]model.SkillLock{},
 	}
 	for name, sourcePath := range mappings {
+		if !validMutableSkillName(name) {
+			return fmt.Errorf("invalid Skill name: %s", name)
+		}
 		local := filepath.Join(m.Config.Paths.SkillsRoot, name)
 		files, err := inventory.HashTree(local)
 		if err != nil {
@@ -1664,7 +1804,7 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 		return model.Transaction{}, errors.New("at least one explicit skill name is required")
 	}
 	for _, name := range names {
-		if strings.ContainsAny(name, "*?") || name == ".system" || filepath.Base(name) != name {
+		if !validMutableSkillName(name) {
 			return model.Transaction{}, fmt.Errorf("invalid uninstall target: %s", name)
 		}
 	}
@@ -1743,12 +1883,15 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 func (m *Manager) Restore(name, transactionID string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if name == "" || transactionID == "" || filepath.Base(name) != name || strings.ContainsAny(name, "*?") {
+	if transactionID == "" || !validMutableSkillName(name) {
 		return model.Transaction{}, errors.New("explicit skill name and transaction ID are required")
 	}
 	original, originalErr := m.store.Transaction(transactionID)
 	if originalErr != nil {
 		return model.Transaction{}, originalErr
+	}
+	if original.Type != "quarantine" {
+		return model.Transaction{}, fmt.Errorf("transaction type %s cannot restore quarantined content", original.Type)
 	}
 	source := transactionPathForName(original, name)
 	if source == "" {
@@ -1756,29 +1899,64 @@ func (m *Manager) Restore(name, transactionID string) (model.Transaction, error)
 			m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, transactionID,
 		)
 	}
+	if err := ensureWithinRestoreRoots(m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", source); err != nil {
+		return model.Transaction{}, fmt.Errorf("invalid quarantine restore source: %w", err)
+	}
 	target := filepath.Join(m.Config.Paths.SkillsRoot, name)
 	if _, err := os.Stat(target); err == nil {
 		return model.Transaction{}, fmt.Errorf("target already exists: %s", target)
 	}
 	tx := model.Transaction{ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), Type: "restore", Status: "running", Targets: []string{name}, StartedAt: time.Now().UTC()}
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return model.Transaction{}, fmt.Errorf("start restore transaction: %w", err)
+	}
 	if err := os.Rename(source, target); err != nil {
 		return m.fail(tx, err)
 	}
+	rollbackTarget := func(cause error) (model.Transaction, error) {
+		if err := os.Rename(target, source); err != nil {
+			tx.RecoveryStatus = "required"
+			cause = errors.Join(cause, fmt.Errorf("restore filesystem rollback failed: %w", err))
+		} else {
+			tx.RecoveryStatus = "completed"
+		}
+		return m.fail(tx, cause)
+	}
 	current, err := m.store.LoadLock()
 	if err != nil {
-		_ = os.Rename(target, source)
-		return m.fail(tx, err)
+		return rollbackTarget(err)
+	}
+	previousLock, err := json.Marshal(current)
+	if err != nil {
+		return rollbackTarget(fmt.Errorf("snapshot current source lock: %w", err))
+	}
+	rollbackState := func(cause error) (model.Transaction, error) {
+		var recoveryErr error
+		if err := os.Rename(target, source); err != nil {
+			recoveryErr = fmt.Errorf("restore filesystem rollback failed: %w", err)
+		}
+		var previous model.SourcesLock
+		if err := json.Unmarshal(previousLock, &previous); err != nil {
+			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("decode prior source lock: %w", err))
+		} else if err := m.store.SaveLock(previous); err != nil {
+			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("restore prior source lock: %w", err))
+		}
+		if recoveryErr != nil {
+			tx.RecoveryStatus = "required"
+			cause = errors.Join(cause, recoveryErr)
+		} else {
+			tx.RecoveryStatus = "completed"
+		}
+		return m.fail(tx, cause)
 	}
 	snapshotPath := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "sources.lock.json")
 	snapshotData, err := os.ReadFile(snapshotPath)
 	if err != nil {
-		_ = os.Rename(target, source)
-		return m.fail(tx, fmt.Errorf("load source snapshot: %w", err))
+		return rollbackState(fmt.Errorf("load source snapshot: %w", err))
 	}
 	var snapshot model.SourcesLock
 	if err := json.Unmarshal(snapshotData, &snapshot); err != nil {
-		_ = os.Rename(target, source)
-		return m.fail(tx, fmt.Errorf("parse source snapshot: %w", err))
+		return rollbackState(fmt.Errorf("parse source snapshot: %w", err))
 	}
 	restoredMapping := false
 	for id, originalPackage := range snapshot.Packages {
@@ -1798,15 +1976,15 @@ func (m *Manager) Restore(name, transactionID string) (model.Transaction, error)
 		break
 	}
 	if !restoredMapping {
-		_ = os.Rename(target, source)
-		return m.fail(tx, fmt.Errorf("source mapping for %s was not found in transaction %s", name, transactionID))
+		return rollbackState(fmt.Errorf("source mapping for %s was not found in transaction %s", name, transactionID))
 	}
 	if err := m.store.SaveLock(current); err != nil {
-		_ = os.Rename(target, source)
-		return m.fail(tx, err)
+		return rollbackState(err)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return rollbackState(fmt.Errorf("complete restore transaction: %w", err))
+	}
 	m.recordTransaction(tx)
 	return tx, nil
 }
@@ -1825,12 +2003,27 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 		!strings.HasPrefix(original.Type, "group-") {
 		return model.Transaction{}, fmt.Errorf("transaction type %s cannot be rolled back; use its dedicated recovery action", original.Type)
 	}
+	if original.Type == "install" {
+		for _, name := range original.Targets {
+			if !validMutableSkillName(name) {
+				return model.Transaction{}, fmt.Errorf("invalid rollback target: %s", name)
+			}
+			backup := transactionPathForName(original, name)
+			if backup != "" {
+				if err := ensureWithinRestoreRoots(m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", backup); err != nil {
+					return model.Transaction{}, fmt.Errorf("invalid rollback backup for %s: %w", name, err)
+				}
+			}
+		}
+	}
 	tx := model.Transaction{
 		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
 		Type: "rollback", Status: "running", Targets: append([]string(nil), original.Targets...),
 		StartedAt: time.Now().UTC(),
 	}
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		return model.Transaction{}, fmt.Errorf("start rollback transaction: %w", err)
+	}
 	if strings.HasPrefix(original.Type, "group-") {
 		path := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "groups.json")
 		data, readErr := os.ReadFile(path)
@@ -1845,7 +2038,9 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 			return m.fail(tx, err)
 		}
 		tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-		_ = m.store.SaveTransaction(tx)
+		if err := m.store.SaveTransaction(tx); err != nil {
+			return m.fail(tx, fmt.Errorf("complete group rollback transaction: %w", err))
+		}
 		m.recordTransaction(tx)
 		return tx, nil
 	}
@@ -1863,7 +2058,9 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 			return m.fail(tx, err)
 		}
 		tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-		_ = m.store.SaveTransaction(tx)
+		if err := m.store.SaveTransaction(tx); err != nil {
+			return m.fail(tx, fmt.Errorf("complete source rollback transaction: %w", err))
+		}
 		m.recordTransaction(tx)
 		return tx, nil
 	}
@@ -1896,14 +2093,25 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 		}
 	}
 	lockSnapshot := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "sources.lock.json")
-	if data, err := os.ReadFile(lockSnapshot); err == nil {
-		var lock model.SourcesLock
-		if json.Unmarshal(data, &lock) == nil {
-			_ = m.store.SaveLock(lock)
-		}
+	data, err := os.ReadFile(lockSnapshot)
+	if err != nil {
+		tx.RecoveryStatus = "required"
+		return m.fail(tx, fmt.Errorf("load rollback source snapshot: %w", err))
+	}
+	var lock model.SourcesLock
+	if err := json.Unmarshal(data, &lock); err != nil {
+		tx.RecoveryStatus = "required"
+		return m.fail(tx, fmt.Errorf("parse rollback source snapshot: %w", err))
+	}
+	if err := m.store.SaveLock(lock); err != nil {
+		tx.RecoveryStatus = "required"
+		return m.fail(tx, fmt.Errorf("restore rollback source snapshot: %w", err))
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if err := m.store.SaveTransaction(tx); err != nil {
+		tx.RecoveryStatus = "required"
+		return m.fail(tx, fmt.Errorf("complete rollback transaction: %w", err))
+	}
 	m.recordTransaction(tx)
 	return tx, nil
 }
@@ -1944,7 +2152,10 @@ func (m *Manager) recordTransaction(tx model.Transaction) {
 
 func (m *Manager) fail(tx model.Transaction, err error) (model.Transaction, error) {
 	tx.Status, tx.Error, tx.CompletedAt = "failed", err.Error(), time.Now().UTC()
-	_ = m.store.SaveTransaction(tx)
+	if saveErr := m.store.SaveTransaction(tx); saveErr != nil {
+		err = errors.Join(err, fmt.Errorf("persist failed transaction %s: %w", tx.ID, saveErr))
+		tx.Error = err.Error()
+	}
 	m.recordTransaction(tx)
 	return tx, err
 }
@@ -2120,6 +2331,39 @@ func transactionPathForName(tx model.Transaction, name string) string {
 	return ""
 }
 
+func validMutableSkillName(name string) bool {
+	if name == "" || name == "." || name == ".." || filepath.Base(name) != name ||
+		strings.ContainsAny(name, `*?/\\<>:"|`) || strings.IndexFunc(name, func(r rune) bool { return r < 0x20 }) >= 0 {
+		return false
+	}
+	// Win32 canonicalizes trailing spaces and dots. Reject aliases such as
+	// ".system." and ".system " before they reach any filesystem mutation.
+	canonical := strings.TrimRight(name, " .")
+	return canonical != "" && canonical == name && !strings.EqualFold(canonical, ".system")
+}
+
+func ensureWithinRestoreRoots(skillsRoot, configuredRoot, localFallback, candidate string) error {
+	if strings.TrimSpace(candidate) == "" || !filepath.IsAbs(candidate) {
+		return errors.New("restore source must be an absolute path")
+	}
+	if err := ensureResolvedWithinOrEqual(configuredRoot, candidate); err == nil {
+		return nil
+	}
+	return ensureResolvedWithinOrEqual(filepath.Join(skillsRoot, localFallback), candidate)
+}
+
+func ensureResolvedWithinOrEqual(root, candidate string) error {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	resolvedCandidate, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return err
+	}
+	return ensureWithinOrEqual(resolvedRoot, resolvedCandidate)
+}
+
 func ensureWithinOrEqual(root, candidate string) error {
 	base, err := filepath.Abs(root)
 	if err != nil {
@@ -2136,6 +2380,9 @@ func ensureWithinOrEqual(root, candidate string) error {
 }
 
 func savePreview(root string, p model.InstallPreview) error {
+	if err := sealInstallPreview(&p); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
@@ -2144,7 +2391,7 @@ func savePreview(root string, p model.InstallPreview) error {
 }
 
 func loadPreview(root, id string) (model.InstallPreview, error) {
-	if filepath.Base(id) != id {
+	if filepath.Base(id) != id || !strings.HasPrefix(id, "plan-") {
 		return model.InstallPreview{}, errors.New("invalid plan ID")
 	}
 	data, err := os.ReadFile(filepath.Join(root, id+".json"))
@@ -2152,8 +2399,20 @@ func loadPreview(root, id string) (model.InstallPreview, error) {
 		return model.InstallPreview{}, err
 	}
 	var p model.InstallPreview
-	err = json.Unmarshal(data, &p)
-	return p, err
+	if err := json.Unmarshal(data, &p); err != nil {
+		return model.InstallPreview{}, err
+	}
+	if p.ID != id {
+		return model.InstallPreview{}, errors.New("install preview identity mismatch")
+	}
+	expected, err := installPreviewDigest(p)
+	if err != nil {
+		return model.InstallPreview{}, err
+	}
+	if p.PreviewDigest == "" || !strings.EqualFold(p.PreviewDigest, expected) {
+		return model.InstallPreview{}, errors.New("install preview integrity digest mismatch")
+	}
+	return p, nil
 }
 
 func saveAdoptionPreview(root string, preview model.AdoptionPreview) error {
@@ -2180,6 +2439,11 @@ func loadAdoptionPreview(root, id string) (model.AdoptionPreview, error) {
 func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]string) model.ScanReport {
 	if report.Findings == nil {
 		report.Findings = []model.Finding{}
+	} else {
+		// Install previews are digest-bound value objects, but their slices share
+		// backing arrays after a struct copy. Decoration must never mutate the
+		// persisted/in-memory preview that will be verified on a later attempt.
+		report.Findings = append([]model.Finding(nil), report.Findings...)
 	}
 	if report.Skills == nil {
 		report.Skills = []model.ScanSkillSummary{}
@@ -2226,7 +2490,7 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 		finding.ClusterID = fmt.Sprintf("risk-%x", clusterHash[:12])
 		finding.Ignored = false
 		finding.IgnoreReason = ""
-		if reason, ok := ignored[finding.Fingerprint]; ok {
+		if reason, ok := ignored[finding.Fingerprint]; ok && persistedIgnoreHonored(finding.Severity, reason) {
 			finding.Ignored = true
 			finding.IgnoreReason = reason
 		}
@@ -2243,6 +2507,9 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 				files: map[string]bool{},
 			}
 			builds[finding.ClusterID] = build
+		}
+		if riskRank(finding.Severity) > riskRank(build.cluster.Severity) {
+			build.cluster.Severity = finding.Severity
 		}
 		build.cluster.FindingCount++
 		build.cluster.Fingerprints = append(build.cluster.Fingerprints, finding.Fingerprint)
@@ -2263,7 +2530,8 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 		sort.Strings(build.cluster.Fingerprints)
 		build.cluster.Ignored = true
 		for _, fingerprint := range build.cluster.Fingerprints {
-			if _, ok := ignored[fingerprint]; !ok {
+			reason, ok := ignored[fingerprint]
+			if !ok || !persistedIgnoreHonored(build.cluster.Severity, reason) {
 				build.cluster.Ignored = false
 				break
 			}
@@ -2369,9 +2637,48 @@ func riskRank(severity model.RiskSeverity) int {
 		return 3
 	case model.RiskLow:
 		return 2
-	default:
+	case model.RiskInfo:
 		return 1
+	default:
+		// Unknown severities outrank known blocking values so every aggregate
+		// and gate fails closed instead of silently treating them as info.
+		return 6
 	}
+}
+
+func validRiskSeverity(severity model.RiskSeverity) bool {
+	switch severity {
+	case model.RiskInfo, model.RiskLow, model.RiskMedium, model.RiskHigh, model.RiskCritical:
+		return true
+	default:
+		return false
+	}
+}
+
+func isBlockingRiskSeverity(severity model.RiskSeverity) bool {
+	return severity == model.RiskHigh || severity == model.RiskCritical || !validRiskSeverity(severity)
+}
+
+func persistedIgnoreHonored(severity model.RiskSeverity, reason string) bool {
+	switch severity {
+	case model.RiskCritical:
+		return false
+	case model.RiskHigh:
+		return strings.TrimSpace(reason) != ""
+	case model.RiskInfo, model.RiskLow, model.RiskMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+func scanContainsAcceptedHighRisk(report model.ScanReport) bool {
+	for _, cluster := range report.Clusters {
+		if cluster.Severity == model.RiskHigh && cluster.Ignored {
+			return true
+		}
+	}
+	return false
 }
 
 func sameFileRecords(current, planned []model.FileRecord) bool {

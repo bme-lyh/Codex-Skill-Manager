@@ -242,6 +242,9 @@ func (m *Manager) analyzeInstallWithCodex(
 	if err != nil {
 		return model.AssistedInstallPlan{}, err
 	}
+	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
+		return model.AssistedInstallPlan{}, fmt.Errorf("project assessment does not permit plan generation: %w", err)
+	}
 	if time.Now().UTC().After(preview.ExpiresAt) {
 		return model.AssistedInstallPlan{}, errors.New("source install plan has expired")
 	}
@@ -924,6 +927,9 @@ func (m *Manager) preflightAssistedInstall(
 	}
 	preview, err := m.assistedSourcePreview(plan.SourcePlanID)
 	if err != nil {
+		return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, err
+	}
+	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
 		return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, err
 	}
 	if time.Now().UTC().After(preview.ExpiresAt) {
@@ -1713,10 +1719,16 @@ func (m *Manager) assistedSourcePreview(planID string) (model.InstallPreview, er
 	preview, ok := m.previews[planID]
 	m.mu.Unlock()
 	if ok {
+		if err := m.verifyInstallPreviewMetadata(preview, planID); err != nil {
+			return model.InstallPreview{}, err
+		}
 		return preview, nil
 	}
 	preview, err := loadPreview(m.Config.Paths.DataRoot, planID)
 	if err != nil {
+		return model.InstallPreview{}, err
+	}
+	if err := m.verifyInstallPreviewMetadata(preview, planID); err != nil {
 		return model.InstallPreview{}, err
 	}
 	m.mu.Lock()

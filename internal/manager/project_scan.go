@@ -35,6 +35,9 @@ func (m *Manager) ScanProjectWithCodex(
 	if err != nil {
 		return model.CodexProjectScanResult{}, err
 	}
+	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
+		return model.CodexProjectScanResult{}, err
+	}
 	if time.Now().UTC().After(preview.ExpiresAt) {
 		return model.CodexProjectScanResult{}, errors.New("source install plan has expired")
 	}
@@ -137,6 +140,9 @@ func (m *Manager) GetProjectScan(reference string) (model.CodexProjectScanResult
 	preview, err := m.assistedSourcePreview(scan.SourcePlanID)
 	if err != nil {
 		return model.CodexProjectScanResult{}, fmt.Errorf("load project scan source plan: %w", err)
+	}
+	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
+		return model.CodexProjectScanResult{}, fmt.Errorf("project assessment no longer permits this scan: %w", err)
 	}
 	if scan.Status != "completed" {
 		return model.CodexProjectScanResult{}, fmt.Errorf("project scan is not complete: %s", scan.Status)

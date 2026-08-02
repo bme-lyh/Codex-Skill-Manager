@@ -312,9 +312,9 @@ func warning(m *manager.Manager, args []string) (any, error) {
 	file := fs.String("file", "", "finding file")
 	fileClass := fs.String("file-class", "", "risk cluster file class")
 	deterministic := fs.Bool("deterministic", false, "cluster is a deterministic local baseline")
-	confirmDeterministic := fs.Bool("confirm-deterministic", false, "deprecated compatibility flag; human ignore no longer needs extra confirmation")
+	confirmDeterministic := fs.Bool("confirm-deterministic", false, "explicitly confirm accepting a High-risk cluster; Critical clusters cannot be ignored")
 	reportID := fs.String("report", "", "apply the decision to every matching cluster in a scan report")
-	reason := fs.String("reason", "", "optional ignore reason")
+	reason := fs.String("reason", "", "audit reason; required when explicitly accepting a High-risk cluster")
 	restore := fs.Bool("restore", false, "restore a previously ignored warning")
 	dryRun := fs.Bool("dry-run", false, "show explicit targets without changing state")
 	if err := parseFlags(fs, args); err != nil {
@@ -425,8 +425,9 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	ref := fs.String("ref", "", "branch, tag, or commit")
 	all := fs.Bool("all", false, "select all discovered skills")
 	apply := fs.Bool("apply", false, "apply the plan")
+	assess := fs.Bool("assess", false, "read and persist the mandatory layered assessment for an existing source plan")
 	assist := fs.Bool("assist", false, "use the consent-gated Codex project scan and assisted-install flow")
-	acceptHigh := fs.Bool("accept-high-risk", false, "deprecated compatibility flag; use warning decisions")
+	acceptHigh := fs.Bool("accept-high-risk", false, "final apply acknowledgement for previously audited High-risk cluster decisions")
 	planID := fs.String("plan-id", "", "existing plan ID")
 	projectScanID := fs.String("project-scan-id", "", "completed Codex project scan ID")
 	createPlan := fs.Bool("create-plan", false, "approve creating an assisted-install plan from --project-scan-id")
@@ -442,9 +443,9 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 		if !*assist || !*createPlan {
 			return nil, usagef("--project-scan-id requires --assist --create-plan")
 		}
-		if *planID != "" || *apply || *rawURL != "" || *local != "" || *ref != "" ||
+		if *planID != "" || *apply || *assess || *rawURL != "" || *local != "" || *ref != "" ||
 			*all || len(selected) > 0 || len(grants) > 0 || *projectRoot != "" {
-			return nil, usagef("--project-scan-id --create-plan cannot be combined with a source, apply, selection, grant, or project-root flag")
+			return nil, usagef("--project-scan-id --create-plan cannot be combined with a source, assess, apply, selection, grant, or project-root flag")
 		}
 		return m.AnalyzeInstallFromProjectScan(ctx, *projectScanID, nil)
 	}
@@ -452,8 +453,15 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 		return nil, usagef("--create-plan requires --project-scan-id")
 	}
 	if *planID != "" {
+		if *assess {
+			if *apply || *assist || *all || len(selected) > 0 || len(grants) > 0 ||
+				*projectRoot != "" || *acceptHigh || *rawURL != "" || *local != "" || *ref != "" {
+				return nil, usagef("--plan-id --assess cannot be combined with source, apply, assist, selection, grant, project-root, or risk-acceptance flags")
+			}
+			return m.AssessInstallSource(*planID)
+		}
 		if !*apply {
-			return nil, usagef("--plan-id requires --apply")
+			return nil, usagef("--plan-id requires --assess or --apply")
 		}
 		if *assist {
 			if *all {
@@ -477,6 +485,9 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			return nil, usagef("applying an install plan requires at least one --skill")
 		}
 		return m.ApplyInstall(*planID, selected, *acceptHigh)
+	}
+	if *assess {
+		return nil, usagef("--assess requires --plan-id")
 	}
 	if *assist && *apply {
 		return nil, usagef(
