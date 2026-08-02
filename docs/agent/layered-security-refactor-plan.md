@@ -1,7 +1,7 @@
 # Layered Security Workflow Refactor Plan
 
-Status: approved implementation plan  
-Baseline: `1f1e370` (`Release 0.9.0: add layered Codex project scanning`)  
+Status: approved implementation plan
+Baseline: `1f1e370` (`Release 0.9.0: add layered Codex project scanning`)
 Target branch: `codex/layered-security-refactor`
 
 ## 1. Outcome
