@@ -3,43 +3,43 @@
     {
       "file": "overview.png",
       "label": {
-        "zh-CN": "概览",
-        "en-US": "Overview"
+        "zh-CN": "首页",
+        "en-US": "Home"
       }
     },
     {
-      "file": "skills.png",
+      "file": "assets.png",
       "label": {
-        "zh-CN": "Skills",
-        "en-US": "Skills"
+        "zh-CN": "资产",
+        "en-US": "Assets"
       }
     },
     {
       "file": "security.png",
       "label": {
-        "zh-CN": "安全中心",
+        "zh-CN": "安全",
         "en-US": "Security"
       }
     },
     {
-      "file": "install-source.png",
+      "file": "install-project.png",
       "label": {
-        "zh-CN": "安全安装流程",
-        "en-US": "Safe installation"
+        "zh-CN": "添加项目",
+        "en-US": "Add project"
       }
     },
     {
-      "file": "history.png",
+      "file": "activity.png",
       "label": {
-        "zh-CN": "历史与回滚",
-        "en-US": "History and rollback"
+        "zh-CN": "活动",
+        "en-US": "Activity"
       }
     },
     {
-      "file": "updates.png",
+      "file": "settings.png",
       "label": {
-        "zh-CN": "更新中心",
-        "en-US": "Updates"
+        "zh-CN": "设置",
+        "en-US": "Settings"
       }
     }
   ]

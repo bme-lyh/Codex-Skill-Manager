@@ -1,18 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.10.2
 
 ### English
 
 - Reorganized the sidebar into Home, Assets, Security, Activity, and Settings.
 - Added grouped tabs for asset and activity views.
 - Reframed installation as a four-step **Add project** flow with secondary actions tucked into **More options**.
+- Refreshed the six-frame English and Chinese carousels and aligned the README,
+  user guides, troubleshooting, Agent entry point, and release instructions
+  with the new workflow.
 
 ### 中文
 
-- 将侧栏整理为“首页、资产、安全、活动、设置”五项。
-- 为资产和活动增加分组标签页。
-- 将安装入口改为四步“添加项目”流程，并将次级操作收进“更多选项”。
+- 将侧栏整理为“首页、资产、安全、活动、设置”五个一级入口，并为资产和活动提供分组标签页。
+- 将添加项目入口改为“来源、理解与计划、检查与确认、安装与结果”四步流程；技术选项收进“更多选项”。
+- 安装结论统一为可安装、需要确认、已阻止和检查未完成，并保留安装前复核与失败恢复能力。
+
+- 重新截取并生成中英文六帧轮播图，统一更新 README、用户指南、故障排查、Agent 入口和发布说明。
 
 ## 0.10.1
 
