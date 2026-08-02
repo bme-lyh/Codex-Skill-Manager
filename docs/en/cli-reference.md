@@ -122,6 +122,9 @@ non-empty `--reason` and `--confirm-deterministic`; lower severities keep an
 optional reason. Applying a plan with an accepted High cluster also requires
 `--accept-high-risk` as a final acknowledgement; that flag cannot create the
 decision by itself. Use `--restore` to reverse an accepted or ignored warning.
+Report-wide ignore processes only known Medium-or-lower clusters and returns
+High, Critical, or unknown entries in `skippedClusterIds`; report-wide restore
+may reverse matching persisted decisions at any known severity.
 Schedule frequency is `daily` or `weekly`, and time uses 24-hour `HH:mm`.
 
 Exit code `0` means success, `1` means an operational or policy failure, and

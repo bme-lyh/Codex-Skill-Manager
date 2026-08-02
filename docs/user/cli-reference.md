@@ -196,10 +196,11 @@ csm warning --report SCAN_ID
 csm warning --report SCAN_ID --restore
 ```
 
-报告级批量操作只处理 Medium 及以下风险。High 必须逐簇使用
+报告级批量忽略只处理 Medium 及以下风险。High 必须逐簇使用
 `--confirm-deterministic` 和非空 `--reason`，Critical 不可忽略；执行含已接受 High
 风险的标准计划还需 `--accept-high-risk` 作最终确认。
-`--dry-run` 会返回明确的风险簇目标而不修改状态。
+`--dry-run` 会返回明确的风险簇目标而不修改状态；High、Critical 或未知等级会列入
+`skippedClusterIds`。报告级 `--restore` 可以恢复任意已知等级中匹配的历史决定。
 
 ## 输出与退出码
 

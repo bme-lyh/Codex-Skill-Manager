@@ -331,8 +331,13 @@ func warning(m *manager.Manager, args []string) (any, error) {
 			}
 			clusters := make([]model.RiskCluster, 0, len(report.Clusters))
 			targets := make([]string, 0, len(report.Clusters))
+			skipped := make([]string, 0, len(report.Clusters))
 			for _, cluster := range report.Clusters {
 				if cluster.Ignored == *restore {
+					if !reportDecisionEligible(cluster.Severity, *restore) {
+						skipped = append(skipped, cluster.ID)
+						continue
+					}
 					clusters = append(clusters, cluster)
 					targets = append(targets, cluster.ID)
 				}
@@ -344,7 +349,7 @@ func warning(m *manager.Manager, args []string) (any, error) {
 			}
 			return map[string]any{
 				"reportId": *reportID, "clusterIds": targets, "dryRun": *dryRun,
-				"ignored": !*restore, "reason": *reason,
+				"skippedClusterIds": skipped, "ignored": !*restore, "reason": *reason,
 			}, nil
 		}
 		return nil, fmt.Errorf("scan report not found: %s", *reportID)
@@ -379,6 +384,17 @@ func warning(m *manager.Manager, args []string) (any, error) {
 		"reason":      *reason,
 		"dryRun":      *dryRun,
 	}, nil
+}
+
+func reportDecisionEligible(severity model.RiskSeverity, restore bool) bool {
+	switch severity {
+	case model.RiskInfo, model.RiskLow, model.RiskMedium:
+		return true
+	case model.RiskHigh, model.RiskCritical:
+		return restore
+	default:
+		return false
+	}
 }
 
 func codexCommand(m *manager.Manager, args []string) (any, error) {

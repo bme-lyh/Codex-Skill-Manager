@@ -106,6 +106,29 @@ func TestRunCLIAssessesExistingInstallPlan(t *testing.T) {
 	}
 }
 
+func TestReportDecisionEligibilityFailsClosedForUnknownSeverity(t *testing.T) {
+	tests := []struct {
+		severity model.RiskSeverity
+		restore  bool
+		eligible bool
+	}{
+		{model.RiskInfo, false, true},
+		{model.RiskLow, false, true},
+		{model.RiskMedium, false, true},
+		{model.RiskHigh, false, false},
+		{model.RiskCritical, false, false},
+		{model.RiskHigh, true, true},
+		{model.RiskCritical, true, true},
+		{model.RiskSeverity("future"), false, false},
+		{model.RiskSeverity("future"), true, false},
+	}
+	for _, test := range tests {
+		if got := reportDecisionEligible(test.severity, test.restore); got != test.eligible {
+			t.Fatalf("reportDecisionEligible(%q, %v) = %v, want %v", test.severity, test.restore, got, test.eligible)
+		}
+	}
+}
+
 func TestRunCLIRejectsUnknownCommandBeforeOpeningState(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "missing", "config.yaml")

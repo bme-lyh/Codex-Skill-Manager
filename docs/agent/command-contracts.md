@@ -38,11 +38,11 @@ Planning commands:
 - `update --group ID`: resolve a GitHub source and create a persisted update
   preview for its installed Skills; scan scope is limited to actual candidate
   Skill directories;
-- `install --url URL [--ref REF] [--assist]`: create a commit-pinned preview and
-  mandatory persisted local project assessment, or continue to a reusable
-  read-only Codex project scan when explicitly requested;
+- `install --url URL [--ref REF] [--assist]`: create a commit-pinned preview;
+  when `--assist` is present, enforce the mandatory assessment and continue to
+  a reusable read-only Codex project scan;
 - `install --local PATH [--assist]`: copy the explicit directory into a bounded,
-  manager-owned snapshot, then use the same assessment contract;
+  manager-owned snapshot, then use the same explicit assessment contract;
 - `install --plan-id ID --assess`: persist and return the mandatory read-only
   layered assessment for review before apply;
 - `install --assist --project-scan-id ID --create-plan`: explicitly approve
@@ -127,7 +127,9 @@ Mutating commands:
 - `warning --cluster ID --fingerprint HASH...`: apply one human decision to a
   complete cluster;
 - `warning --report SCAN_ID [--dry-run] [--restore]`: preview or atomically
-  apply one human decision to every matching cluster in a report;
+  apply one human decision to every eligible matching cluster in a report;
+  ignore filters to known Medium-or-lower severities and returns skipped IDs,
+  while restore may reverse matching persisted decisions at any known severity;
 - `schedule`: create or update a scheduled check.
 
 Names must be explicit and cannot contain wildcards. `.system` is reserved

@@ -2003,17 +2003,78 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 		!strings.HasPrefix(original.Type, "group-") {
 		return model.Transaction{}, fmt.Errorf("transaction type %s cannot be rolled back; use its dedicated recovery action", original.Type)
 	}
+	type installRollbackTarget struct {
+		name         string
+		target       string
+		backup       string
+		failed       string
+		targetExists bool
+		backupExists bool
+		targetMoved  bool
+		backupMoved  bool
+	}
+	installTargets := make([]*installRollbackTarget, 0, len(original.Targets))
+	var previousLock model.SourcesLock
+	var rollbackLock model.SourcesLock
 	if original.Type == "install" {
+		if len(original.Targets) == 0 {
+			return model.Transaction{}, errors.New("install transaction has no rollback targets")
+		}
+		seen := map[string]bool{}
 		for _, name := range original.Targets {
-			if !validMutableSkillName(name) {
+			if !validMutableSkillName(name) || seen[strings.ToLower(name)] {
 				return model.Transaction{}, fmt.Errorf("invalid rollback target: %s", name)
 			}
-			backup := transactionPathForName(original, name)
-			if backup != "" {
+			seen[strings.ToLower(name)] = true
+			target := filepath.Join(m.Config.Paths.SkillsRoot, name)
+			targetInfo, targetErr := os.Stat(target)
+			targetExists := targetErr == nil
+			if targetErr != nil && !os.IsNotExist(targetErr) {
+				return model.Transaction{}, fmt.Errorf("inspect rollback target %s: %w", name, targetErr)
+			}
+			if targetExists && !targetInfo.IsDir() {
+				return model.Transaction{}, fmt.Errorf("rollback target is not a directory: %s", name)
+			}
+			recordedBackup := transactionPathForName(original, name)
+			backup := recordedBackup
+			if backup == "" {
+				backup = transactionContentPath(
+					m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", name, transactionID,
+				)
+			}
+			backupInfo, backupErr := os.Stat(backup)
+			backupExists := backupErr == nil
+			if backupErr != nil && !os.IsNotExist(backupErr) {
+				return model.Transaction{}, fmt.Errorf("inspect rollback backup for %s: %w", name, backupErr)
+			}
+			if recordedBackup != "" && os.IsNotExist(backupErr) {
+				return model.Transaction{}, fmt.Errorf("recorded rollback backup is missing for %s", name)
+			}
+			if backupExists {
+				if !backupInfo.IsDir() {
+					return model.Transaction{}, fmt.Errorf("rollback backup is not a directory: %s", name)
+				}
 				if err := ensureWithinRestoreRoots(m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", backup); err != nil {
 					return model.Transaction{}, fmt.Errorf("invalid rollback backup for %s: %w", name, err)
 				}
 			}
+			installTargets = append(installTargets, &installRollbackTarget{
+				name: name, target: target, backup: backup,
+				targetExists: targetExists, backupExists: backupExists,
+			})
+		}
+		var err error
+		previousLock, err = m.store.LoadLock()
+		if err != nil {
+			return model.Transaction{}, fmt.Errorf("load current source lock before rollback: %w", err)
+		}
+		lockSnapshot := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "sources.lock.json")
+		data, err := os.ReadFile(lockSnapshot)
+		if err != nil {
+			return model.Transaction{}, fmt.Errorf("load rollback source snapshot: %w", err)
+		}
+		if err := json.Unmarshal(data, &rollbackLock); err != nil {
+			return model.Transaction{}, fmt.Errorf("parse rollback source snapshot: %w", err)
 		}
 	}
 	tx := model.Transaction{
@@ -2024,7 +2085,28 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 	if err := m.store.SaveTransaction(tx); err != nil {
 		return model.Transaction{}, fmt.Errorf("start rollback transaction: %w", err)
 	}
+	if original.Type == "install" {
+		for _, target := range installTargets {
+			target.failed = transactionContentPath(
+				m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", target.name, "rollback-"+tx.ID,
+			)
+			if target.targetExists {
+				if err := os.MkdirAll(filepath.Dir(target.failed), 0o700); err != nil {
+					return m.fail(tx, fmt.Errorf("prepare rollback quarantine for %s: %w", target.name, err))
+				}
+			}
+			if target.backupExists {
+				if err := os.MkdirAll(filepath.Dir(target.target), 0o700); err != nil {
+					return m.fail(tx, fmt.Errorf("prepare rollback target for %s: %w", target.name, err))
+				}
+			}
+		}
+	}
 	if strings.HasPrefix(original.Type, "group-") {
+		previousLayout, err := m.store.LoadGroupLayout()
+		if err != nil {
+			return m.fail(tx, fmt.Errorf("load current group layout before rollback: %w", err))
+		}
 		path := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "groups.json")
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
@@ -2038,13 +2120,23 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 			return m.fail(tx, err)
 		}
 		tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
+		tx.RecoveryStatus = "completed"
 		if err := m.store.SaveTransaction(tx); err != nil {
-			return m.fail(tx, fmt.Errorf("complete group rollback transaction: %w", err))
+			cause := fmt.Errorf("complete group rollback transaction: %w", err)
+			if recoveryErr := m.store.ReplaceGroupLayout(previousLayout); recoveryErr != nil {
+				tx.RecoveryStatus = "required"
+				cause = errors.Join(cause, fmt.Errorf("restore current group layout: %w", recoveryErr))
+			}
+			return m.fail(tx, cause)
 		}
 		m.recordTransaction(tx)
 		return tx, nil
 	}
 	if original.Type == "adopt" || original.Type == "manage" {
+		previousLock, err := m.store.LoadLock()
+		if err != nil {
+			return m.fail(tx, fmt.Errorf("load current source lock before rollback: %w", err))
+		}
 		lockSnapshot := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "sources.lock.json")
 		data, readErr := os.ReadFile(lockSnapshot)
 		if readErr != nil {
@@ -2058,59 +2150,71 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 			return m.fail(tx, err)
 		}
 		tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
+		tx.RecoveryStatus = "completed"
 		if err := m.store.SaveTransaction(tx); err != nil {
-			return m.fail(tx, fmt.Errorf("complete source rollback transaction: %w", err))
+			cause := fmt.Errorf("complete source rollback transaction: %w", err)
+			if recoveryErr := m.store.SaveLock(previousLock); recoveryErr != nil {
+				tx.RecoveryStatus = "required"
+				cause = errors.Join(cause, fmt.Errorf("restore current source lock: %w", recoveryErr))
+			}
+			return m.fail(tx, cause)
 		}
 		m.recordTransaction(tx)
 		return tx, nil
 	}
-	for _, name := range original.Targets {
-		target := filepath.Join(m.Config.Paths.SkillsRoot, name)
-		backup := transactionPathForName(original, name)
-		if backup == "" {
-			backup = transactionContentPath(
-				m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", name, transactionID,
-			)
-		}
-		if _, err := os.Stat(target); err == nil {
-			failed := transactionContentPath(
-				m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, "rollback-"+tx.ID,
-			)
-			if err := os.MkdirAll(filepath.Dir(failed), 0o700); err != nil {
-				return m.fail(tx, err)
+	rollbackInstall := func(cause error, restoreLock bool) (model.Transaction, error) {
+		var recoveryErr error
+		for index := len(installTargets) - 1; index >= 0; index-- {
+			target := installTargets[index]
+			if target.backupMoved {
+				if err := os.Rename(target.target, target.backup); err != nil {
+					recoveryErr = errors.Join(recoveryErr, fmt.Errorf("return backup for %s: %w", target.name, err))
+				}
 			}
-			if err := os.Rename(target, failed); err != nil {
-				return m.fail(tx, err)
+			if target.targetMoved {
+				if err := os.Rename(target.failed, target.target); err != nil {
+					recoveryErr = errors.Join(recoveryErr, fmt.Errorf("restore current target %s: %w", target.name, err))
+				}
 			}
 		}
-		if _, err := os.Stat(backup); err == nil {
-			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				return m.fail(tx, err)
-			}
-			if err := os.Rename(backup, target); err != nil {
-				return m.fail(tx, err)
+		if restoreLock {
+			if err := m.store.SaveLock(previousLock); err != nil {
+				recoveryErr = errors.Join(recoveryErr, fmt.Errorf("restore current source lock: %w", err))
 			}
 		}
+		if recoveryErr != nil {
+			tx.RecoveryStatus = "required"
+			cause = errors.Join(cause, recoveryErr)
+		} else {
+			tx.RecoveryStatus = "completed"
+		}
+		return m.fail(tx, cause)
 	}
-	lockSnapshot := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "sources.lock.json")
-	data, err := os.ReadFile(lockSnapshot)
-	if err != nil {
-		tx.RecoveryStatus = "required"
-		return m.fail(tx, fmt.Errorf("load rollback source snapshot: %w", err))
+	for _, target := range installTargets {
+		if target.targetExists {
+			if err := os.Rename(target.target, target.failed); err != nil {
+				return rollbackInstall(fmt.Errorf("quarantine current target %s: %w", target.name, err), false)
+			}
+			target.targetMoved = true
+			tx.BackupPaths = append(tx.BackupPaths, target.failed)
+		}
+		if target.backupExists {
+			if err := os.Rename(target.backup, target.target); err != nil {
+				return rollbackInstall(fmt.Errorf("restore backup for %s: %w", target.name, err), false)
+			}
+			target.backupMoved = true
+		}
+		if err := m.store.SaveTransaction(tx); err != nil {
+			return rollbackInstall(fmt.Errorf("checkpoint rollback for %s: %w", target.name, err), false)
+		}
 	}
-	var lock model.SourcesLock
-	if err := json.Unmarshal(data, &lock); err != nil {
-		tx.RecoveryStatus = "required"
-		return m.fail(tx, fmt.Errorf("parse rollback source snapshot: %w", err))
-	}
-	if err := m.store.SaveLock(lock); err != nil {
-		tx.RecoveryStatus = "required"
-		return m.fail(tx, fmt.Errorf("restore rollback source snapshot: %w", err))
+	if err := m.store.SaveLock(rollbackLock); err != nil {
+		return rollbackInstall(fmt.Errorf("restore rollback source snapshot: %w", err), true)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
+	tx.RecoveryStatus = "completed"
 	if err := m.store.SaveTransaction(tx); err != nil {
-		tx.RecoveryStatus = "required"
-		return m.fail(tx, fmt.Errorf("complete rollback transaction: %w", err))
+		return rollbackInstall(fmt.Errorf("complete rollback transaction: %w", err), true)
 	}
 	m.recordTransaction(tx)
 	return tx, nil

@@ -53,6 +53,53 @@ func TestSnapshotLocalSourceRejectsLinks(t *testing.T) {
 	}
 }
 
+func TestSnapshotLocalSourceRejectsOverlappingDestination(t *testing.T) {
+	source := t.TempDir()
+	writeTestSkill(t, source, "demo")
+	destination := filepath.Join(source, "managed", "plan-overlap")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshotLocalSource(source, destination, 20, 1<<20); err == nil || !strings.Contains(err.Error(), "overlap") {
+		t.Fatalf("overlapping local snapshot was not rejected: %v", err)
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("rejected snapshot created its destination: %v", err)
+	}
+}
+
+func TestApplyInstallCreatesMissingSkillsRoot(t *testing.T) {
+	m := newTestManager(t)
+	if err := os.Remove(m.Config.Paths.SkillsRoot); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "source")
+	writeTestSkill(t, source, "demo")
+	preview, err := m.PrepareLocal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ApplyInstall(preview.ID, []string{"demo"}, false); err != nil {
+		t.Fatalf("fresh install with a missing Skills root failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")); err != nil {
+		t.Fatalf("fresh install did not create its target: %v", err)
+	}
+}
+
+func TestSnapshotLocalSourceBoundsDirectoriesAndFilesTogether(t *testing.T) {
+	source := t.TempDir()
+	for _, name := range []string{"one", "two", "three"} {
+		if err := os.Mkdir(filepath.Join(source, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	destination := filepath.Join(t.TempDir(), "snapshot")
+	if err := snapshotLocalSource(source, destination, 2, 1<<20); err == nil || !strings.Contains(err.Error(), "entry count") {
+		t.Fatalf("directory-only source exceeded no bounded limit: %v", err)
+	}
+}
+
 func TestPrepareLocalRejectsLinkedRoot(t *testing.T) {
 	m := newTestManager(t)
 	source := filepath.Join(t.TempDir(), "source")

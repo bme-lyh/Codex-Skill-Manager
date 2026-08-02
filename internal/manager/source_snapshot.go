@@ -27,16 +27,44 @@ func snapshotLocalSource(source, destination string, maxFiles int, maxFileBytes 
 	if maxFiles < 1 || maxFileBytes < 1 {
 		return errors.New("local snapshot limits must be positive")
 	}
+	source, err := filepath.Abs(source)
+	if err != nil {
+		return err
+	}
+	destination, err = filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	resolvedSource, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(destination); err == nil {
+		return errors.New("local snapshot destination already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	resolvedDestination, err := resolveFromExistingAncestor(destination)
+	if err != nil {
+		return err
+	}
+	if pathsOverlap(resolvedSource, resolvedDestination) {
+		return errors.New("local snapshot source and managed destination must not overlap")
+	}
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		return err
 	}
-	count := 0
+	entryCount := 0
 	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if path == source {
 			return nil
+		}
+		entryCount++
+		if entryCount > maxFiles {
+			return fmt.Errorf("local source exceeds entry count limit %d", maxFiles)
 		}
 		relative, err := filepath.Rel(source, path)
 		if err != nil {
@@ -61,10 +89,6 @@ func snapshotLocalSource(source, destination string, maxFiles int, maxFileBytes 
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("local snapshot rejects special file: %s", filepath.ToSlash(relative))
-		}
-		count++
-		if count > maxFiles {
-			return fmt.Errorf("local source exceeds file count limit %d", maxFiles)
 		}
 		if info.Size() > maxFileBytes {
 			return fmt.Errorf("local source file exceeds size limit: %s", filepath.ToSlash(relative))
@@ -111,6 +135,35 @@ func snapshotLocalSource(source, destination string, maxFiles int, maxFileBytes 
 		}
 		return nil
 	})
+}
+
+func pathsOverlap(first, second string) bool {
+	return ensureWithinOrEqual(first, second) == nil || ensureWithinOrEqual(second, first) == nil
+}
+
+func resolveFromExistingAncestor(path string) (string, error) {
+	current := filepath.Clean(path)
+	missing := []string{}
+	for {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", err
+			}
+			for index := len(missing) - 1; index >= 0; index-- {
+				resolved = filepath.Join(resolved, missing[index])
+			}
+			return resolved, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("no existing ancestor for local snapshot destination: %s", path)
+		}
+		missing = append(missing, filepath.Base(current))
+		current = parent
+	}
 }
 
 func installPreviewDigest(preview model.InstallPreview) (string, error) {

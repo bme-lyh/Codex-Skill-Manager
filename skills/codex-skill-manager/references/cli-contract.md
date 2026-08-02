@@ -96,6 +96,9 @@ Reasons are optional below High. High requires an individual non-empty
 `--reason` plus `--confirm-deterministic`, and standard apply then requires
 `--accept-high-risk` as a final acknowledgement. Critical cannot be ignored.
 Report-wide decisions apply atomically only to eligible Medium-or-lower clusters.
+The JSON result lists excluded High, Critical, or unknown cluster IDs in
+`skippedClusterIds`. Report-wide restore may reverse matching persisted
+decisions at any known severity.
 
 Reversible lifecycle:
 

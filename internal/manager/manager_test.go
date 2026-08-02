@@ -311,6 +311,156 @@ func TestRestoreRollsBackFileAndLockWhenSnapshotIsInvalid(t *testing.T) {
 	}
 }
 
+func TestInstallRollbackRejectsMissingRecordedBackupBeforeMutation(t *testing.T) {
+	m := newTestManager(t)
+	writeTestSkill(t, m.Config.Paths.SkillsRoot, "demo")
+	original := model.Transaction{
+		ID: "tx-install-missing-backup", Type: "install", Status: "completed",
+		Targets: []string{"demo"}, StartedAt: time.Now().UTC(),
+		BackupPaths: []string{transactionContentPath(
+			m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", "demo", "tx-install-missing-backup",
+		)},
+	}
+	if err := m.store.SaveTransaction(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.snapshotLock(original.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Rollback(original.ID); err == nil || !strings.Contains(err.Error(), "backup is missing") {
+		t.Fatalf("rollback accepted a missing recorded backup: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")); err != nil {
+		t.Fatalf("rollback mutated the target before validating its backup: %v", err)
+	}
+}
+
+func TestInstallRollbackPreparesEveryQuarantinePathBeforeMovingTargets(t *testing.T) {
+	m := newTestManager(t)
+	writeTestSkill(t, m.Config.Paths.SkillsRoot, "alpha")
+	writeTestSkill(t, m.Config.Paths.SkillsRoot, "beta")
+	original := model.Transaction{
+		ID: "tx-install-two-targets", Type: "install", Status: "completed",
+		Targets: []string{"alpha", "beta"}, StartedAt: time.Now().UTC(),
+	}
+	if err := m.store.SaveTransaction(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.snapshotLock(original.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(m.Config.Paths.QuarantineRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.Config.Paths.QuarantineRoot, "beta"), []byte("blocks directory creation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := m.Rollback(original.ID)
+	if err == nil || !strings.Contains(err.Error(), "prepare rollback quarantine") {
+		t.Fatalf("expected rollback path preparation failure, got transaction=%#v error=%v", failed, err)
+	}
+	for _, name := range original.Targets {
+		if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, name, "SKILL.md")); err != nil {
+			t.Fatalf("rollback moved %s before every path was ready: %v", name, err)
+		}
+	}
+}
+
+func TestInstallRollbackRestoresPreviousContentAndSourceLock(t *testing.T) {
+	m := newTestManager(t)
+	source := filepath.Join(t.TempDir(), "package")
+	writeTestSkill(t, source, "demo")
+	first, err := m.PrepareLocal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ApplyInstall(first.ID, []string{"demo"}, false); err != nil {
+		t.Fatal(err)
+	}
+	installedPath := filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")
+	originalContent, err := os.ReadFile(installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedContent := []byte("---\nname: demo\ndescription: updated fixture\n---\n")
+	if err := os.WriteFile(filepath.Join(source, "demo", "SKILL.md"), updatedContent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := m.PrepareLocal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	update, err := m.ApplyInstall(second.ID, []string{"demo"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Rollback(update.ID); err != nil {
+		t.Fatal(err)
+	}
+	restoredContent, err := os.ReadFile(installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(restoredContent) != string(originalContent) {
+		t.Fatalf("rollback did not restore previous content:\n%s", restoredContent)
+	}
+	lock, err := m.store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, managed := findManaged(lock, "demo"); !managed {
+		t.Fatal("rollback did not restore the previous source mapping")
+	}
+}
+
+func TestInstallRollbackRecoversContentWhenCheckpointJournalFails(t *testing.T) {
+	m := newTestManager(t)
+	source := filepath.Join(t.TempDir(), "package")
+	writeTestSkill(t, source, "demo")
+	preview, err := m.PrepareLocal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, err := m.ApplyInstall(preview.ID, []string{"demo"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(m.Config.Paths.DataRoot, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TRIGGER fail_rollback_checkpoint_journal
+BEFORE UPDATE ON transactions
+WHEN NEW.type = 'rollback' AND NEW.status = 'running' AND NEW.payload_json LIKE '%rollback-%'
+BEGIN
+  SELECT RAISE(FAIL, 'injected rollback checkpoint failure');
+END`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := m.Rollback(install.ID)
+	if err == nil || !strings.Contains(err.Error(), "injected rollback checkpoint failure") {
+		t.Fatalf("expected rollback checkpoint failure, got transaction=%#v error=%v", failed, err)
+	}
+	if failed.Status != "failed" || failed.RecoveryStatus != "completed" {
+		t.Fatalf("unexpected recovered rollback status: %#v", failed)
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")); err != nil {
+		t.Fatalf("failed rollback did not restore the installed Skill: %v", err)
+	}
+	lock, err := m.store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, managed := findManaged(lock, "demo"); !managed {
+		t.Fatal("failed rollback did not preserve the current source mapping")
+	}
+}
+
 func TestRepeatedScanDoesNotInflateRiskCountAndIgnorePersists(t *testing.T) {
 	m := newTestManager(t)
 	skill := filepath.Join(m.Config.Paths.SkillsRoot, "unsafe")
@@ -640,6 +790,54 @@ func TestAdoptUnmanagedSkillCreatesPlanAndRollbackOnlyRestoresLock(t *testing.T)
 	}
 }
 
+func TestAdoptionRollbackRestoresCurrentLockWhenCompletionJournalFails(t *testing.T) {
+	m := newTestManager(t)
+	writeTestSkill(t, m.Config.Paths.SkillsRoot, "existing")
+	preview, err := m.PrepareAdoption([]string{"existing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adoption, err := m.ApplyAdoption(preview.ID, []string{"existing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(m.Config.Paths.DataRoot, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TRIGGER fail_adoption_rollback_completion
+BEFORE UPDATE ON transactions
+WHEN NEW.type = 'rollback' AND NEW.status = 'completed'
+BEGIN
+  SELECT RAISE(FAIL, 'injected adoption rollback completion failure');
+END`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	failed, err := m.Rollback(adoption.ID)
+	if err == nil || !strings.Contains(err.Error(), "injected adoption rollback completion failure") {
+		t.Fatalf("expected rollback completion failure, got transaction=%#v error=%v", failed, err)
+	}
+	if failed.Status != "failed" || failed.RecoveryStatus != "completed" {
+		t.Fatalf("unexpected recovered rollback status: %#v", failed)
+	}
+	lock, err := m.store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, managed := findManaged(lock, "existing"); !managed {
+		t.Fatal("failed adoption rollback did not restore the current source mapping")
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "existing", "SKILL.md")); err != nil {
+		t.Fatalf("failed adoption rollback changed Skill content: %v", err)
+	}
+}
+
 func TestManageDetectsSourcesAndCreatesSeparateGroups(t *testing.T) {
 	m := newTestManager(t)
 	writeTestSkill(t, m.Config.Paths.SkillsRoot, "review-pr")
@@ -708,6 +906,57 @@ func TestGroupLayoutCanBeEditedAndRolledBackWithoutMovingSkillFiles(t *testing.T
 	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "demo", "SKILL.md")); err != nil {
 		t.Fatalf("group transaction moved skill content: %v", err)
 	}
+}
+
+func TestGroupRollbackRestoresCurrentLayoutWhenCompletionJournalFails(t *testing.T) {
+	m := newTestManager(t)
+	created, err := m.CreateGroup("Original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupID := created.Targets[0]
+	renamed, err := m.RenameGroup(groupID, "Renamed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(m.Config.Paths.DataRoot, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TRIGGER fail_group_rollback_completion
+BEFORE UPDATE ON transactions
+WHEN NEW.type = 'rollback' AND NEW.status = 'completed'
+BEGIN
+  SELECT RAISE(FAIL, 'injected group rollback completion failure');
+END`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	failed, err := m.Rollback(renamed.ID)
+	if err == nil || !strings.Contains(err.Error(), "injected group rollback completion failure") {
+		t.Fatalf("expected rollback completion failure, got transaction=%#v error=%v", failed, err)
+	}
+	if failed.Status != "failed" || failed.RecoveryStatus != "completed" {
+		t.Fatalf("unexpected recovered rollback status: %#v", failed)
+	}
+	layout, err := m.store.LoadGroupLayout()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range layout.Groups {
+		if group.ID == groupID {
+			if group.Name != "Renamed" {
+				t.Fatalf("failed rollback restored %q instead of preserving current name", group.Name)
+			}
+			return
+		}
+	}
+	t.Fatalf("failed rollback lost current group %s", groupID)
 }
 
 func TestGitHubInstallCreatesSourceGroupAndTracksPartialUpdatesPerSkill(t *testing.T) {
