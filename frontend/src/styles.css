@@ -31,6 +31,9 @@ main { grid-column: 2; min-width: 0; }
 header { height: 82px; display:flex; align-items:center; justify-content:space-between; padding: 16px 34px; background:rgba(255,255,255,.86); backdrop-filter:blur(14px); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:4; }
 h1 { margin:0; font-size:25px; letter-spacing:-.02em; } h2,h3,p { margin-top:0; }
 .header-actions { display:flex; gap:10px; }.content { padding:24px 34px 50px; max-width:1540px; margin:0 auto; }
+.section-tabs-wrap { padding: 14px 34px 0; background: rgba(255,255,255,.86); }
+.section-tabs-wrap .section-tabs { max-width: 1540px; margin: 0 auto; }
+.section-tabs button { min-height: 34px; font-size: 10px; }
 .primary,.ghost,.danger { border:0; border-radius:10px; min-height:38px; padding:0 15px; display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight:650; }
 .primary { color:white; background:var(--primary); box-shadow:0 7px 18px #196b5b28; }.primary:hover { background:var(--primary2); }.primary:disabled { opacity:.55; cursor:not-allowed; }
 .ghost { background:white; color:#445168; border:1px solid var(--line); }.ghost:hover { background:#f7f9fc; }
