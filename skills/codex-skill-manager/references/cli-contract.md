@@ -38,7 +38,7 @@ csm --json install --plan-id PLAN_ID --apply --skill SKILL_NAME
 Local installation uses `install --local ABSOLUTE_PATH`, followed by the same
 assessment and apply commands. Repeat `--skill` to select multiple skills.
 
-Three-phase Codex assisted installation:
+Three-phase planned installation:
 
 ```powershell
 csm --json install --url https://github.com/OWNER/REPO --assist

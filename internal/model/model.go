@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const Version = "0.10.0"
+const Version = "0.10.1"
 
 const (
 	AssistedInstallStepInstallSkills     = "install-skills"

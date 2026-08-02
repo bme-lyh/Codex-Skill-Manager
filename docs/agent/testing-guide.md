@@ -21,7 +21,7 @@ update checks and report creation. GitHub tests should use a public fixture for
 preview only and must not depend on the repository default branch remaining
 unchanged.
 
-Assisted-install tests must additionally cover source and context-digest binding,
+Assisted-install tests must also cover source and context-digest binding,
 full-context packaged Codex invocation with shell disabled, schema/finalizer rejection of
 free-form commands, permission omission, plan/configuration drift, exact
 Skill selection, PyPI repository matching, Wheel limits and archive traversal,
@@ -41,7 +41,7 @@ unsigned-release notice plus SHA-256 manifest with:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\package-release.ps1 -Version 0.10.0
+  -File .\scripts\package-release.ps1 -Version 0.10.1
 ```
 
 The build script records the source commit, dirty flag, version, and binary

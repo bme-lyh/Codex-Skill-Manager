@@ -146,7 +146,7 @@ func (a *App) ApplyInstall(planID string, skills []string, acceptHighRisk bool) 
 	return a.mgr.ApplyInstall(planID, skills, acceptHighRisk)
 }
 
-// ScanProjectWithCodex is the read-only first phase for assisted installation.
+// ScanProjectWithCodex is the read-only first phase for planned installation.
 // It returns an overview/security/install-method result without creating an
 // installation plan or applying any mutation.
 func (a *App) ScanProjectWithCodex(planID string) (model.CodexProjectScanResult, error) {

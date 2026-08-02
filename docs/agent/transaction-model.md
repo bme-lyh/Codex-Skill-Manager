@@ -36,7 +36,7 @@ Warning ignore and restore decisions are journaled as `ignore-warning` and
 action; generic transaction rollback supports `install`, legacy `adopt`,
 `manage`, and `group-*`.
 
-## Assisted installation
+## Planned installation
 
 Assisted execution creates an `assisted-install` parent transaction before any
 step runs. Apply revalidates the source-bound plan, selected Skills, plan

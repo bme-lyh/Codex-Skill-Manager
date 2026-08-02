@@ -66,9 +66,9 @@ csm --json install --plan-id "update-plan-..." --skill "skill-a" --apply
 Standard installation installs only selected Skill directories. It does not
 install extra tools or change Codex MCP configuration.
 
-## Codex assisted installation
+## Planned installation
 
-Assisted installation has three explicit phases:
+Planned installation has three explicit phases:
 
 ```powershell
 csm --json install --url "https://github.com/owner/repository" --assist

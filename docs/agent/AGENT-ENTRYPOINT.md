@@ -10,7 +10,7 @@ preview-and-apply workflow:
 2. apply it only after the user has approved the exact skills and any accepted
    high-risk findings.
 
-Version 0.10.0 uses one **Source → Assess → Review → Apply** workflow for every
+Version 0.10.1 uses one **Source → Assess → Review → Apply** workflow for every
 GitHub and local source. Persist and inspect the mandatory local assessment
 before standard Skill installation or optional `--assist` work. Codex output is
 untrusted proposal data: never turn it into shell commands. Preserve the

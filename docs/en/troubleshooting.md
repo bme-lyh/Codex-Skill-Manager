@@ -22,7 +22,7 @@ If the app shows a reset time, wait before retrying. The install dialog keeps
 your source input and analysis state. A downloaded local folder can be used
 while GitHub is unavailable.
 
-## Codex enhanced analysis is unavailable
+## Enhanced project scan is unavailable
 
 - In **Settings**, check the Codex CLI path, sign-in status, and available models.
 - Confirm that the account has available usage.

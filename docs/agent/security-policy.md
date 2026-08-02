@@ -24,7 +24,7 @@ secret environment variables, disables approval and returns schema-validated
 output. Repository text remains untrusted data; only an explicit human action
 changes ignore state.
 
-Codex assisted installation is also opt-in and must start from the ordinary
+Planned installation is also opt-in and must start from the ordinary
 commit-pinned GitHub or explicit-local, scanned source preview. Its first phase
 is a reusable read-only project scan: local findings, bounded summaries for the
 complete eligible text inventory, then deterministic focused-file analysis.
@@ -55,7 +55,7 @@ Local code must derive permissions and restrict execution to:
 
 Every resolved Wheel is identified by project, version, filename, compatibility
 tags, and SHA-256 in the plan digest. Pure Wheels use the ordinary managed-tool
-permissions. Platform-compatible native Wheels additionally derive the explicit
+permissions. Platform-compatible native Wheels also derive the explicit
 `managed-native-code` high-risk permission and list each affected Wheel and
 hash. Unknown or incompatible native platforms remain manual.
 

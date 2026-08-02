@@ -507,7 +507,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	}
 	if *assist && *apply {
 		return nil, usagef(
-			"assisted installation is three-phase: scan the source, approve plan creation with --project-scan-id ID --create-plan, then apply the reviewed --plan-id ID with explicit --grant values",
+			"planned installation has three phases: scan the source, approve plan creation with --project-scan-id ID --create-plan, then apply the reviewed --plan-id ID with explicit --grant values",
 		)
 	}
 	if (*rawURL == "") == (*local == "") {
@@ -689,7 +689,7 @@ func printHelp(w io.Writer) {
   codex status          检查 Codex CLI 与登录状态
   codex review          对指定 --report 运行可选语义复核；支持重复 --skill
   update --group ID     为一个来源创建安全更新计划
-  install               从 GitHub URL 或本地目录创建计划；--assist 使用 Codex 辅助安装
+  install               从 GitHub URL 或本地目录创建计划；--assist 使用计划安装
   remove NAME [...]     移动一个或多个 Skill 到隔离区
   restore               从隔离区恢复
   rollback              回滚事务

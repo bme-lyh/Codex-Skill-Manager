@@ -52,7 +52,7 @@ type ProjectAssessmentCoverage struct {
 }
 
 // ProjectAssessment is the persisted, deterministic local gate for both the
-// standard and assisted installation paths. It performs no network activity.
+// standard and planned installation paths. It performs no network activity.
 type ProjectAssessment struct {
 	ID                      string                    `json:"id"`
 	SourcePlanID            string                    `json:"sourcePlanId"`

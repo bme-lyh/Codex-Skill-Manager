@@ -65,7 +65,7 @@ project directory, when needed, must be chosen explicitly.
 **Standard installation** copies only the selected Skill directories. It does
 not install extra tools, configure MCP, or execute repository scripts.
 
-**Optional Codex enhanced analysis** is for repositories that also need a Python
+The optional **Enhanced project scan** is for repositories that also need a Python
 tool or Codex MCP integration. It never replaces the mandatory local assessment.
 Clicking **Run enhanced project scan** is the explicit opt-in for the current
 installation. Check Codex in Settings and make sure the CLI is
@@ -85,7 +85,7 @@ verified. The read-only enhanced project scan never downloads dependencies.
 Only after you separately approve plan generation may the app download Wheels
 from official PyPI into isolated staging to create a complete dependency lock; no
 package is installed or run at that stage. Local directories still support
-standard installation and packaged Codex analysis. Source context is processed
+standard installation and the Enhanced project scan. Source context is processed
 through Codex CLI, so private-repository users should consider their data and
 usage requirements before enabling it.
 

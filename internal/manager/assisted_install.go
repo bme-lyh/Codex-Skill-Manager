@@ -35,7 +35,7 @@ type assistedAnalysisProgressSequencer struct {
 func assistedAnalysisStages() []model.AssistedInstallProgressStep {
 	return []model.AssistedInstallProgressStep{
 		{ID: "inventory", Kind: "inventory", Title: "Repository inventory", Status: "queued"},
-		{ID: "codex-analysis", Kind: "codex-analysis", Title: "Codex analysis", Status: "queued"},
+		{ID: "codex-analysis", Kind: "codex-analysis", Title: "Enhanced project scan", Status: "queued"},
 		{ID: "validation", Kind: "validation", Title: "Local plan validation", Status: "queued"},
 		{ID: "dependency-lock", Kind: "dependency-lock", Title: "Dependency lock", Status: "queued"},
 		{ID: "finalizing", Kind: "finalizing", Title: "Plan finalization", Status: "queued"},
@@ -287,14 +287,14 @@ func (m *Manager) analyzeInstallWithCodex(
 	}
 	failAnalysis := func(phase string, cause error) {
 		message := m.assistedMessage(
-			"Codex 安装分析失败",
-			"Codex installation analysis failed",
+			"安装计划生成失败",
+			"Installation planning failed",
 		)
 		if errors.Is(cause, context.Canceled) {
 			phase = "cancelled"
 			message = m.assistedMessage(
-				"Codex 安装分析已取消",
-				"Codex installation analysis was cancelled",
+				"安装计划生成已取消",
+				"Installation planning was cancelled",
 			)
 		}
 		emit(model.AssistedInstallProgress{
@@ -784,7 +784,7 @@ func (m *Manager) ApplyAssistedInstall(
 					"Supported steps completed; manual steps remain",
 				)
 			} else {
-				value.Message = m.assistedMessage("一键安装已完成", "Assisted installation completed")
+				value.Message = m.assistedMessage("计划安装已完成", "Planned installation completed")
 			}
 			value.CurrentStepID = ""
 			value.Terminal = true
@@ -853,12 +853,12 @@ func (m *Manager) interruptOrphanedAssistedAnalysis(
 	value.Sequence++
 	value.Phase = "interrupted"
 	value.Message = m.assistedMessage(
-		"应用退出导致分析中断，请重新分析来源",
-		"The analysis was interrupted when the application exited; analyze the source again",
+		"应用退出导致扫描中断，请重新运行增强项目扫描",
+		"The scan was interrupted when the application exited; run the enhanced project scan again",
 	)
 	value.Error = m.assistedMessage(
-		"未找到仍在运行的 Codex 分析任务",
-		"No active Codex analysis task was found",
+		"未找到仍在运行的增强项目扫描任务",
+		"No active enhanced project scan task was found",
 	)
 	value.UpdatedAt = now
 	value.CompletedAt = &now
@@ -880,7 +880,7 @@ func (m *Manager) CancelAssistedInstall(referenceID string) error {
 		if err == nil && progress.Terminal {
 			return nil
 		}
-		return errors.New("assisted installation is not currently running")
+		return errors.New("planned installation is not currently running")
 	}
 	cancel()
 	return nil
@@ -1616,7 +1616,7 @@ func (m *Manager) rollbackAssistedInstall(original model.Transaction) (model.Tra
 	m.assistMu.Lock()
 	defer m.assistMu.Unlock()
 	if original.RecoveryStatus == "completed" {
-		return model.Transaction{}, errors.New("assisted installation has already been rolled back")
+		return model.Transaction{}, errors.New("planned installation has already been rolled back")
 	}
 	plan, err := m.assistedPlanForTransaction(original)
 	if err != nil {
@@ -1964,7 +1964,7 @@ func (m *Manager) registerAssistedCancel(ids []string, cancel context.CancelFunc
 	defer m.assistData.Unlock()
 	for _, id := range ids {
 		if id != "" && m.cancels[id] != nil {
-			return fmt.Errorf("assisted installation is already running for reference %s", id)
+			return fmt.Errorf("planned installation is already running for reference %s", id)
 		}
 	}
 	for _, id := range ids {

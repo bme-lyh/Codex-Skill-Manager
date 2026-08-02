@@ -37,7 +37,7 @@ Desktop `codex-review-progress` events include a monotonically increasing
 `sequence` per review. Consumers must ignore an event whose sequence is not newer
 than the last accepted event for the same `reviewId`.
 
-Desktop assisted installation returns domain objects directly. With
+Desktop planned installation returns domain objects directly. With
 `csm --json install --assist`, `data` is first a `CodexProjectScanResult` with
 `id`, `sourcePlanId`, `summary`, `security`, `installationMethods`, coverage and
 redaction/truncation counts, focus-file paths, context/scan digests, timestamps,

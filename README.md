@@ -1,63 +1,63 @@
 # Codex Skill Manager
 
-> **Review the source. See the risks. Install with a way back.**
+> **Review the source. Check the risks. Install with rollback.**
 
-Codex Skill Manager is a local Windows app for inspecting, installing, updating,
-grouping, and recovering Codex Skills. It keeps every write explicit,
-journaled, and recoverable.
+Codex Skill Manager is a Windows app for inspecting, installing, updating,
+grouping, and restoring Codex Skills. Every change is explicit, logged, and
+reversible.
 
-[Download v0.10.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.10.0) ·
+[Download v0.10.1](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.10.1) ·
 [Get started](docs/en/getting-started.md) ·
 [User guide](docs/en/gui-guide.md) ·
 [Security](SECURITY_EN.md) ·
 [中文](README_ZH.md)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb)
-![Version](https://img.shields.io/badge/version-0.10.0-187a69)
+![Version](https://img.shields.io/badge/version-0.10.1-187a69)
 ![Go](https://img.shields.io/badge/Go-1.26-00add8)
 ![Wails](https://img.shields.io/badge/Wails-v2-cc1f45)
 ![License](https://img.shields.io/badge/license-MIT-334155)
 [![CI](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml)
 
-## Interface
+## Screenshots
 
-[![Codex Skill Manager interface preview](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
+[![Codex Skill Manager interface preview](docs/images/ui-carousel.en-US.gif)](docs/images/ui-carousel.en-US.gif)
 
 The preview uses fictional Skills, groups, and paths. It contains no real
 account or personal data.
 
-## What it does
+## Features
 
 | Task | Result |
 |---|---|
-| Install | Load a public/private GitHub source or a local folder, then install only the selected Skills |
-| Assess | Read project documentation, discover Skills, scan exact targets, and show required, triggered, and optional checks |
+| Install | Install selected Skills from a public/private GitHub repository or local folder |
+| Assess | Read project docs, find Skills, scan targets, and show required, conditional, and optional checks |
 | Update | Compare source commits, review the exact changes, and back up existing content before replacement |
-| Recover | Restore from backups, quarantine, or a recorded rollback transaction |
+| Recover | Restore from backups, quarantine, or transaction history |
 | Organize | Manage existing Skills without moving them; create and reorder groups |
 | Automate | Use the bundled `csm` CLI and Codex Skill with structured JSON output |
 
-## One workflow, clear choices
+## Standard or enhanced installation
 
 Every GitHub or local source follows the same flow:
 
-1. **Source** — pin a GitHub commit or create a bounded local snapshot.
-2. **Assess** — read project instructions, identify Codex Skills, scan the real
+1. **Source:** pin a GitHub commit or create a bounded local snapshot.
+2. **Assess:** read project instructions, identify Codex Skills, scan the real
    targets, and stop on unsupported or changed input.
-3. **Review** — check the selected files, risks, permissions, and recovery path.
-4. **Apply** — write only the approved targets and record the transaction.
+3. **Review:** check the selected files, risks, permissions, and recovery path.
+4. **Apply:** write only the approved targets and record the transaction.
 
-For a normal Skill repository, standard installation copies only the selected
-Skill directories. Optional **Codex enhanced analysis** can explain a complex
-project and propose supported Python-tool or MCP steps. It requires an
-installed, signed-in Codex CLI and consumes Codex usage. It never replaces the
-required local assessment.
+**Standard installation** copies only the selected Skill directories.
+
+The optional **Enhanced project scan** reads a complex project and proposes
+supported Python-tool or MCP steps. It requires a signed-in Codex CLI and uses
+Codex quota. The required local assessment still runs first.
 
 If Codex Skills are found, selected Skills go to
 `%USERPROFILE%\.codex\skills` by default. `.system` is always read-only. A
-project with no Codex Skill is not silently installed into that global folder;
-unsupported work stays manual, and any supported MCP project directory must be
-chosen explicitly.
+project without a Codex Skill is never copied to the global Skills folder.
+Unsupported work stays manual. You must choose any MCP project directory
+explicitly.
 
 ## Download and run
 
@@ -72,10 +72,10 @@ so SmartScreen may show a warning. Download only from this repository and
 verify the archive against the included checksum file:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.10.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.10.1-windows-amd64.zip -Algorithm SHA256
 ```
 
-Compare the result with `CodexSkillManager-0.10.0-SHA256SUMS.txt`.
+Compare the result with `CodexSkillManager-0.10.1-SHA256SUMS.txt`.
 
 ### Install the bundled Codex Skill
 
@@ -85,7 +85,7 @@ Skill**, choose **Local folder**, select the archive's `agent-skill` directory,
 review the assessment, and apply the selected Skill. From a source checkout,
 use `skills\codex-skill-manager` instead.
 
-## Safety boundaries
+## Safety rules
 
 - Repository scripts and free-form commands are never executed.
 - High risk requires individual confirmation and a reason; Critical risk
@@ -93,7 +93,7 @@ use `skills\codex-skill-manager` instead.
 - Report-wide ignore applies only to known Medium-or-lower findings.
 - Replacements are backed up, removals go to quarantine, and rollback refuses
   to overwrite content changed after installation.
-- Optional Codex analysis is read-only until you separately approve a typed
+- The Enhanced project scan is read-only until you separately approve a typed
   plan and every required permission.
 
 A clean scan is not proof that a Skill is safe. Read the
@@ -101,7 +101,7 @@ A clean scan is not proof that a Skill is safe. Read the
 
 ## Build from source
 
-Install Go, Node.js, pnpm, WebView2, and Wails v2, then run:
+Install Go 1.26, Node.js 22 or newer, pnpm 11.9, WebView2, and Wails v2, then run:
 
 ```powershell
 pnpm --dir frontend install --frozen-lockfile
@@ -119,5 +119,5 @@ through Wails; plain `go build` omits required desktop tags.
 - [Architecture and Agent development](docs/agent/AGENT-ENTRYPOINT.md)
 - [Contributing](CONTRIBUTING.md)
 
-Codex Skill Manager 0.10.0 supports Windows 10/11 and is licensed under the
+Codex Skill Manager 0.10.1 supports Windows 10/11 and is licensed under the
 [MIT License](LICENSE).
