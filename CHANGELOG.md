@@ -2,16 +2,32 @@
 
 ## Unreleased
 
-- 将安装重构为“来源 → 评估 → 复核 → 执行”的统一流程；所有 GitHub 和本地来源
-  必须先通过持久化分层评估，Codex 增强分析改为显式可选步骤。
-- 本地来源改用有界受管快照，并以来源、扫描、候选目标和有效期摘要绑定预览；执行前
-  重新评估，未知状态、摘要变化、不支持目标和大小写变体 `.system` 均失败关闭。
-- 收紧风险接受底线：Critical 不可忽略；High 必须逐簇明确确认并填写原因；后端从
-  持久化报告解析真实等级，批量操作不能绕过底线。
-- 新增分层评估卡片、四步进度指示、清晰门禁反馈、CLI `--assess` 只读复核入口，
-  并补强恢复时的文件、来源锁和事务日志一致性。
-- 拒绝与受管暂存目录重叠的本地来源并同时限制目录和文件数量；安装回滚先验证全部
-  备份与目标后再原子移动，报告级 CLI 忽略会明确跳过 High、Critical 和未知等级。
+## 0.10.0
+
+### English
+
+- Unified GitHub and local installation into **Source → Assess → Review → Apply**.
+  Every source now passes a persisted local assessment before optional Codex work.
+- Added bounded local snapshots, project classification, documentation and
+  install-marker review, exact Skill discovery, layered checks, and fail-closed
+  validation when a source, digest, target, or assessment changes.
+- Added assessment cards, a four-step progress view, clear gate feedback, and
+  the CLI `install --plan-id ID --assess` review command.
+- Tightened risk decisions: Critical cannot be ignored; High requires individual
+  confirmation and a reason; report-wide ignore skips High, Critical, and unknown severities.
+- Hardened snapshot path containment and multi-target rollback so files, source
+  locks, group layouts, and transaction journals recover together on failure.
+
+### 中文
+
+- GitHub 和本地安装统一为“来源 → 评估 → 复核 → 执行”；所有来源必须先通过
+  持久化本地评估，Codex 增强分析保持显式可选。
+- 新增有边界的本地快照、项目分类、说明与安装线索检查、准确的 Skill 发现和分层门禁；
+  来源、摘要、目标或评估变化时失败关闭。
+- 新增评估卡片、四步进度、明确的门禁反馈，以及 CLI `--assess` 只读复核命令。
+- Critical 不可忽略；High 必须逐簇确认并填写原因；报告级批量忽略会跳过 High、
+  Critical 和未知等级。
+- 加固路径边界与多目标回滚；失败时统一恢复文件、来源锁、分组布局和事务日志。
 
 ## 0.9.0
 

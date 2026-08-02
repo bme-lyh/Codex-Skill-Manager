@@ -5,6 +5,7 @@
 .gomodcache/
 .tmp/
 .pnpm-store/
+/node_modules/
 frontend/node_modules/
 
 # Generated frontend and Wails bindings

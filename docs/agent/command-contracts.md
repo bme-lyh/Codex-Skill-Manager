@@ -53,8 +53,8 @@ installs dependencies or edits Codex MCP configuration.
 
 ## Assisted-install contract
 
-Version 0.8.0 exposes the same manager workflow through the desktop facade and
-the CLI. It must preserve this sequence:
+The desktop facade and CLI expose the same manager workflow. They must preserve
+this sequence:
 
 1. create the ordinary source preview and local scan;
 2. create a reusable project scan from local results, complete bounded file

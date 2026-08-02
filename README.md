@@ -1,137 +1,123 @@
 # Codex Skill Manager
 
-> **先看清来源和风险，再让 Skill 进入 Codex。**
+> **Review the source. See the risks. Install with a way back.**
 
-Codex Skill Manager 是面向 Windows 10/11 的本地 Skills 管理工具。它把 Skill 的下载、风险检测、安装、更新、卸载和分组管理放进一个清楚、可追溯、可回滚的流程。
+Codex Skill Manager is a local Windows app for inspecting, installing, updating,
+grouping, and recovering Codex Skills. It keeps every write explicit,
+journaled, and recoverable.
 
-[下载最新版](https://github.com/bme-lyh/Codex-Skill-Manager/releases/latest) · [快速开始](docs/user/getting-started.md) · [完整使用指南](docs/user/gui-guide.md) · [安全说明](SECURITY.md) · [English](README_EN.md)
+[Download v0.10.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.10.0) ·
+[Get started](docs/en/getting-started.md) ·
+[User guide](docs/en/gui-guide.md) ·
+[Security](SECURITY_EN.md) ·
+[中文](README_ZH.md)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb)
-![Local first](https://img.shields.io/badge/privacy-local--first-187a69)
+![Version](https://img.shields.io/badge/version-0.10.0-187a69)
 ![Go](https://img.shields.io/badge/Go-1.26-00add8)
 ![Wails](https://img.shields.io/badge/Wails-v2-cc1f45)
 ![License](https://img.shields.io/badge/license-MIT-334155)
 [![CI](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/bme-lyh/Codex-Skill-Manager/actions/workflows/ci.yml)
 
-## 界面展示
+## Interface
 
-[![Codex Skill Manager 当前界面展示：多分组 Skills、批量操作、更新状态、安全中心、Codex 复核、GitHub 与本地安装、Codex 一键安装计划和执行结果、历史回滚、报告以及中英文设置](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
+[![Codex Skill Manager interface preview](docs/images/ui-carousel.gif)](docs/images/ui-carousel.gif)
 
-> 动图展示主要界面。里面使用的分组、Skill 和路径都是示例，不包含真实账号或个人信息。
+The preview uses fictional Skills, groups, and paths. It contains no real
+account or personal data.
 
-## 项目目的
+## What it does
 
-Skill 会影响 Codex 的工作方式。手动复制虽然方便，但以后可能不知道它来自哪里、是否变过、出了问题如何恢复。
-
-这个工具帮助你在一个界面里安装和整理 Skills，检查常见风险，并在更新或卸载前自动保留恢复材料。
-
-```mermaid
-flowchart LR
-    A["GitHub 或本地目录"] --> B["查看将要安装的 Skills"]
-    B --> C["检查常见风险"]
-    C --> D{"你确认吗？"}
-    D -->|确认| E["备份后安装"]
-    D -->|取消| F["不修改文件"]
-```
-
-## 基本功能
-
-| 能力 | 说明 |
+| Task | Result |
 |---|---|
-| 安装与下载 | 从 GitHub 公共/私有仓库或本地目录安装一个或多个 Skills；复杂仓库可选 Codex 辅助安装 |
-| 风险检查 | 安装、更新或手动检查时显示风险原因和相关文件 |
-| 更新与卸载 | 支持多选操作；更新前自动备份，卸载后可以恢复 |
-| 分组整理 | 自动分组，也可以新建、改名和拖动分组 |
-| 已有 Skills | 找出当前目录里的 Skills，并在不移动文件的情况下加入管理 |
-| 界面语言 | 支持简体中文和 English；首次运行默认中文 |
+| Install | Load a public/private GitHub source or a local folder, then install only the selected Skills |
+| Assess | Read project documentation, discover Skills, scan exact targets, and show required, triggered, and optional checks |
+| Update | Compare source commits, review the exact changes, and back up existing content before replacement |
+| Recover | Restore from backups, quarantine, or a recorded rollback transaction |
+| Organize | Manage existing Skills without moving them; create and reorder groups |
+| Automate | Use the bundled `csm` CLI and Codex Skill with structured JSON output |
 
-## 两种安装方式
+## One workflow, clear choices
 
-两种方式都会先确认来源、找出仓库中的 Skills，并完成本地风险检查。
+Every GitHub or local source follows the same flow:
 
-| 方式 | 适合场景 | 行为 |
-|---|---|---|
-| 标准安装 | 普通单 Skill 或多 Skill 仓库 | 只安装你选中的 Skill 目录，不安装额外工具，也不修改 MCP 配置 |
-| Codex 一键安装 | 还需要工具、MCP 等配置的复杂仓库 | Codex 先阅读完整仓库并生成说明和计划；你确认 Skills、权限和项目目录后，应用再执行支持的步骤 |
+1. **Source** — pin a GitHub commit or create a bounded local snapshot.
+2. **Assess** — read project instructions, identify Codex Skills, scan the real
+   targets, and stop on unsupported or changed input.
+3. **Review** — check the selected files, risks, permissions, and recovery path.
+4. **Apply** — write only the approved targets and record the transaction.
 
-一键安装需要已经安装并登录的 **Codex CLI**，并会消耗 Codex 额度。应用不会直接
-运行仓库脚本或 Codex 临时生成的命令。无法安全自动完成的内容会明确列为人工步骤，
-不会伪装成安装成功。分析 Python 工具时，应用可能先从官方 PyPI 下载文件到隔离
-暂存区进行核对；在你批准前不会安装或运行。
+For a normal Skill repository, standard installation copies only the selected
+Skill directories. Optional **Codex enhanced analysis** can explain a complex
+project and propose supported Python-tool or MCP steps. It requires an
+installed, signed-in Codex CLI and consumes Codex usage. It never replaces the
+required local assessment.
 
-进度、错误、剩余人工步骤和回滚入口都会保留在安装窗口或历史记录中。Codex
-不可用时，仍可切回标准安装。详细边界见
-[图形界面指南](docs/user/gui-guide.md) 和 [安全说明](SECURITY.md)。
+If Codex Skills are found, selected Skills go to
+`%USERPROFILE%\.codex\skills` by default. `.system` is always read-only. A
+project with no Codex Skill is not silently installed into that global folder;
+unsupported work stays manual, and any supported MCP project directory must be
+chosen explicitly.
 
-如果仓库同时提供主线版和 Codex 版同名 Skill，安装窗口会列出冲突路径，并在
-可以确认时提供建议的 Codex 子目录。Codex 计划生成失败也不会丢失已经完成的
-来源检查，可直接改用标准安装。
+## Download and run
 
-## 使用 Codex 风险复核
+1. Download the standard or portable Windows archive from
+   [GitHub Releases](https://github.com/bme-lyh/Codex-Skill-Manager/releases/latest).
+2. Extract the archive to a stable directory.
+3. Run `CodexSkillManager.exe`.
 
-Codex 风险复核是可选功能，默认关闭。启用前需要：
-
-1. 安装并登录 **Codex CLI**；
-2. 在应用的“设置”中启用 Codex 风险复核；
-3. 确认你的 Codex 账户有可用额度。
-
-复核会消耗 Codex 额度，所需时间与 Skill 数量、文件大小、所选模型和推理强度有关。应用默认逐组复核，失败组会自动重试一次；切换页面不会中断进度或丢失结果。不开启此功能时，本地风险检查和其他管理功能仍可正常使用。
-这个设置开关只控制安全中心风险复核，不控制使用者主动选择的 Codex 辅助安装。
-
-## 三分钟开始
-
-### 方式一：使用发布版
-
-1. 从项目的 **GitHub Releases** 下载 Windows 压缩包。
-2. 解压到一个固定目录。
-3. 双击 `CodexSkillManager.exe`。
-4. 第一次打开后，进入 **Skills** 页，选择“未管理”的项目，点击 **管理**。
-
-应用默认读取 `%USERPROFILE%\.codex\skills`。`.system` 只显示、不修改。
-界面默认使用简体中文，可在 **设置 → 语言** 中立即切换为 English；选择会自动保存。
-当前发布包尚未进行 Windows 代码签名，SmartScreen 可能显示提醒。请只从本仓库的
-Releases 下载，并用同页的 `SHA256SUMS.txt` 核对压缩包：
+Portable builds store data beside the app. Standard builds use
+`%USERPROFILE%\.codex\skill-manager`. The binaries are not Windows code-signed,
+so SmartScreen may show a warning. Download only from this repository and
+verify the archive against the included checksum file:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.9.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.10.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-### 方式二：从源码构建
+Compare the result with `CodexSkillManager-0.10.0-SHA256SUMS.txt`.
 
-需要 Go、Node.js、pnpm、WebView2 与 Wails v2：
+### Install the bundled Codex Skill
+
+Release archives include `agent-skill\codex-skill-manager`. To add it to the
+global Codex Skills directory without copying files by hand, open **Install
+Skill**, choose **Local folder**, select the archive's `agent-skill` directory,
+review the assessment, and apply the selected Skill. From a source checkout,
+use `skills\codex-skill-manager` instead.
+
+## Safety boundaries
+
+- Repository scripts and free-form commands are never executed.
+- High risk requires individual confirmation and a reason; Critical risk
+  cannot be ignored.
+- Report-wide ignore applies only to known Medium-or-lower findings.
+- Replacements are backed up, removals go to quarantine, and rollback refuses
+  to overwrite content changed after installation.
+- Optional Codex analysis is read-only until you separately approve a typed
+  plan and every required permission.
+
+A clean scan is not proof that a Skill is safe. Read the
+[security policy](SECURITY_EN.md) before approving unfamiliar sources.
+
+## Build from source
+
+Install Go, Node.js, pnpm, WebView2, and Wails v2, then run:
 
 ```powershell
 pnpm --dir frontend install --frozen-lockfile
 .\scripts\build.ps1
 ```
 
-桌面程序位于 `build\bin\CodexSkillManager.exe`，CLI 位于 `build\bin\csm.exe`。桌面版必须通过 Wails 构建；直接使用 `go build` 构建 GUI 会缺少必要标签。
+The desktop app and CLI are written to `build\bin`. The GUI must be built
+through Wails; plain `go build` omits required desktop tags.
 
-## 安全与恢复
+## Documentation
 
-- 下载的内容不会被自动执行。
-- 安装和更新前会显示目标与风险，确认后才会修改文件。
-- 更新前自动备份；卸载会移入隔离区，方便恢复。
-- 本地修改不会在没有明确确认时被覆盖。
-- Codex 复核是可选功能；默认检查完全在本地完成。
-- Codex 辅助安装只执行受支持、经过本地验证并由你明确授权的步骤。
+- [English documentation](docs/en/README.md)
+- [中文文档](docs/README.md)
+- [CLI reference](docs/en/cli-reference.md)
+- [Architecture and Agent development](docs/agent/AGENT-ENTRYPOINT.md)
+- [Contributing](CONTRIBUTING.md)
 
-静态扫描无法证明内容绝对安全。完整边界与报告方式见 [安全策略](SECURITY.md)。
-
-## 文档
-
-- [入门与首次运行](docs/user/getting-started.md)
-- [图形界面完整指南](docs/user/gui-guide.md)
-- [安全检查说明](docs/user/security-scanning.md)
-- [CLI 命令参考](docs/user/cli-reference.md)
-- [开发者与 Agent 文档](docs/agent/AGENT-ENTRYPOINT.md)
-
-## 项目状态
-
-当前版本为 **0.9.0**，主要面向 Windows 10/11。项目仍在完善，重要操作前请查看计划并保留自动备份。
-
-欢迎提交问题和改进建议。参与前请阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
-
-## 许可证
-
-[MIT License](LICENSE)
+Codex Skill Manager 0.10.0 supports Windows 10/11 and is licensed under the
+[MIT License](LICENSE).

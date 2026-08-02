@@ -23,6 +23,10 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 数据、操作日志、报告、备份、隔离区和暂存区都能在 GUI“设置”页分别改为
 绝对路径；保存路径设置后请重启应用。
 
+发布包还包含 `agent-skill\codex-skill-manager`。如需把这个管理 Skill 安装到
+全局 Codex Skills，打开“安装 Skill”，选择“本地目录”和发布包内的
+`agent-skill` 目录，完成评估后安装。
+
 ## 1. 启动
 
 运行 `CodexSkillManager.exe`，程序会读取：
@@ -64,6 +68,11 @@ csm bootstrap
 本地快照、来源摘要和评估摘要会绑定在一起；来源过期、被替换、摘要不一致、未知
 状态或大小写变体 `.system` 都会失败关闭，并要求重新检查。
 
+发现的 Skills 会安装到配置的 Skills 根目录，默认是
+`%USERPROFILE%\.codex\skills`。没有 Codex Skill 的普通项目不会作为应用程序
+被复制到这个全局目录；不受支持的操作会保留为人工步骤，MCP 所需的项目目录也必须
+由使用者明确选择。
+
 ### 标准安装
 
 适合只需要复制 Skills 的普通仓库。核对来源、Skill 列表和风险后，点击安装。
@@ -103,7 +112,8 @@ Python 工具、配置由应用管理的 Codex MCP。它不会执行仓库脚本
 打开时会恢复进度。失败后需要重新核对精确的 Skill 子集、权限和项目目录。“部分
 完成”的人工步骤与回滚入口会保留在历史页。
 
-CLI 也支持同一套两阶段辅助安装，详见 [CLI 参考](cli-reference.md#codex-辅助安装)。
+CLI 也支持同一套来源、评估、复核和执行流程，详见
+[CLI 参考](cli-reference.md#codex-辅助安装)。
 
 ## 4. 更新
 
