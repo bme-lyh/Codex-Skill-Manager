@@ -8,8 +8,8 @@ The built-in scanner checks prompt injection, credential access, dynamic executi
 |---|---|
 | Informational / Low | Record |
 | Medium | Display for review |
-| High | Block writes by default; a human ignore decision may clear it |
-| Critical | Block writes by default; a human ignore decision may clear it |
+| High | Block writes; only per-cluster confirmation with a non-empty reason may accept it |
+| Critical | Always block writes and cannot be ignored |
 
 Before replacement, the current Skill is backed up and the operation is journaled. Removal moves one explicitly selected Skill at a time to quarantine. Recovery is available from **History** or **Quarantine**.
 
@@ -19,9 +19,22 @@ Identical same-name Skills duplicated across repository packaging paths are de-d
 
 Large reports are de-duplicated by stable fingerprint and capped in the GUI for responsiveness. The complete raw findings remain available in the local JSON report.
 
-Install, update, management, and security views show a five-level summary. A human may ignore one cluster or every active cluster in the report in one action. Reasons are optional, deterministic rules use the same flow, and every batch is atomic and journaled. The backend reloads ignore decisions immediately before apply; active High/Critical findings block, while ignored findings no longer participate in the gate.
+Install, update, management, and security views show a five-level summary.
+Medium and lower clusters use the ordinary ignore flow. High requires explicit
+per-cluster confirmation and a non-empty reason. Critical cannot be ignored,
+and batch actions cannot accept High or Critical. Every decision is atomic and
+journaled. The backend resolves the persisted finding and severity immediately
+before apply instead of trusting client risk metadata.
 
 Static analysis is best-effort and cannot prove that content is safe. Review source ownership, the resolved commit, requested permissions, and every high-impact finding.
+
+Every installation source also passes a persisted layered assessment before any
+optional Codex work: pin a GitHub commit or create a bounded manager-owned local
+snapshot, read documentation and installation markers, classify the project,
+discover Codex Skills, scan exact targets, and group checks as required,
+triggered, or optional. Apply recomputes this assessment from the bound source.
+Changed, expired, digest-mismatched, unknown, unsupported, and case-variant
+`.system` targets fail closed.
 
 Optional Codex semantic review requires an independently executable and
 authenticated CLI. The application probes every PATH candidate plus the

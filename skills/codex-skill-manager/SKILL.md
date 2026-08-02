@@ -17,8 +17,11 @@ transaction IDs, and keep the user informed before any filesystem mutation.
 3. For existing unmanaged Skills, create a `manage` plan, show detected source
    evidence, confidence, file snapshot and scan findings, then apply only the
    exact confirmed names.
-4. For GitHub or local installation, create a plan first. Show the resolved
-   repository commit, discovered skills and scan findings. If different Skill
+4. For GitHub or local installation, create a plan first. The manager pins a
+   full GitHub Commit or creates a bounded local snapshot, then enforces the
+   mandatory persisted layered assessment before any apply or optional Codex
+   phase. Run `install --plan-id PLAN --assess` and show the resolved source,
+   discovered Skills, assessment gate, target scope, and scan findings. If different Skill
    contents share one name, report every conflicting source path and select a
    specific repository subtree before creating a plan. Prefer an explicitly
    identified `skills-codex` mirror for Codex only after showing that scope.
@@ -29,11 +32,12 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    use `--assist --project-scan-id ... --create-plan`. Present the resulting
    requirements, warnings, typed steps, exact Skills, permission IDs, manual
    work, and project-root requirement. Do not apply it in the same command.
-6. Ask for confirmation of the exact selected skill names. Keep active High and
-   Critical clusters blocked until the user explicitly ignores them. Offer one
-   cluster or report-wide human decisions for every severity and deterministic
-   rule. Reasons are optional; do not add a separate High acceptance or
-   deterministic confirmation step.
+6. Ask for confirmation of the exact selected Skill names. Critical clusters
+   cannot be ignored and must remain blocked. High clusters require individual
+   explicit confirmation and a non-empty reason; applying a standard plan with
+   an accepted High cluster also requires `--accept-high-risk`. Report-wide
+   decisions may cover only Medium and lower severities and cannot bypass these
+   rules.
 7. Apply a confirmed assisted plan only with `--assist --plan-id ... --apply`,
    repeated exact `--skill` and `--grant` values, and `--project-root` only when
    the plan requires MCP. Otherwise apply the standard plan. Return the
@@ -76,9 +80,9 @@ transaction IDs, and keep the user informed before any filesystem mutation.
   assisted-plan snapshots. If Codex cannot produce a valid assisted plan,
   preserve the source preview and offer the standard Skill-only plan instead
   of treating the source analysis as failed.
-- A GUI one-click decision may atomically ignore all active clusters without
-  Codex review or a mandatory reason. Preserve explicit cluster targets and a
-  recovery path in the transaction journal.
+- A GUI batch decision may atomically ignore eligible Medium-or-lower clusters
+  without Codex review. It must never include High or Critical clusters.
+  Preserve explicit cluster targets and a recovery path in the transaction journal.
 - Use an isolated configuration for tests.
 
 Read [references/cli-contract.md](references/cli-contract.md) before executing

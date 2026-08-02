@@ -8,8 +8,9 @@ CSM is deny-by-default at the mutation boundary:
 - `.system` is excluded and protected;
 - static scanning runs before an installation plan is applyable;
 - active High/Critical findings block writes; findings are clustered by rule and file class;
-- a human may ignore one active cluster or every active cluster in a report,
-  for every severity and deterministic rule, without a mandatory reason;
+- Critical cannot be ignored; High requires individual explicit confirmation
+  and a non-empty reason, plus final acknowledgement for standard apply;
+- report-wide decisions apply only to eligible Medium-or-lower clusters;
 - batch decisions are persisted atomically and journal explicit cluster targets;
 - Codex review is advisory and never records a human decision by itself;
 - source commits and installed file hashes are recorded;

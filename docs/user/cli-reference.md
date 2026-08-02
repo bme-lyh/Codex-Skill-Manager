@@ -90,6 +90,12 @@ csm install --url "https://github.com/owner/repo" --ref v1.2.0
 csm install --local "D:\skills\package"
 ```
 
+创建计划后，先读取并核对后端保存的分层评估，再决定是否应用：
+
+```powershell
+csm --json install --plan-id PLAN --assess
+```
+
 不带 `--assist` 时，上述命令始终使用标准的两阶段 Skill 安装，不安装额外工具，
 也不修改 Codex MCP。
 
@@ -137,8 +143,9 @@ csm install --plan-id PLAN `
   --apply
 ```
 
-High/Critical 风险默认阻止写入。`--accept-high-risk` 仅为旧脚本保留，不再单独放行
-High 风险；请使用统一的 `warning` 人工决定。原因可选。
+High/Critical 风险默认阻止写入。Critical 不可忽略；High 必须通过 `warning`
+逐簇提供 `--reason` 并使用 `--confirm-deterministic` 明确确认。执行含已接受 High
+风险的计划时还需 `--accept-high-risk` 作最终确认；它不能创建决定或单独放行风险。
 
 ## 隔离卸载
 
@@ -171,7 +178,8 @@ csm warning --fingerprint HASH --rule CSM-INJ-001 --file "skill/SKILL.md"
 csm warning --fingerprint HASH --rule CSM-INJ-001 --file "skill/SKILL.md" --restore
 ```
 
-`--reason` 可选。所有决定都会进入本地事务日志。
+Medium 及以下的 `--reason` 可选。High 必须填写非空原因并逐簇明确确认；Critical
+不可忽略。所有决定都会进入本地事务日志。
 
 风险中心推荐按簇操作：
 
@@ -188,7 +196,9 @@ csm warning --report SCAN_ID
 csm warning --report SCAN_ID --restore
 ```
 
-所有级别和确定性规则使用同一命令；`--confirm-deterministic` 仅为旧脚本兼容保留。
+报告级批量操作只处理 Medium 及以下风险。High 必须逐簇使用
+`--confirm-deterministic` 和非空 `--reason`，Critical 不可忽略；执行含已接受 High
+风险的标准计划还需 `--accept-high-risk` 作最终确认。
 `--dry-run` 会返回明确的风险簇目标而不修改状态。
 
 ## 输出与退出码

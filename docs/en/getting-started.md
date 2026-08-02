@@ -42,16 +42,22 @@ Open **Skills**, select unmanaged items, and click **Manage**. The read-only pre
 
 Click **Install Skill**, choose GitHub or local directory, and provide the
 source. GitHub input may be a repository URL, a path inside a repository, or a
-direct `SKILL.md` URL. Both installation modes pin GitHub input to an immutable
-commit or validate an explicit local directory, discover Skills, scan the actual
-targets, and ask you to select the final Skills.
+direct `SKILL.md` URL. The dialog uses one **Source → Assess → Review → Apply**
+workflow. GitHub input is pinned to an immutable commit; an explicit local
+directory is copied into a bounded manager-owned snapshot. The mandatory local
+assessment reads documentation and installation markers, classifies the project,
+discovers Codex Skills, scans actual targets, and groups checks as required,
+triggered, or optional. Only `ready` and `attention` assessments can continue.
+Expired, replaced, digest-mismatched, unknown, or case-variant `.system` targets
+fail closed and require a fresh assessment.
 
 **Standard installation** copies only the selected Skill directories. It does
 not install extra tools, configure MCP, or execute repository scripts.
 
-**Codex assisted installation** is for repositories that also need a Python
-tool or Codex MCP integration. Selecting this mode is the explicit opt-in for
-the current installation. Check Codex in Settings and make sure the CLI is
+**Optional Codex enhanced analysis** is for repositories that also need a Python
+tool or Codex MCP integration. It never replaces the mandatory local assessment.
+Clicking **Run enhanced project scan** is the explicit opt-in for the current
+installation. Check Codex in Settings and make sure the CLI is
 installed, signed in, and has available usage. The app packages the complete
 prepared source for Codex with shell access disabled, then shows a summary, requirements,
 typed steps, and required permissions. Select the Skills, approve each required
@@ -64,8 +70,9 @@ Repository scripts and free-form commands proposed by Codex are never run.
 Unsupported work remains a manual step. The app can finish supported steps
 first, then reports a partial result until the manual work is complete. Managed
 Python and MCP automation requires a GitHub source so PyPI ownership can be
-verified. When you start assisted analysis, the app may download Wheels from
-official PyPI into isolated staging to create a complete dependency lock; no
+verified. The read-only enhanced project scan never downloads dependencies.
+Only after you separately approve plan generation may the app download Wheels
+from official PyPI into isolated staging to create a complete dependency lock; no
 package is installed or run at that stage. Local directories still support
 standard installation and packaged Codex analysis. Source context is processed
 through Codex CLI, so private-repository users should consider their data and

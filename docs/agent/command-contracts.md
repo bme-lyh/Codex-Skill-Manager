@@ -38,9 +38,13 @@ Planning commands:
 - `update --group ID`: resolve a GitHub source and create a persisted update
   preview for its installed Skills; scan scope is limited to actual candidate
   Skill directories;
-- `install --url URL [--ref REF] [--assist]`: create a standard preview, or
-  return a reusable read-only Codex project scan when explicitly requested;
-- `install --local PATH [--assist]`: same contract for an explicit local source;
+- `install --url URL [--ref REF] [--assist]`: create a commit-pinned preview and
+  mandatory persisted local project assessment, or continue to a reusable
+  read-only Codex project scan when explicitly requested;
+- `install --local PATH [--assist]`: copy the explicit directory into a bounded,
+  manager-owned snapshot, then use the same assessment contract;
+- `install --plan-id ID --assess`: persist and return the mandatory read-only
+  layered assessment for review before apply;
 - `install --assist --project-scan-id ID --create-plan`: explicitly approve
   creation of a typed assisted-install plan from a verified scan.
 
@@ -126,18 +130,22 @@ Mutating commands:
   apply one human decision to every matching cluster in a report;
 - `schedule`: create or update a scheduled check.
 
-Names must be explicit and cannot contain wildcards. A plan expires after 24
-hours. Active High/Critical findings block apply until ignored by an explicit
-human action. Reasons are optional. `--accept-high-risk`,
-`--deterministic`, and `--confirm-deterministic` remain accepted for backward
-compatibility but do not create a separate decision path. Callers must preserve
-the returned transaction ID.
+Names must be explicit and cannot contain wildcards. `.system` is reserved
+case-insensitively in every mutation route. A plan expires after 24 hours.
+Critical findings always block writes and cannot be ignored. High findings block
+until a human supplies a non-empty reason and explicit confirmation. Batch ignore
+cannot bypass either rule. `--accept-high-risk`, `--deterministic`, and
+`--confirm-deterministic` remain accepted for compatibility; the last flag is the
+explicit High-risk decision confirmation. `--accept-high-risk` is a separate final
+apply acknowledgement when a persisted High decision exists and cannot create or
+bypass that decision. Callers must preserve the returned transaction ID.
 
 Managing existing Skills is metadata-only: it snapshots `sources.lock.json`,
 detects sources, hashes the current files and records a `manage` transaction.
 Legacy `adopt` remains an alias. Group mutations snapshot `groups.json` and
 never mutate source provenance or Skill content.
-Finding/cluster ignores are reloaded from local state at apply time. Ignoring
-creates a transaction record and the reason is optional; restored findings immediately
-participate in the gate again. A Codex verdict can never substitute for the
-explicit human ignore decision.
+Finding/cluster decisions are reloaded from local state at apply time. Every
+decision creates a transaction record. Reasons are optional only below High;
+High requires a non-empty reason and explicit confirmation, while Critical
+cannot be ignored. Restored findings immediately participate in the gate again.
+A Codex verdict can never substitute for the explicit human decision.

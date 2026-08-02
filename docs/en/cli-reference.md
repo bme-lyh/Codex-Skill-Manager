@@ -55,6 +55,7 @@ Create and review a plan, then apply it with explicit Skill names:
 ```powershell
 csm --json install --url "https://github.com/owner/repository" [--ref "tag-or-commit"]
 csm --json install --local "D:\skills\package"
+csm --json install --plan-id "plan-..." --assess
 csm --json install --plan-id "plan-..." --skill "skill-a" --skill "skill-b" --apply
 
 csm check
@@ -116,7 +117,11 @@ csm warning --report "scan-..." --restore
 csm schedule --enabled=true --frequency=weekly --at=09:00
 ```
 
-Warning reasons are optional. Use `--restore` to reverse an ignored warning.
+Critical warnings cannot be ignored. Accepting a High cluster requires a
+non-empty `--reason` and `--confirm-deterministic`; lower severities keep an
+optional reason. Applying a plan with an accepted High cluster also requires
+`--accept-high-risk` as a final acknowledgement; that flag cannot create the
+decision by itself. Use `--restore` to reverse an accepted or ignored warning.
 Schedule frequency is `daily` or `weekly`, and time uses 24-hour `HH:mm`.
 
 Exit code `0` means success, `1` means an operational or policy failure, and
