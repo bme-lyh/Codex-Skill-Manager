@@ -106,6 +106,33 @@ func TestRunCLIAssessesExistingInstallPlan(t *testing.T) {
 	}
 }
 
+func TestRunCLIPreparesInstallForExplicitAgentsRoot(t *testing.T) {
+	configPath := writeCLIConfig(t)
+	source := filepath.Join(t.TempDir(), "source")
+	skillRoot := filepath.Join(source, "demo")
+	if err := os.MkdirAll(skillRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillRoot, "SKILL.md"), []byte("---\nname: demo\ndescription: demo skill\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := executeCLI([]string{
+		"--config", configPath, "--json", "install", "--root", model.RootIDAgents, "--local", source,
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("create agents plan failed: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var response struct {
+		Data model.InstallPreview `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &response); err != nil {
+		t.Fatalf("decode plan response: %v; output=%q", err, stdout)
+	}
+	if response.Data.TargetRootID != model.RootIDAgents {
+		t.Fatalf("targetRootId = %q, want %q", response.Data.TargetRootID, model.RootIDAgents)
+	}
+}
+
 func TestReportDecisionEligibilityFailsClosedForUnknownSeverity(t *testing.T) {
 	tests := []struct {
 		severity model.RiskSeverity
@@ -207,6 +234,12 @@ func writeCLIConfig(t *testing.T) string {
 		CacheRoot:      filepath.Join(dataRoot, "cache"),
 		StagingRoot:    filepath.Join(dataRoot, "staging"),
 	}
+	cfg.SkillRoots = []model.SkillRoot{
+		{ID: model.RootIDCodexDefault, Name: "Codex Skills", Kind: "codex", Path: cfg.Paths.SkillsRoot, Enabled: true, SystemDir: ".system"},
+		{ID: model.RootIDAgents, Name: "Agents Skills", Kind: "agents", Path: filepath.Join(root, "agents-skills"), Enabled: true, SystemDir: ".system"},
+	}
+	cfg.Roots = append([]model.SkillRoot(nil), cfg.SkillRoots...)
+	cfg.DefaultRootID = model.RootIDCodexDefault
 	configPath := filepath.Join(root, "config.yaml")
 	if err := config.Save(configPath, cfg); err != nil {
 		t.Fatal(err)

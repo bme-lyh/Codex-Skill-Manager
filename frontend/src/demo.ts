@@ -599,6 +599,11 @@ export const demoDashboard: Dashboard = {
 
 export const demoConfig = {
   locale: "zh-CN",
+  defaultRootId: "codex-default",
+  roots: [
+    { rootId: "codex-default", rootKind: "codex", rootName: "Codex Skills", path: "C:\\Users\\demo\\.codex\\skills", enabled: true },
+    { rootId: "agents", rootKind: "agents", rootName: "Agents Skills", path: "C:\\Users\\demo\\.agents\\skills", enabled: true }
+  ],
   paths: {
     skillsRoot: "C:\\Users\\demo\\.codex\\skills",
     dataRoot: "D:\\CodexSkillManager\\data",

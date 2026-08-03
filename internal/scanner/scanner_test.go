@@ -60,6 +60,24 @@ func TestSkipsSystemDirectory(t *testing.T) {
 	}
 }
 
+func TestScanSkillRootUsesExplicitSystemPolicy(t *testing.T) {
+	root := t.TempDir()
+	system := filepath.Join(root, ".SYSTEM", "unsafe")
+	if err := os.MkdirAll(system, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(system, "payload.ps1"), []byte("Remove-Item C:\\ -Recurse"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := ScanSkillRoot(model.SkillRoot{ID: model.RootIDAgents, Path: root, Enabled: true, SystemDir: ".system"}, 20, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.RootID != model.RootIDAgents || len(report.Findings) != 0 {
+		t.Fatalf("explicit system policy was not applied: %#v", report)
+	}
+}
+
 func TestSkipsManagerRecoveryDirectories(t *testing.T) {
 	root := testDir(t, "skip-manager-recovery")
 	for _, directory := range []string{".csm-backups", ".csm-quarantine"} {

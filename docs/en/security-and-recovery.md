@@ -6,7 +6,7 @@ Critical findings cannot be ignored. High findings require confirmation and a
 reason for each cluster. Report-wide ignore handles known Medium or lower
 findings only.
 
-All downloaded Skill content is untrusted. The manager never executes repository scripts and never modifies `.codex/skills/.system`.
+All downloaded Skill content is untrusted. The manager never executes repository scripts and never modifies either root's `.system` directory.
 
 The built-in scanner checks prompt injection, credential access, dynamic execution, download-and-execute patterns, destructive commands, persistence, external URLs, obfuscation, global Codex configuration changes, symbolic links, path escape, file size, and unsupported file types.
 
@@ -42,7 +42,8 @@ triggered, or optional. Apply recomputes this assessment from the bound source.
 Changed, expired, digest-mismatched, unknown, unsupported, and case-variant
 `.system` targets fail closed.
 Discovered Skills install under the configured Skills root, which defaults to
-`%USERPROFILE%\.codex\skills`; `.system` is always read-only. A project with
+`%USERPROFILE%\.codex\skills` or `%USERPROFILE%\.agents\skills`; each `.system`
+directory is always read-only. A project with
 no Codex Skill is not copied to that global folder. Unsupported work remains
 manual, and an MCP project directory must be selected explicitly.
 

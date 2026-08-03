@@ -19,9 +19,17 @@ type Store struct {
 	db       *sql.DB
 	dataRoot string
 	lockPath string
+	roots    []model.SkillRoot
 }
 
 func Open(dataRoot string) (*Store, error) {
+	return OpenWithRoots(dataRoot, nil)
+}
+
+// OpenWithRoots supplies root paths used only for v1 source-lock migration.
+// It never creates those roots; writes remain the manager's explicit target
+// operation.
+func OpenWithRoots(dataRoot string, roots []model.SkillRoot) (*Store, error) {
 	if err := os.MkdirAll(dataRoot, 0o700); err != nil {
 		return nil, err
 	}
@@ -29,7 +37,7 @@ func Open(dataRoot string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db: db, dataRoot: dataRoot, lockPath: filepath.Join(dataRoot, "sources.lock.json")}
+	s := &Store{db: db, dataRoot: dataRoot, lockPath: filepath.Join(dataRoot, "sources.lock.json"), roots: append([]model.SkillRoot(nil), roots...)}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -59,22 +67,158 @@ CREATE TABLE IF NOT EXISTS finding_ignores (
   reason TEXT, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS skill_groups (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL,
+  root_id TEXT NOT NULL DEFAULT '', id TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL,
   manual INTEGER NOT NULL, updated_at TEXT NOT NULL
+  ,PRIMARY KEY(root_id,id)
 );
 CREATE TABLE IF NOT EXISTS skill_group_assignments (
-  skill_name TEXT PRIMARY KEY, group_id TEXT NOT NULL,
+  root_id TEXT NOT NULL DEFAULT '', skill_name TEXT NOT NULL, group_id TEXT NOT NULL,
   position INTEGER NOT NULL, updated_at TEXT NOT NULL
+  ,PRIMARY KEY(root_id,skill_name)
 );
 CREATE TABLE IF NOT EXISTS update_statuses (
   group_id TEXT PRIMARY KEY, checked_at TEXT NOT NULL, payload_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS skill_security_states (
-  skill_name TEXT PRIMARY KEY, content_hash TEXT NOT NULL,
+  root_id TEXT NOT NULL DEFAULT '', skill_name TEXT NOT NULL, content_hash TEXT NOT NULL,
   report_id TEXT NOT NULL, checked_at TEXT NOT NULL
+  ,PRIMARY KEY(root_id,skill_name)
 );
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.migrateRootNamespaceTables()
+}
+
+// migrateRootNamespaceTables upgrades databases created by v0.10, whose
+// security/layout tables used skill_name as a global key. The copy is purely
+// database state; no Skill files are moved or rewritten.
+func (s *Store) migrateRootNamespaceTables() error {
+	if err := s.upgradeSecurityStatesTable(); err != nil {
+		return err
+	}
+	if err := s.upgradeGroupTables(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) upgradeSecurityStatesTable() error {
+	rows, err := s.db.Query(`PRAGMA table_info(skill_security_states)`)
+	if err != nil {
+		return err
+	}
+	hasRoot := false
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var def any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &def, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "root_id" {
+			hasRoot = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if hasRoot {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`CREATE TABLE skill_security_states_v2 (
+root_id TEXT NOT NULL DEFAULT '', skill_name TEXT NOT NULL, content_hash TEXT NOT NULL,
+report_id TEXT NOT NULL, checked_at TEXT NOT NULL, PRIMARY KEY(root_id,skill_name))`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(`INSERT INTO skill_security_states_v2(root_id,skill_name,content_hash,report_id,checked_at)
+SELECT 'codex-default',skill_name,content_hash,report_id,checked_at FROM skill_security_states`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(`DROP TABLE skill_security_states`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(`ALTER TABLE skill_security_states_v2 RENAME TO skill_security_states`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) upgradeGroupTables() error {
+	// Layout tables are created with root-qualified primary keys for new DBs.
+	// Older DBs are uncommon but can be upgraded transactionally in place.
+	for _, table := range []string{"skill_groups", "skill_group_assignments"} {
+		rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+		if err != nil {
+			return err
+		}
+		hasRoot := false
+		for rows.Next() {
+			var cid, notNull, pk int
+			var name, typ string
+			var def any
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &def, &pk); err != nil {
+				rows.Close()
+				return err
+			}
+			if name == "root_id" {
+				hasRoot = true
+			}
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if hasRoot {
+			continue
+		}
+		if err := s.upgradeOneGroupTable(table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) upgradeOneGroupTable(table string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	var create, copySQL string
+	if table == "skill_groups" {
+		create = `CREATE TABLE skill_groups_v2 (root_id TEXT NOT NULL DEFAULT '', id TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL, manual INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(root_id,id))`
+		copySQL = `INSERT INTO skill_groups_v2(root_id,id,name,position,manual,updated_at) SELECT 'codex-default',id,name,position,manual,updated_at FROM skill_groups`
+	} else {
+		create = `CREATE TABLE skill_group_assignments_v2 (root_id TEXT NOT NULL DEFAULT '', skill_name TEXT NOT NULL, group_id TEXT NOT NULL, position INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(root_id,skill_name))`
+		copySQL = `INSERT INTO skill_group_assignments_v2(root_id,skill_name,group_id,position,updated_at) SELECT 'codex-default',skill_name,group_id,position,updated_at FROM skill_group_assignments`
+	}
+	if _, err = tx.Exec(create); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(copySQL); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(`DROP TABLE ` + table); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(`ALTER TABLE ` + table + `_v2 RENAME TO ` + table); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SaveSkillSecurityStates(states []model.SkillSecurityState) error {
@@ -91,10 +235,38 @@ func (s *Store) SaveSkillSecurityStates(states []model.SkillSecurityState) error
 			return errors.New("skill security state is incomplete")
 		}
 		if _, err = tx.Exec(`
-INSERT INTO skill_security_states(skill_name,content_hash,report_id,checked_at) VALUES(?,?,?,?)
-ON CONFLICT(skill_name) DO UPDATE SET
+INSERT INTO skill_security_states(root_id,skill_name,content_hash,report_id,checked_at) VALUES(?,?,?,?,?)
+ON CONFLICT(root_id,skill_name) DO UPDATE SET
 content_hash=excluded.content_hash,report_id=excluded.report_id,checked_at=excluded.checked_at`,
-			state.SkillName, state.ContentHash, state.ReportID, state.CheckedAt.Format(time.RFC3339Nano)); err != nil {
+			state.RootID, state.SkillName, state.ContentHash, state.ReportID, state.CheckedAt.Format(time.RFC3339Nano)); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ReplaceSkillSecurityStates restores the exact state for explicit Skills in
+// one root. It is used only by transaction recovery: unspecified names are
+// deleted, while supplied snapshots are restored atomically.
+func (s *Store) ReplaceSkillSecurityStates(rootID string, names []string, states []model.SkillSecurityState) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if _, err = tx.Exec(`DELETE FROM skill_security_states WHERE root_id=? AND skill_name=?`, rootID, name); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	for _, state := range states {
+		if state.RootID != rootID || state.SkillName == "" || state.ContentHash == "" || state.ReportID == "" || state.CheckedAt.IsZero() {
+			_ = tx.Rollback()
+			return errors.New("skill security state snapshot is invalid")
+		}
+		if _, err = tx.Exec(`INSERT INTO skill_security_states(root_id,skill_name,content_hash,report_id,checked_at) VALUES(?,?,?,?,?)`,
+			state.RootID, state.SkillName, state.ContentHash, state.ReportID, state.CheckedAt.Format(time.RFC3339Nano)); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -103,7 +275,7 @@ content_hash=excluded.content_hash,report_id=excluded.report_id,checked_at=exclu
 }
 
 func (s *Store) SkillSecurityStates() (map[string]model.SkillSecurityState, error) {
-	rows, err := s.db.Query(`SELECT skill_name,content_hash,report_id,checked_at FROM skill_security_states`)
+	rows, err := s.db.Query(`SELECT root_id,skill_name,content_hash,report_id,checked_at FROM skill_security_states`)
 	if err != nil {
 		return nil, err
 	}
@@ -112,14 +284,18 @@ func (s *Store) SkillSecurityStates() (map[string]model.SkillSecurityState, erro
 	for rows.Next() {
 		var state model.SkillSecurityState
 		var checkedAt string
-		if err := rows.Scan(&state.SkillName, &state.ContentHash, &state.ReportID, &checkedAt); err != nil {
+		if err := rows.Scan(&state.RootID, &state.SkillName, &state.ContentHash, &state.ReportID, &checkedAt); err != nil {
 			return nil, err
 		}
 		state.CheckedAt, err = time.Parse(time.RFC3339Nano, checkedAt)
 		if err != nil {
 			return nil, fmt.Errorf("parse skill security check time: %w", err)
 		}
-		out[state.SkillName] = state
+		key := state.SkillName
+		if state.RootID != "" {
+			key = model.QualifiedSkillIdentity(state.RootID, state.SkillName)
+		}
+		out[key] = state
 	}
 	return out, rows.Err()
 }
@@ -174,14 +350,14 @@ func (s *Store) LoadGroupLayout() (model.GroupLayoutState, error) {
 		Groups:      []model.GroupPreference{},
 		Assignments: []model.SkillGroupAssignment{},
 	}
-	rows, err := s.db.Query(`SELECT id,name,position,manual FROM skill_groups ORDER BY position,name`)
+	rows, err := s.db.Query(`SELECT root_id,id,name,position,manual FROM skill_groups ORDER BY position,name,root_id,id`)
 	if err != nil {
 		return layout, err
 	}
 	for rows.Next() {
 		var group model.GroupPreference
 		var manual int
-		if err := rows.Scan(&group.ID, &group.Name, &group.Position, &manual); err != nil {
+		if err := rows.Scan(&group.RootID, &group.ID, &group.Name, &group.Position, &manual); err != nil {
 			rows.Close()
 			return layout, err
 		}
@@ -191,14 +367,14 @@ func (s *Store) LoadGroupLayout() (model.GroupLayoutState, error) {
 	if err := rows.Close(); err != nil {
 		return layout, err
 	}
-	assignments, err := s.db.Query(`SELECT skill_name,group_id,position FROM skill_group_assignments ORDER BY group_id,position,skill_name`)
+	assignments, err := s.db.Query(`SELECT root_id,skill_name,group_id,position FROM skill_group_assignments ORDER BY root_id,group_id,position,skill_name`)
 	if err != nil {
 		return layout, err
 	}
 	defer assignments.Close()
 	for assignments.Next() {
 		var assignment model.SkillGroupAssignment
-		if err := assignments.Scan(&assignment.SkillName, &assignment.GroupID, &assignment.Position); err != nil {
+		if err := assignments.Scan(&assignment.RootID, &assignment.SkillName, &assignment.GroupID, &assignment.Position); err != nil {
 			return layout, err
 		}
 		layout.Assignments = append(layout.Assignments, assignment)
@@ -225,15 +401,15 @@ func (s *Store) ReplaceGroupLayout(layout model.GroupLayoutState) error {
 		if group.Manual {
 			manual = 1
 		}
-		if _, err = tx.Exec(`INSERT INTO skill_groups(id,name,position,manual,updated_at) VALUES(?,?,?,?,?)`,
-			group.ID, group.Name, group.Position, manual, now); err != nil {
+		if _, err = tx.Exec(`INSERT INTO skill_groups(root_id,id,name,position,manual,updated_at) VALUES(?,?,?,?,?,?)`,
+			group.RootID, group.ID, group.Name, group.Position, manual, now); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
 	}
 	for _, assignment := range layout.Assignments {
-		if _, err = tx.Exec(`INSERT INTO skill_group_assignments(skill_name,group_id,position,updated_at) VALUES(?,?,?,?)`,
-			assignment.SkillName, assignment.GroupID, assignment.Position, now); err != nil {
+		if _, err = tx.Exec(`INSERT INTO skill_group_assignments(root_id,skill_name,group_id,position,updated_at) VALUES(?,?,?,?,?)`,
+			assignment.RootID, assignment.SkillName, assignment.GroupID, assignment.Position, now); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -244,7 +420,7 @@ func (s *Store) ReplaceGroupLayout(layout model.GroupLayoutState) error {
 func (s *Store) LoadLock() (model.SourcesLock, error) {
 	data, err := os.ReadFile(s.lockPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return model.SourcesLock{SchemaVersion: 1, Packages: map[string]model.PackageLock{}}, nil
+		return model.SourcesLock{SchemaVersion: 2, Packages: map[string]model.PackageLock{}}, nil
 	}
 	if err != nil {
 		return model.SourcesLock{}, err
@@ -256,11 +432,25 @@ func (s *Store) LoadLock() (model.SourcesLock, error) {
 	if lock.Packages == nil {
 		lock.Packages = map[string]model.PackageLock{}
 	}
-	return lock, nil
+	if lock.SchemaVersion == 1 || lock.SchemaVersion == 0 {
+		return s.migrateSourcesLockV1(lock)
+	}
+	if lock.SchemaVersion != 2 {
+		return model.SourcesLock{}, fmt.Errorf("unsupported sources lock schema: %d", lock.SchemaVersion)
+	}
+	return normalizeSourcesLock(lock, s.roots)
+}
+
+func (s *Store) LoadSourcesLock() (model.SourcesLock, error) {
+	return s.LoadLock()
 }
 
 func (s *Store) SaveLock(lock model.SourcesLock) error {
-	lock.SchemaVersion = 1
+	lock, err := normalizeSourcesLock(lock, s.roots)
+	if err != nil {
+		return err
+	}
+	lock.SchemaVersion = 2
 	data, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
 		return err
@@ -270,6 +460,130 @@ func (s *Store) SaveLock(lock model.SourcesLock) error {
 		return err
 	}
 	return os.Rename(tmp, s.lockPath)
+}
+
+func (s *Store) SaveSourcesLock(lock model.SourcesLock) error {
+	return s.SaveLock(lock)
+}
+
+// MigrateSourcesLockV1 migrates a legacy lock without touching the filesystem.
+// The Store method supplies configured roots for path-based inference.
+func MigrateSourcesLockV1(lock model.SourcesLock, roots []model.SkillRoot) (model.SourcesLock, error) {
+	if lock.Packages == nil {
+		lock.Packages = map[string]model.PackageLock{}
+	}
+	return normalizeSourcesLock(lock, roots)
+}
+
+func (s *Store) migrateSourcesLockV1(lock model.SourcesLock) (model.SourcesLock, error) {
+	return MigrateSourcesLockV1(lock, s.roots)
+}
+
+func normalizeSourcesLock(lock model.SourcesLock, roots []model.SkillRoot) (model.SourcesLock, error) {
+	packages := map[string]model.PackageLock{}
+	for id, pkg := range lock.Packages {
+		rootID := strings.TrimSpace(pkg.RootID)
+		if rootID == "" {
+			if index := strings.IndexByte(id, '\x00'); index > 0 {
+				rootID = id[:index]
+			}
+		}
+		if rootID == "" {
+			inferredRootID, err := inferPackageRoot(pkg, roots)
+			if err != nil {
+				return model.SourcesLock{}, fmt.Errorf("migrate package %q: %w", id, err)
+			}
+			rootID = inferredRootID
+		}
+		if strings.TrimSpace(rootID) == "" {
+			return model.SourcesLock{}, fmt.Errorf("migrate package %q: root identity is ambiguous", id)
+		}
+		pkg.RootID = rootID
+		for name, skill := range pkg.Skills {
+			if skill.RootID == "" {
+				skill.RootID = rootID
+			}
+			pkg.Skills[name] = skill
+		}
+		qualifiedID := model.QualifiedPackageID(rootID, stripQualifiedPackageID(id, rootID))
+		if _, exists := packages[qualifiedID]; exists {
+			return model.SourcesLock{}, fmt.Errorf("migrate package %q: duplicate root-qualified package", id)
+		}
+		packages[qualifiedID] = pkg
+	}
+	lock.SchemaVersion = 2
+	lock.Packages = packages
+	return lock, nil
+}
+
+func stripQualifiedPackageID(id, rootID string) string {
+	prefix := rootID + "\x00"
+	if strings.HasPrefix(id, prefix) {
+		return strings.TrimPrefix(id, prefix)
+	}
+	return id
+}
+
+func inferPackageRoot(pkg model.PackageLock, roots []model.SkillRoot) (string, error) {
+	var candidates []string
+	for _, skill := range pkg.Skills {
+		if strings.TrimSpace(skill.LocalPath) == "" {
+			continue
+		}
+		if !filepath.IsAbs(skill.LocalPath) {
+			// v1 stored LocalPath relative to the single Skills root.
+			candidates = append(candidates, model.RootIDCodexDefault)
+			continue
+		}
+		matches := rootsContaining(skill.LocalPath, roots)
+		if len(matches) == 0 {
+			// With no configured paths, retain v1's historical default root. If
+			// roots are supplied, an unknown path is unsafe to guess.
+			if len(roots) == 0 {
+				matches = []string{model.RootIDCodexDefault}
+			} else {
+				return "", fmt.Errorf("local path %q is outside configured roots", skill.LocalPath)
+			}
+		}
+		if len(matches) > 1 {
+			return "", fmt.Errorf("local path %q matches multiple roots", skill.LocalPath)
+		}
+		candidates = append(candidates, matches[0])
+	}
+	if len(candidates) == 0 {
+		if len(roots) == 0 {
+			return model.RootIDCodexDefault, nil
+		}
+		return "", errors.New("package has no local path to infer root")
+	}
+	rootID := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate != rootID {
+			return "", errors.New("skills in one package span multiple roots")
+		}
+	}
+	return rootID, nil
+}
+
+func rootsContaining(path string, roots []model.SkillRoot) []string {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil
+	}
+	absolute = filepath.Clean(absolute)
+	var matches []string
+	for _, root := range roots {
+		base, err := filepath.Abs(root.Path)
+		if err != nil {
+			continue
+		}
+		base = filepath.Clean(base)
+		relative, err := filepath.Rel(base, absolute)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative) {
+			matches = append(matches, root.ID)
+		}
+	}
+	return matches
 }
 
 func (s *Store) SaveTransaction(tx model.Transaction) error {

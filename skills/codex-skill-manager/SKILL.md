@@ -11,10 +11,13 @@ transaction IDs, and keep the user informed before any filesystem mutation.
 ## Workflow
 
 1. Run `csm doctor --json` and `csm dashboard --json`.
+   Read `roots` and `defaultRootId`. Before any root-scoped action, choose one
+   explicit `rootId`; new installations default to `codex-default` only when
+   the user has not requested another target.
 2. For read-only requests, use `audit`, `check`, `history`, or `reports`.
    Report the structured update status, checked time, remote Commit, and exact
    outdated Skill names; never present a bare Commit as the status.
-3. For existing unmanaged Skills, create a `manage` plan, show detected source
+3. For existing unmanaged Skills, create a root-qualified `manage` plan, show detected source
    evidence, confidence, file snapshot and scan findings, then apply only the
    exact confirmed names.
 4. For GitHub or local installation, create a plan first. The manager pins a
@@ -45,7 +48,7 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    repeated exact `--skill` and `--grant` values, and `--project-root` only when
    the plan requires MCP. Otherwise apply the standard plan. Return the
    transaction ID, recovery status, and report location.
-8. For removal, use `csm remove` with explicit names. Explain that content is
+8. For removal, use `csm remove --root ROOT_ID` with explicit names. Explain that content is
    moved to quarantine and can be restored.
 9. Prefer risk-cluster decisions over individual findings. Preserve every
    member fingerprint and use `warning --report SCAN_ID --dry-run` before a
@@ -61,7 +64,9 @@ transaction IDs, and keep the user informed before any filesystem mutation.
 ## Safety rules
 
 - Never use recursive deletion or wildcard mutation.
-- Never modify `.system`.
+- Never modify either root's `.system` directory.
+- Never combine same-name Skills from different roots in one mutation. Pass
+  `--root` for install, manage, group, audit, update, quarantine, and restore.
 - Never edit `sources.lock.json` or `state.db` manually.
 - Never install directly from an unresolved or unscanned working tree.
 - Never expose GitHub tokens in prompts, arguments, logs or reports.

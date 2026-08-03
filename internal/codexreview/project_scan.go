@@ -1,24 +1,20 @@
 package codexreview
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
-	"github.com/bme-lyh/Codex-Skill-Manager/internal/processutil"
 )
 
 const (
@@ -129,10 +125,11 @@ func AnalyzeProject(
 	}
 	emit("inventory", fmt.Sprintf("Inventoried %d files with local safety results", contextFileCount), 1, 1)
 
-	path, err := reviewPreflight(ctx, cfg.CLIPath)
+	runner, err := prepareCodexRunner(ctx, cfg)
 	if err != nil {
 		return model.CodexProjectScanResult{}, err
 	}
+	path := runner.path
 	if strings.TrimSpace(workRoot) == "" {
 		return model.CodexProjectScanResult{}, errors.New("project-scan work root is required")
 	}
@@ -205,14 +202,9 @@ func AnalyzeProject(
 	}
 	emit("codex-analysis", "Generating the project overview and security conclusion from bounded evidence", 1, 1)
 
-	var generated generatedProjectScan
-	var lastErr error
-	for attempt := 1; attempt <= maxInstallAnalysisAttempts; attempt++ {
-		generated, lastErr = runProjectScanAttempt(ctx, path, cfg, workDir, schemaPath, payload, attempt)
-		if lastErr == nil {
-			break
-		}
-	}
+	generated, lastErr := runCodexAttempts(maxInstallAnalysisAttempts, func(attempt int) (generatedProjectScan, error) {
+		return runProjectScanAttempt(ctx, path, cfg, workDir, schemaPath, payload, attempt)
+	})
 	if lastErr != nil {
 		return model.CodexProjectScanResult{}, lastErr
 	}
@@ -305,59 +297,18 @@ func runProjectScanAttempt(
 	if err := os.MkdirAll(attemptDir, 0o700); err != nil {
 		return generatedProjectScan{}, err
 	}
-	outputPath := filepath.Join(attemptDir, "project-scan.json")
-	timeout := cfg.TimeoutSeconds
-	if timeout < 1 {
-		timeout = 300
-	}
-	attemptCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-	command := exec.CommandContext(attemptCtx, path, installReviewArgs(cfg, schemaPath, outputPath)...)
-	processutil.ConfigureBackground(command)
-	command.Dir = attemptDir
-	command.Env = sanitizedEnvironment()
-	command.Stdin = bytes.NewReader(payload)
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return generatedProjectScan{}, err
-	}
-	diagnostic := newBoundedDiagnosticBuffer(64 << 10)
-	command.Stderr = &diagnostic
-	if err := command.Start(); err != nil {
-		return generatedProjectScan{}, err
-	}
-	_, streamErr := io.Copy(io.Discard, stdout)
-	waitErr := command.Wait()
-	if waitErr != nil {
-		if errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
-			return generatedProjectScan{}, fmt.Errorf("Codex project scan exceeded the %d second attempt limit", timeout)
-		}
-		message := strings.TrimSpace(diagnostic.String())
-		if message == "" {
-			message = waitErr.Error()
-		}
-		if len(message) > 4000 {
-			message = message[len(message)-4000:]
-		}
-		return generatedProjectScan{}, fmt.Errorf("Codex project scan failed: %s", message)
-	}
-	if streamErr != nil {
-		return generatedProjectScan{}, fmt.Errorf("read Codex project scan progress: %w", streamErr)
-	}
-	data, err := readBoundedOutput(outputPath, 1<<20)
-	if err != nil {
-		return generatedProjectScan{}, err
-	}
-	var generated generatedProjectScan
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&generated); err != nil {
-		return generatedProjectScan{}, fmt.Errorf("decode Codex project scan result: %w", err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
-		return generatedProjectScan{}, err
-	}
-	return generated, nil
+	runner := codexRunner{path: path, cfg: cfg}
+	return runCodexJSON[generatedProjectScan](ctx, runner, codexRunOptions{
+		WorkDir:         attemptDir,
+		OutputName:      "project-scan.json",
+		SchemaPath:      schemaPath,
+		Payload:         payload,
+		OutputLimit:     defaultCodexOutputBytes,
+		Label:           "project scan",
+		TimeoutMessage:  fmt.Sprintf("Codex project scan exceeded the %d second attempt limit", runner.attemptTimeout()/time.Second),
+		FailureMessage:  "Codex project scan failed",
+		ProgressMessage: "read Codex project scan progress",
+	}, "project scan result")
 }
 
 func validateGeneratedProjectScan(

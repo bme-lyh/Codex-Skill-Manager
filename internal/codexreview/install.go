@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -21,7 +20,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
-	"github.com/bme-lyh/Codex-Skill-Manager/internal/processutil"
 )
 
 const (
@@ -235,11 +233,12 @@ func analyzeInstall(
 	tracker.startStep("codex-analysis", "codex-analysis", localized(
 		cfg.OutputLocale, "Codex 正在分析安装说明与集成方式", "Codex is analyzing installation and integration guidance",
 	))
-	path, err := reviewPreflight(ctx, cfg.CLIPath)
+	runner, err := prepareCodexRunner(ctx, cfg)
 	if err != nil {
 		tracker.fail("codex-analysis", err)
 		return model.AssistedInstallPlan{}, err
 	}
+	path := runner.path
 	if strings.TrimSpace(workRoot) == "" {
 		err = errors.New("assisted-install work root is required")
 		tracker.fail("codex-analysis", err)
@@ -325,8 +324,7 @@ func analyzeInstall(
 	}
 
 	var generated generatedInstallPlan
-	var lastErr error
-	for attempt := 1; attempt <= maxInstallAnalysisAttempts; attempt++ {
+	generated, lastErr := runCodexAttempts(maxInstallAnalysisAttempts, func(attempt int) (generatedInstallPlan, error) {
 		if attempt > 1 {
 			tracker.emit("retrying", "codex-analysis", localized(
 				cfg.OutputLocale,
@@ -334,14 +332,11 @@ func analyzeInstall(
 				"The first structured analysis did not complete; running the final retry",
 			), false, "")
 		}
-		generated, lastErr = runInstallAnalysisAttempt(
+		return runInstallAnalysisAttempt(
 			ctx, path, cfg, workDir, schemaPath, payload, attempt,
 			func() { tracker.activity("codex-analysis") },
 		)
-		if lastErr == nil {
-			break
-		}
-	}
+	})
 	if lastErr != nil {
 		tracker.fail("codex-analysis", lastErr)
 		return model.AssistedInstallPlan{}, lastErr
@@ -388,66 +383,20 @@ func runInstallAnalysisAttempt(
 	if err := os.MkdirAll(attemptDir, 0o700); err != nil {
 		return generatedInstallPlan{}, err
 	}
-	outputPath := filepath.Join(attemptDir, "install-plan.json")
-	timeout := cfg.TimeoutSeconds
-	if timeout < 1 {
-		timeout = 300
-	}
-	attemptCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-	command := exec.CommandContext(attemptCtx, path, installReviewArgs(cfg, schemaPath, outputPath)...)
-	processutil.ConfigureBackground(command)
-	command.Dir = attemptDir
-	command.Env = sanitizedEnvironment()
-	command.Stdin = bytes.NewReader(payload)
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return generatedInstallPlan{}, err
-	}
-	diagnostic := newBoundedDiagnosticBuffer(64 << 10)
-	command.Stderr = &diagnostic
-	if err := command.Start(); err != nil {
-		return generatedInstallPlan{}, err
-	}
-	stdoutEvents := newCodexJSONLDiagnosticWriter(onActivity, 8<<10)
-	_, streamErr := io.Copy(stdoutEvents, stdout)
-	stdoutEvents.Flush()
-	waitErr := command.Wait()
-	if waitErr != nil {
-		if errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
-			return generatedInstallPlan{}, fmt.Errorf(
-				"Codex installation planning exceeded the %d second attempt limit", timeout,
-			)
-		}
-		message := strings.TrimSpace(diagnostic.String())
-		if message == "" {
-			message = strings.TrimSpace(stdoutEvents.String())
-		}
-		if message == "" {
-			message = waitErr.Error()
-		}
-		if len(message) > 4000 {
-			message = message[len(message)-4000:]
-		}
-		return generatedInstallPlan{}, fmt.Errorf("Codex installation planning failed: %s", message)
-	}
-	if streamErr != nil {
-		return generatedInstallPlan{}, fmt.Errorf("read Codex installation planning progress: %w", streamErr)
-	}
-	data, err := readBoundedOutput(outputPath, 1<<20)
-	if err != nil {
-		return generatedInstallPlan{}, err
-	}
-	var generated generatedInstallPlan
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&generated); err != nil {
-		return generatedInstallPlan{}, fmt.Errorf("decode Codex installation plan: %w", err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
-		return generatedInstallPlan{}, err
-	}
-	return generated, nil
+	runner := codexRunner{path: path, cfg: cfg}
+	return runCodexJSON[generatedInstallPlan](ctx, runner, codexRunOptions{
+		WorkDir:                 attemptDir,
+		OutputName:              "install-plan.json",
+		SchemaPath:              schemaPath,
+		Payload:                 payload,
+		OutputLimit:             defaultCodexOutputBytes,
+		Label:                   "installation planning",
+		TimeoutMessage:          fmt.Sprintf("Codex installation planning exceeded the %d second attempt limit", runner.attemptTimeout()/time.Second),
+		FailureMessage:          "Codex installation planning failed",
+		ProgressMessage:         "read Codex installation planning progress",
+		OnActivity:              onActivity,
+		CaptureJSONLDiagnostics: true,
+	}, "installation plan")
 }
 
 type codexJSONLDiagnosticWriter struct {
@@ -2279,6 +2228,7 @@ func assistedInstallPlanDigest(plan model.AssistedInstallPlan) (string, error) {
 	payload := struct {
 		SchemaVersion     string                             `json:"schemaVersion"`
 		SourcePlanID      string                             `json:"sourcePlanId"`
+		TargetRootID      string                             `json:"targetRootId"`
 		ProjectScanID     string                             `json:"projectScanId,omitempty"`
 		ProjectScanDigest string                             `json:"projectScanDigest,omitempty"`
 		Repository        digestRepository                   `json:"repository"`
@@ -2299,7 +2249,7 @@ func assistedInstallPlanDigest(plan model.AssistedInstallPlan) (string, error) {
 		ContextDigest     string                             `json:"contextDigest"`
 		ConfigFingerprint string                             `json:"configFingerprint"`
 	}{
-		SchemaVersion: "0.8.0", SourcePlanID: plan.SourcePlanID,
+		SchemaVersion: "0.11.0", SourcePlanID: plan.SourcePlanID, TargetRootID: plan.TargetRootID,
 		ProjectScanID: plan.ProjectScanID, ProjectScanDigest: plan.ProjectScanDigest,
 		Repository: digestRepository{
 			Provider: plan.Repository.Provider, FullName: plan.Repository.FullName,

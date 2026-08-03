@@ -1698,3 +1698,44 @@
     flex-wrap: wrap;
   }
 }
+
+/* v0.11 dialog pass: keep the workflow calm and readable in every Windows
+   theme. The existing class names remain stable for the state machine. */
+.install-dialog { color: var(--ink); background: var(--panel); border-color: var(--line); }
+.install-dialog-head { min-height: 72px; }
+.install-dialog-head > div > span { color: var(--muted); }
+.install-dialog-body { background: var(--panel); }
+.source-intro, .install-safety-note, .plan-warnings, .approach { background: var(--panel-soft); background-image: none; }
+.source-intro, .assessment-view, .assisted-overview, .plan-section, .execution-view { border-radius: 8px; }
+.install-source-tabs { gap: 8px; }
+.install-source-tabs button { border-radius: 6px; min-height: 40px; }
+.install-field input, .install-field select, .permission-list input { min-height: 40px; border-radius: 6px; background: var(--panel); color: var(--ink); border-color: var(--line); }
+.root-selector { margin: 16px 0; }
+.root-selector-label { color: var(--muted); }
+.execution-progress-track i, .analysis-progress-track i, .codex-progress-track i { background: var(--accent); background-image: none; }
+.execution-summary, .analysis-progress-head, .codex-progress-card { box-shadow: none; background-image: none; }
+.modal-actions.install-dialog-actions { gap: 8px; }
+
+@media (prefers-color-scheme: dark) {
+  .install-dialog, .install-dialog-body { background: var(--panel); color: var(--ink); }
+  .install-repository, .candidate-list, .permission-list, .plan-step, .execution-timeline li { background: var(--panel-soft); border-color: var(--line); }
+  .install-field input, .install-field select { background: var(--panel); color: var(--ink); }
+  .modal-actions.install-dialog-actions { border-color: var(--line); }
+}
+
+@media (forced-colors: active) {
+  .source-intro, .install-safety-note, .plan-warnings, .approach { border: 1px solid CanvasText; }
+  .execution-progress-track, .analysis-progress-track { border: 1px solid CanvasText; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .install-dialog *, .install-dialog *::before, .install-dialog *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+@media (max-width: 720px) {
+  .workflow-stepper { grid-template-columns: repeat(4, minmax(70px, 1fr)); overflow-x: auto; }
+  .workflow-stepper li { font-size: 11px; }
+  .install-dialog-body { padding-right: 16px; padding-left: 16px; }
+  .modal-actions.install-dialog-actions { align-items: stretch; }
+  .modal-actions.install-dialog-actions > button { flex: 1 1 auto; min-height: 40px; }
+}

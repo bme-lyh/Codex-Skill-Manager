@@ -2,6 +2,8 @@
 .toolchains/
 .cache/
 .gocache/
+.gocache-*/
+.playwright-cli/
 .gomodcache/
 .tmp/
 .vite/

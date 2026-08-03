@@ -85,9 +85,13 @@ func (m *Manager) verifyAssessmentAgainstPreview(assessment model.ProjectAssessm
 	if len(assessment.Targets) != len(preview.Skills) {
 		return errors.New("project assessment targets do not match the source preview")
 	}
+	root, err := m.resolveRoot(preview.TargetRootID)
+	if err != nil {
+		return err
+	}
 	expected := make(map[string]string, len(preview.Skills))
 	for _, skill := range preview.Skills {
-		expected[skill.Name] = filepath.Join(m.Config.Paths.SkillsRoot, skill.Name)
+		expected[skill.Name] = filepath.Join(root.Path, skill.Name)
 	}
 	for _, target := range assessment.Targets {
 		path, ok := expected[target.DisplayName]
@@ -133,6 +137,10 @@ func (m *Manager) assessInstallPreview(preview model.InstallPreview, persist boo
 	}
 	classification, evidence := classifyAssessment(preview, inventory)
 	checks, gate, summary, enhanced, enhancedReason := m.assessmentChecks(preview, inventory, classification)
+	root, err := m.resolveRoot(preview.TargetRootID)
+	if err != nil {
+		return model.ProjectAssessment{}, err
+	}
 	targets := make([]model.InstallTargetPreview, 0, len(preview.Skills))
 	for _, skill := range preview.Skills {
 		if !validMutableSkillName(skill.Name) {
@@ -140,7 +148,7 @@ func (m *Manager) assessInstallPreview(preview model.InstallPreview, persist boo
 		}
 		targets = append(targets, model.InstallTargetPreview{
 			Kind: "codex-skill", DisplayName: skill.Name,
-			Path: filepath.Join(m.Config.Paths.SkillsRoot, skill.Name), Supported: true,
+			Path: filepath.Join(root.Path, skill.Name), Supported: true,
 			PermissionIDs: []string{model.AssistedInstallPermissionSkillsWrite}, Reversible: true,
 		})
 	}

@@ -1,12 +1,10 @@
 package codexreview
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,10 +150,11 @@ func reviewInBatches(
 		result.ContextFileCount += skill.FileCount
 	}
 
-	path, err := reviewPreflight(ctx, cfg.CLIPath)
+	runner, err := prepareCodexRunner(ctx, cfg)
 	if err != nil {
 		return failWithProgress(result, tracker, err)
 	}
+	path := runner.path
 	workDir := filepath.Join(workRoot, result.ID)
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return failWithProgress(result, tracker, err)
@@ -746,7 +745,6 @@ func runDirectBatchAttempt(
 	if err := os.MkdirAll(batchDir, 0o700); err != nil {
 		return generatedBatch{}, err
 	}
-	outputPath := filepath.Join(batchDir, "review-result.json")
 	contextFiles, err := packageReviewBatchContext(reviewRoot, batch)
 	if err != nil {
 		return generatedBatch{}, fmt.Errorf("package Codex review context: %w", err)
@@ -771,55 +769,20 @@ func runDirectBatchAttempt(
 			maxAssistedPromptBytes,
 		)
 	}
-	attemptTimeout := cfg.TimeoutSeconds
-	if attemptTimeout < 1 {
-		attemptTimeout = 300
-	}
-	attemptCtx, cancel := context.WithTimeout(ctx, time.Duration(attemptTimeout)*time.Second)
-	defer cancel()
-	command := exec.CommandContext(attemptCtx, path, installReviewArgs(cfg, schemaPath, outputPath)...)
-	processutil.ConfigureBackground(command)
-	command.Dir = batchDir
-	command.Env = sanitizedEnvironment()
-	command.Stdin = bytes.NewReader(payload)
-	stdout, err := command.StdoutPipe()
+	runner := codexRunner{path: path, cfg: cfg}
+	generated, err := runCodexJSON[generatedBatch](ctx, runner, codexRunOptions{
+		WorkDir:         batchDir,
+		OutputName:      "review-result.json",
+		SchemaPath:      schemaPath,
+		Payload:         payload,
+		OutputLimit:     defaultCodexOutputBytes,
+		Label:           "structured review",
+		TimeoutMessage:  fmt.Sprintf("Codex CLI 分组复核超过单次 %d 秒限制", runner.attemptTimeout()/time.Second),
+		FailureMessage:  "Codex CLI 复核失败",
+		ProgressMessage: "读取 Codex 进度事件",
+		OnActivity:      onActivity,
+	}, "structured review")
 	if err != nil {
-		return generatedBatch{}, err
-	}
-	diagnostic := newBoundedDiagnosticBuffer(64 << 10)
-	command.Stderr = &diagnostic
-	if err := command.Start(); err != nil {
-		return generatedBatch{}, err
-	}
-	_, streamErr := io.Copy(activityWriter{onActivity: onActivity}, stdout)
-	waitErr := command.Wait()
-	if waitErr != nil {
-		if errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
-			return generatedBatch{}, fmt.Errorf("Codex CLI 分组复核超过单次 %d 秒限制", attemptTimeout)
-		}
-		message := strings.TrimSpace(diagnostic.String())
-		if message == "" {
-			message = waitErr.Error()
-		}
-		if len(message) > 4000 {
-			message = "…（已省略较早的 CLI 诊断）\n" + message[len(message)-4000:]
-		}
-		return generatedBatch{}, fmt.Errorf("Codex CLI 复核失败：%s", message)
-	}
-	if streamErr != nil {
-		return generatedBatch{}, fmt.Errorf("读取 Codex 进度事件：%w", streamErr)
-	}
-	data, err := readBoundedOutput(outputPath, 1<<20)
-	if err != nil {
-		return generatedBatch{}, err
-	}
-	var generated generatedBatch
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&generated); err != nil {
-		return generatedBatch{}, fmt.Errorf("解析 Codex 结构化结果：%w", err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
 		return generatedBatch{}, err
 	}
 	if err := validateGeneratedBatch(batch.Skills, generated); err != nil {
@@ -981,63 +944,20 @@ func runGeneratedBatchCommand(
 			maxAssistedPromptBytes,
 		)
 	}
-	outputPath := filepath.Join(commandDir, "review-result.json")
-	attemptTimeout := cfg.TimeoutSeconds
-	if attemptTimeout < 1 {
-		attemptTimeout = 300
-	}
-	attemptCtx, cancel := context.WithTimeout(ctx, time.Duration(attemptTimeout)*time.Second)
-	defer cancel()
-	command := exec.CommandContext(attemptCtx, path, installReviewArgs(cfg, schemaPath, outputPath)...)
-	processutil.ConfigureBackground(command)
-	command.Dir = commandDir
-	command.Env = sanitizedEnvironment()
-	command.Stdin = bytes.NewReader(payload)
-	stdout, err := command.StdoutPipe()
+	runner := codexRunner{path: path, cfg: cfg}
+	generated, err := runCodexJSON[generatedBatch](ctx, runner, codexRunOptions{
+		WorkDir:         commandDir,
+		OutputName:      "review-result.json",
+		SchemaPath:      schemaPath,
+		Payload:         payload,
+		OutputLimit:     defaultCodexOutputBytes,
+		Label:           "structured review",
+		TimeoutMessage:  fmt.Sprintf("Codex CLI group review exceeded the %d second attempt limit", runner.attemptTimeout()/time.Second),
+		FailureMessage:  "Codex CLI review failed",
+		ProgressMessage: "read Codex review progress",
+		OnActivity:      onActivity,
+	}, "structured review")
 	if err != nil {
-		return generatedBatch{}, err
-	}
-	diagnostic := newBoundedDiagnosticBuffer(64 << 10)
-	command.Stderr = &diagnostic
-	if err := command.Start(); err != nil {
-		return generatedBatch{}, err
-	}
-	activity := onActivity
-	if activity == nil {
-		activity = func() {}
-	}
-	_, streamErr := io.Copy(activityWriter{onActivity: activity}, stdout)
-	waitErr := command.Wait()
-	if waitErr != nil {
-		if errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
-			return generatedBatch{}, fmt.Errorf(
-				"Codex CLI group review exceeded the %d second attempt limit",
-				attemptTimeout,
-			)
-		}
-		message := strings.TrimSpace(diagnostic.String())
-		if message == "" {
-			message = waitErr.Error()
-		}
-		if len(message) > 4000 {
-			message = message[len(message)-4000:]
-		}
-		return generatedBatch{}, fmt.Errorf("Codex CLI review failed: %s", message)
-	}
-	if streamErr != nil {
-		return generatedBatch{}, fmt.Errorf("read Codex review progress: %w", streamErr)
-	}
-	data, err := readBoundedOutput(outputPath, 1<<20)
-	if err != nil {
-		return generatedBatch{}, err
-	}
-	var generated generatedBatch
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&generated); err != nil {
-		return generatedBatch{}, fmt.Errorf("decode Codex structured review: %w", err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
 		return generatedBatch{}, err
 	}
 	if err := validateGeneratedBatch(batch.Skills, generated); err != nil {

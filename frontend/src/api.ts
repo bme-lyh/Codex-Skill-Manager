@@ -28,31 +28,32 @@ import {
   demoScanReport
 } from "./demo";
 import { demoLocaleFromLocation, localizeDemo } from "./demoLocale";
+import { normalizeRootContract } from "./roots";
 
 type Backend = {
   GetDashboard(): Promise<Dashboard>;
   BootstrapCurrentSkills(): Promise<void>;
-  PrepareAdoption(names: string[]): Promise<AdoptionPreview>;
-  ApplyAdoption(plan: string, names: string[]): Promise<Transaction>;
-  CreateGroup(name: string): Promise<Transaction>;
-  RenameGroup(id: string, name: string): Promise<Transaction>;
-  ReorderGroups(ids: string[]): Promise<Transaction>;
-  MoveSkillsToGroup(names: string[], groupId: string): Promise<Transaction>;
-  PrepareGitHub(url: string, ref: string): Promise<InstallPreview>;
-  PrepareLocal(path: string): Promise<InstallPreview>;
+  PrepareAdoption(names: string[], rootId: string): Promise<AdoptionPreview>;
+  ApplyAdoption(plan: string, names: string[], rootId: string): Promise<Transaction>;
+  CreateGroup(name: string, rootId: string): Promise<Transaction>;
+  RenameGroup(id: string, name: string, rootId: string): Promise<Transaction>;
+  ReorderGroups(ids: string[], rootId: string): Promise<Transaction>;
+  MoveSkillsToGroup(names: string[], groupId: string, rootId: string): Promise<Transaction>;
+  PrepareGitHub(url: string, ref: string, rootId: string): Promise<InstallPreview>;
+  PrepareLocal(path: string, rootId: string): Promise<InstallPreview>;
   AssessInstallSource?(sourcePlanId: string): Promise<ProjectAssessment>;
   GetProjectAssessment?(reference: string): Promise<ProjectAssessment>;
-  ApplyInstall(plan: string, skills: string[], acceptHighRisk: boolean): Promise<Transaction>;
-  AuditSkill(name: string): Promise<ScanReport>;
-  AuditSkills(names: string[]): Promise<ScanReport>;
+  ApplyInstall(plan: string, skills: string[], acceptHighRisk: boolean, rootId: string): Promise<Transaction>;
+  AuditSkill(name: string, rootId: string): Promise<ScanReport>;
+  AuditSkills(names: string[], rootId: string): Promise<ScanReport>;
   SetFindingIgnored(finding: Finding, ignored: boolean, reason: string): Promise<boolean>;
   SetRiskClusterIgnored(cluster: RiskCluster, ignored: boolean, reason: string, confirmDeterministic: boolean): Promise<boolean>;
   SetRiskClustersIgnored(clusters: RiskCluster[], ignored: boolean, reason: string): Promise<boolean>;
   CheckUpdates(): Promise<UpdateCheckResult>;
   CheckUpdatesSelected(groupIds: string[], force: boolean): Promise<UpdateCheckResult>;
-  PrepareUpdate(groupId: string): Promise<InstallPreview>;
-  QuarantineSkills(names: string[]): Promise<Transaction>;
-  RestoreSkill(name: string, transaction: string): Promise<Transaction>;
+  PrepareUpdate(groupId: string, rootId: string): Promise<InstallPreview>;
+  QuarantineSkills(names: string[], rootId: string): Promise<Transaction>;
+  RestoreSkill(name: string, transaction: string, rootId: string): Promise<Transaction>;
   Rollback(transaction: string): Promise<Transaction>;
   GetConfig(): Promise<any>;
   SaveConfig(config: any): Promise<void>;
@@ -68,13 +69,14 @@ type Backend = {
     planId: string,
     skills: string[],
     permissionIds: string[],
-    projectRoot: string
+    projectRoot: string,
+    rootId: string
   ): Promise<AssistedInstallResult>;
   GetAssistedInstallPlan?(planId: string): Promise<AssistedInstallPlan>;
   GetAssistedInstallProgress?(referenceId: string): Promise<AssistedInstallProgress>;
   CancelAssistedInstall?(referenceId: string): Promise<void>;
   GetDiagnostics(): Promise<Record<string, any>>;
-  ListQuarantine(): Promise<Array<{ skill: string; transactionId: string; path: string }>>;
+  ListQuarantine(rootId: string): Promise<Array<{ skill: string; rootId: string; transactionId: string; path: string }>>;
 };
 
 const browserDemoLocale = demoLocaleFromLocation();
@@ -89,6 +91,10 @@ function backend(): Backend | undefined {
 }
 
 function normalizeDashboard(value: Dashboard): Dashboard {
+  const rootContract = normalizeRootContract({
+    roots: (value as Dashboard & { roots?: import("./roots").RootPayload[] })?.roots,
+    defaultRootId: (value as Dashboard & { defaultRootId?: string })?.defaultRootId,
+  });
   return {
     ...demo,
     ...value,
@@ -98,7 +104,9 @@ function normalizeDashboard(value: Dashboard): Dashboard {
     relations: value?.relations ?? [],
     recentReports: value?.recentReports ?? [],
     recentHistory: value?.recentHistory ?? [],
-    updateStatuses: value?.updateStatuses ?? []
+    updateStatuses: value?.updateStatuses ?? [],
+    roots: rootContract.roots,
+    defaultRootId: rootContract.defaultRootId
   };
 }
 
@@ -307,45 +315,45 @@ export const api = {
     return b ? normalizeDashboard(await b.GetDashboard()) : normalizeDashboard(demo);
   },
   bootstrap: async () => backend()?.BootstrapCurrentSkills(),
-  prepareAdoption: async (names: string[]) => {
+  prepareAdoption: async (names: string[], rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.PrepareAdoption(names);
+    return b.PrepareAdoption(names, rootId);
   },
-  applyAdoption: async (plan: string, names: string[]) => {
+  applyAdoption: async (plan: string, names: string[], rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.ApplyAdoption(plan, names);
+    return b.ApplyAdoption(plan, names, rootId);
   },
-  createGroup: async (name: string) => {
+  createGroup: async (name: string, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.CreateGroup(name);
+    return b.CreateGroup(name, rootId);
   },
-  renameGroup: async (id: string, name: string) => {
+  renameGroup: async (id: string, name: string, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.RenameGroup(id, name);
+    return b.RenameGroup(id, name, rootId);
   },
-  reorderGroups: async (ids: string[]) => {
+  reorderGroups: async (ids: string[], rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.ReorderGroups(ids);
+    return b.ReorderGroups(ids, rootId);
   },
-  moveSkills: async (names: string[], groupId: string) => {
+  moveSkills: async (names: string[], groupId: string, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.MoveSkillsToGroup(names, groupId);
+    return b.MoveSkillsToGroup(names, groupId, rootId);
   },
-  prepareGitHub: async (url: string, ref = "") => {
+  prepareGitHub: async (url: string, ref = "", rootId = "codex-default") => {
     const b = backend();
     if (!b) return localizedDemo(demoInstallPreview);
-    return b.PrepareGitHub(url, ref);
+    return b.PrepareGitHub(url, ref, rootId);
   },
-  prepareLocal: async (path: string) => {
+  prepareLocal: async (path: string, rootId = "codex-default") => {
     const b = backend();
     if (!b) return localizedDemo(demoInstallPreview);
-    return b.PrepareLocal(path);
+    return b.PrepareLocal(path, rootId);
   },
   assessSource: async (sourcePlanId: string): Promise<ProjectAssessment> => {
     const b = backend();
@@ -363,20 +371,20 @@ export const api = {
     }
     return normalizeAssessment(await b.GetProjectAssessment(reference));
   },
-  apply: async (plan: string, skills: string[], accept: boolean) => {
+  apply: async (plan: string, skills: string[], accept: boolean, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.ApplyInstall(plan, skills, accept);
+    return b.ApplyInstall(plan, skills, accept, rootId);
   },
-  audit: async (name: string) => {
+  audit: async (name: string, rootId: string) => {
     const b = backend();
     if (!b) return localizedDemo(demoScanReport);
-    return normalizeScan(await b.AuditSkill(name));
+    return normalizeScan(await b.AuditSkill(name, rootId));
   },
-  auditSkills: async (names: string[]) => {
+  auditSkills: async (names: string[], rootId: string) => {
     const b = backend();
     if (!b) return localizedDemo(demoScanReport);
-    return normalizeScan(await b.AuditSkills(names));
+    return normalizeScan(await b.AuditSkills(names, rootId));
   },
   setFindingIgnored: async (finding: Finding, ignored: boolean, reason = "") => {
     const b = backend();
@@ -408,20 +416,20 @@ export const api = {
     }
     return b.CheckUpdatesSelected(groupIds, force);
   },
-  prepareUpdate: async (groupId: string) => {
+  prepareUpdate: async (groupId: string, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.PrepareUpdate(groupId);
+    return b.PrepareUpdate(groupId, rootId);
   },
-  quarantine: async (names: string[]) => {
+  quarantine: async (names: string[], rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.QuarantineSkills(names);
+    return b.QuarantineSkills(names, rootId);
   },
-  restore: async (name: string, tx: string) => {
+  restore: async (name: string, tx: string, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
-    return b.RestoreSkill(name, tx);
+    return b.RestoreSkill(name, tx, rootId);
   },
   rollback: async (tx: string) => {
     const b = backend();
@@ -430,7 +438,9 @@ export const api = {
   },
   config: async () => {
     const b = backend();
-    return b ? b.GetConfig() : { ...localizedDemo(demoConfig), locale: browserDemoLocale };
+    const value = (b ? await b.GetConfig() : { ...localizedDemo(demoConfig), locale: browserDemoLocale }) ?? {};
+    const roots = normalizeRootContract(value);
+    return { ...value, roots: roots.roots, defaultRootId: roots.defaultRootId };
   },
   saveConfig: async (cfg: any) => backend()?.SaveConfig(cfg),
   schedule: async (enabled: boolean, frequency: string, at: string) =>
@@ -483,7 +493,8 @@ export const api = {
     planId: string,
     skills: string[],
     permissionIds: string[],
-    projectRoot = ""
+    projectRoot = "",
+    rootId: string
   ): Promise<AssistedInstallResult> => {
     const b = backend();
     if (!b) return localizedDemo({
@@ -496,7 +507,7 @@ export const api = {
     if (typeof b.ApplyAssistedInstall !== "function") {
       throw apiError("当前桌面后端不支持执行计划安装，请升级应用或切换到标准安装", "This desktop backend cannot run planned installation. Update the app or use standard installation.");
     }
-    const result = await b.ApplyAssistedInstall(planId, skills, permissionIds, projectRoot);
+    const result = await b.ApplyAssistedInstall(planId, skills, permissionIds, projectRoot, rootId);
     return {
       ...result,
       plan: normalizeAssistedPlan(result.plan),
@@ -563,8 +574,8 @@ export const api = {
       configPath: "D:\\CodexSkillManager\\data\\config.yaml"
     };
   },
-  quarantineList: async () => {
+  quarantineList: async (rootId: string) => {
     const b = backend();
-    return b ? (await b.ListQuarantine()) ?? [] : localizedDemo(demoQuarantine);
+    return b ? (await b.ListQuarantine(rootId)) ?? [] : localizedDemo(demoQuarantine).map(item => ({ ...item, rootId }));
   }
 };

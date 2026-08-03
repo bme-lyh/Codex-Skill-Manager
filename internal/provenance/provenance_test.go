@@ -3,6 +3,7 @@ package provenance
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
@@ -35,5 +36,16 @@ func TestUnknownSkillGetsIndependentLocalGroup(t *testing.T) {
 	source := Detect(model.Skill{Name: "custom", Path: root})
 	if source.Provider != "local" || source.GroupID == "local:adopted" || source.GroupName != "本地 · custom" {
 		t.Fatalf("unexpected local fallback: %#v", source)
+	}
+}
+
+func TestDetectInRootQualifiesSourceIdentity(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("---\nname: custom\ndescription: fixture\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := DetectInRoot(model.RootIDAgents, model.Skill{Name: "custom", RootID: model.RootIDAgents, Path: root})
+	if source.RootID != model.RootIDAgents || source.GroupID == "" || !strings.HasPrefix(source.GroupID, model.RootIDAgents+":") {
+		t.Fatalf("source was not root-qualified: %#v", source)
 	}
 }

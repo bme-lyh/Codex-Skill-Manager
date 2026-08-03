@@ -1,7 +1,6 @@
 package codexreview
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,7 +16,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
-	"github.com/bme-lyh/Codex-Skill-Manager/internal/processutil"
 )
 
 const (
@@ -395,17 +392,14 @@ func runPackagedContextChunks(
 	summaries := make([]contextChunkSummary, len(chunks))
 	for index, chunk := range chunks {
 		var lastErr error
-		for attempt := 1; attempt <= maxAttempts; attempt++ {
+		summaries[index], lastErr = runCodexAttempts(maxAttempts, func(attempt int) (contextChunkSummary, error) {
 			if onProgress != nil {
 				onProgress(index+1, len(chunks), attempt)
 			}
-			summaries[index], lastErr = runPackagedContextChunkAttempt(
+			return runPackagedContextChunkAttempt(
 				ctx, path, cfg, workDir, schemaPath, chunk, attempt, onActivity,
 			)
-			if lastErr == nil {
-				break
-			}
-		}
+		})
 		if lastErr != nil {
 			return nil, fmt.Errorf(
 				"context chunk %d/%d failed after %d attempt(s): %w",
@@ -441,67 +435,20 @@ func runPackagedContextChunkAttempt(
 	if err := os.MkdirAll(chunkDir, 0o700); err != nil {
 		return contextChunkSummary{}, err
 	}
-	outputPath := filepath.Join(chunkDir, "context-summary.json")
-	timeout := cfg.TimeoutSeconds
-	if timeout < 1 {
-		timeout = 300
-	}
-	attemptCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-	command := exec.CommandContext(
-		attemptCtx,
-		path,
-		installReviewArgs(cfg, schemaPath, outputPath)...,
-	)
-	processutil.ConfigureBackground(command)
-	command.Dir = chunkDir
-	command.Env = sanitizedEnvironment()
-	command.Stdin = bytes.NewReader(chunk.Payload)
-	stdout, err := command.StdoutPipe()
+	runner := codexRunner{path: path, cfg: cfg}
+	generated, err := runCodexJSON[contextChunkSummary](ctx, runner, codexRunOptions{
+		WorkDir:         chunkDir,
+		OutputName:      "context-summary.json",
+		SchemaPath:      schemaPath,
+		Payload:         chunk.Payload,
+		OutputLimit:     maxContextChunkOutputBytes,
+		Label:           "context chunk",
+		TimeoutMessage:  fmt.Sprintf("Codex context chunk exceeded the %d second attempt limit", runner.attemptTimeout()/time.Second),
+		FailureMessage:  "Codex context chunk failed",
+		ProgressMessage: "read Codex context chunk progress",
+		OnActivity:      onActivity,
+	}, "context chunk result")
 	if err != nil {
-		return contextChunkSummary{}, err
-	}
-	diagnostic := newBoundedDiagnosticBuffer(64 << 10)
-	command.Stderr = &diagnostic
-	if err := command.Start(); err != nil {
-		return contextChunkSummary{}, err
-	}
-	activity := onActivity
-	if activity == nil {
-		activity = func() {}
-	}
-	_, streamErr := io.Copy(activityWriter{onActivity: activity}, stdout)
-	waitErr := command.Wait()
-	if waitErr != nil {
-		if errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
-			return contextChunkSummary{}, fmt.Errorf(
-				"Codex context chunk exceeded the %d second attempt limit",
-				timeout,
-			)
-		}
-		message := strings.TrimSpace(diagnostic.String())
-		if message == "" {
-			message = waitErr.Error()
-		}
-		if len(message) > 4000 {
-			message = message[len(message)-4000:]
-		}
-		return contextChunkSummary{}, fmt.Errorf("Codex context chunk failed: %s", message)
-	}
-	if streamErr != nil {
-		return contextChunkSummary{}, fmt.Errorf("read Codex context chunk progress: %w", streamErr)
-	}
-	data, err := readBoundedOutput(outputPath, maxContextChunkOutputBytes)
-	if err != nil {
-		return contextChunkSummary{}, err
-	}
-	var generated contextChunkSummary
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&generated); err != nil {
-		return contextChunkSummary{}, fmt.Errorf("decode Codex context chunk result: %w", err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
 		return contextChunkSummary{}, err
 	}
 	return validateContextChunkSummary(chunk, generated)

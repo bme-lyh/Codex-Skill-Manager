@@ -672,7 +672,7 @@ func finalizedAssistedManagerPlan(
 	now := time.Now().UTC()
 	plan := model.AssistedInstallPlan{
 		ID:           "assisted-plan-" + now.Format("20060102T150405.000000000"),
-		SourcePlanID: preview.ID, Status: "analyzing", Repository: preview.Repository,
+		SourcePlanID: preview.ID, TargetRootID: preview.TargetRootID, Status: "analyzing", Repository: preview.Repository,
 		Summary: "Test repository", Approach: "Install the selected Skills.",
 		Complexity: "simple", Steps: steps,
 		Skills: preview.Skills, Scan: preview.Scan,

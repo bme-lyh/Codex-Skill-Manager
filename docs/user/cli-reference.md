@@ -16,7 +16,7 @@ csm [--config 绝对路径] [--json] 命令
 ```powershell
 csm discover
 csm dashboard
-csm audit [--skill NAME]
+csm audit [--root codex-default|agents] [--skill NAME]
 csm check [--group GROUP_ID ...] [--force]
 csm history
 csm reports
@@ -24,7 +24,8 @@ csm doctor
 csm version
 ```
 
-不指定 `--skill` 时，`audit` 会检查全部非系统 Skills，并按应用中的分组记录结果；指定后只检查该 Skill。
+`--root` 默认是 `codex-default`；新脚本应明确传入。`audit` 不指定 `--skill` 时会检查
+该目录下全部非系统 Skills，并按应用中的分组记录结果；指定后只检查该 Skill。
 
 `check` 返回每个来源的结构化状态、上次检查时间、远端 Commit 和待更新 Skills。
 可重复使用 `--group ID` 只检查指定来源，使用 `--force` 绕过五分钟短期缓存。
@@ -47,8 +48,8 @@ csm codex review --report SCAN_ID [--skill NAME ...]
 CLI 更新使用两阶段计划：
 
 ```powershell
-csm update --group "github:owner/repository"
-csm install --plan-id PLAN --skill skill-a --apply
+csm update --root agents --group "github:owner/repository"
+csm install --root agents --plan-id PLAN --skill skill-a --apply
 ```
 
 第一步解析远端不可变 Commit，并且只扫描该来源中已安装的 Skills；第二步显式选择
@@ -58,8 +59,8 @@ csm install --plan-id PLAN --skill skill-a --apply
 
 ```powershell
 csm bootstrap
-csm manage --skill existing-a --skill existing-b
-csm manage --plan-id MANAGE_PLAN --skill existing-a --apply
+csm manage --root agents --skill existing-a --skill existing-b
+csm manage --root agents --plan-id MANAGE_PLAN --skill existing-a --apply
 ```
 
 `manage` 第一条命令只生成来源识别和安全分析计划；第二条命令显式应用计划。
@@ -68,7 +69,7 @@ csm manage --plan-id MANAGE_PLAN --skill existing-a --apply
 ## 管理分组
 
 ```powershell
-csm group create --name "常用工具"
+csm group create --root agents --name "常用工具"
 csm group rename --id GROUP_ID --name "开发工具"
 csm group reorder --id GROUP_A --id GROUP_B
 csm group move --group GROUP_ID --skill skill-a --skill skill-b
@@ -79,7 +80,7 @@ csm group move --group GROUP_ID --skill skill-a --skill skill-b
 ## GitHub 安装计划
 
 ```powershell
-csm install --url "https://github.com/owner/repo"
+csm install --root agents --url "https://github.com/owner/repo"
 csm install --url "https://github.com/owner/repo/tree/main/skills/example"
 csm install --url "https://github.com/owner/repo" --ref v1.2.0
 ```

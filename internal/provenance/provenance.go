@@ -39,6 +39,30 @@ var (
 )
 
 func Detect(skill model.Skill) model.DetectedSource {
+	return detectInRoot("", skill)
+}
+
+func DetectInRoot(rootID string, skill model.Skill) model.DetectedSource {
+	return detectInRoot(strings.TrimSpace(rootID), skill)
+}
+
+func DetectRoot(rootID string, skill model.Skill) model.DetectedSource {
+	return DetectInRoot(rootID, skill)
+}
+
+func DetectRoots(skills []model.Skill) []model.DetectedSource {
+	out := make([]model.DetectedSource, 0, len(skills))
+	for _, skill := range skills {
+		out = append(out, DetectInRoot(skill.RootID, skill))
+	}
+	return out
+}
+
+func detectInRoot(rootID string, skill model.Skill) model.DetectedSource {
+	return qualifyRoot(rootID, detectRaw(skill))
+}
+
+func detectRaw(skill model.Skill) model.DetectedSource {
 	if known, ok := knownSources[skill.Name]; ok {
 		return githubSource(skill.Name, known.repository, "main", known.sourcePath, 1,
 			"匹配内置可信来源目录")
@@ -109,4 +133,15 @@ func githubSource(skillName, repository, ref, sourcePath string, confidence floa
 		GroupID: "github:" + strings.ToLower(repository), GroupName: repository,
 		Confidence: confidence, Evidence: evidence,
 	}
+}
+
+func qualifyRoot(rootID string, source model.DetectedSource) model.DetectedSource {
+	if rootID == "" {
+		return source
+	}
+	source.RootID = rootID
+	if source.GroupID != "" && !strings.HasPrefix(source.GroupID, rootID+":") {
+		source.GroupID = rootID + ":" + source.GroupID
+	}
+	return source
 }

@@ -43,6 +43,61 @@ type Manager struct {
 	cancels    map[string]context.CancelFunc
 }
 
+func (m *Manager) configuredRoots() []model.SkillRoot {
+	roots := config.Roots(m.Config)
+	if len(roots) == 0 && m.Config.Paths.SkillsRoot != "" {
+		return []model.SkillRoot{{ID: model.RootIDCodexDefault, Name: "Codex Skills", Kind: "codex", Path: m.Config.Paths.SkillsRoot, Enabled: true, SystemDir: ".system"}}
+	}
+	return roots
+}
+
+func (m *Manager) resolveRoot(rootID string) (model.SkillRoot, error) {
+	rootID = strings.TrimSpace(rootID)
+	if rootID == "" {
+		rootID = m.Config.DefaultRootID
+		if rootID == "" {
+			rootID = model.DefaultRootID
+		}
+	}
+	for _, root := range m.configuredRoots() {
+		if root.ID == rootID {
+			if !root.Enabled {
+				return model.SkillRoot{}, fmt.Errorf("skill root is disabled: %s", rootID)
+			}
+			return root, nil
+		}
+	}
+	return model.SkillRoot{}, fmt.Errorf("unknown skill root: %s", rootID)
+}
+
+func (m *Manager) resolveWritableRoot(rootID string) (model.SkillRoot, error) {
+	root, err := m.resolveRoot(rootID)
+	if err != nil {
+		return model.SkillRoot{}, err
+	}
+	if root.ReadOnly {
+		return model.SkillRoot{}, fmt.Errorf("skill root is read-only: %s", root.ID)
+	}
+	return root, nil
+}
+
+func (m *Manager) resolveRootID(rootID string) (string, error) {
+	root, err := m.resolveRoot(rootID)
+	if err != nil {
+		return "", err
+	}
+	return root.ID, nil
+}
+
+func (m *Manager) targetWithinRoots(target string) bool {
+	for _, root := range m.configuredRoots() {
+		if ensureWithinOrEqual(root.Path, target) == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func Open(configPath string) (*Manager, error) {
 	if configPath == "" {
 		configPath = strings.TrimSpace(os.Getenv("CSM_CONFIG"))
@@ -82,7 +137,7 @@ func Open(configPath string) (*Manager, error) {
 	if configPath == "" {
 		configPath = filepath.Join(cfg.Paths.DataRoot, "config.yaml")
 	}
-	store, err := state.Open(cfg.Paths.DataRoot)
+	store, err := state.OpenWithRoots(cfg.Paths.DataRoot, config.Roots(cfg))
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +255,7 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 	if err != nil {
 		return model.Dashboard{}, err
 	}
-	skills, sourceGroups, relations, err := inventory.Discover(m.Config.Paths.SkillsRoot, lock)
+	skills, sourceGroups, relations, err := inventory.DiscoverRoots(m.configuredRoots(), lock)
 	if err != nil {
 		return model.Dashboard{}, err
 	}
@@ -263,10 +318,11 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 	validSourceGroups := map[string]bool{}
 	for _, group := range sourceGroups {
 		validSourceGroups[group.ID] = true
+		validSourceGroups[group.RootID+"\x00"+group.ID] = true
 	}
 	filteredUpdateStatuses := updateStatuses[:0]
 	for _, status := range updateStatuses {
-		if validSourceGroups[status.GroupID] {
+		if validSourceGroups[status.GroupID] || validSourceGroups[status.RootID+"\x00"+status.GroupID] {
 			filteredUpdateStatuses = append(filteredUpdateStatuses, status)
 		}
 	}
@@ -284,10 +340,12 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 	d := model.Dashboard{
 		Skills: skills, Groups: groups, SourceGroups: sourceGroups, Relations: relations,
 		RecentReports: scans, RecentHistory: history, UpdateStatuses: updateStatuses,
+		Roots: append([]model.SkillRoot(nil), m.configuredRoots()...), DefaultRootID: m.Config.DefaultRootID,
 	}
 	statusByGroup := map[string]model.UpdateStatus{}
 	for _, status := range updateStatuses {
 		statusByGroup[status.GroupID] = status
+		statusByGroup[status.RootID+"\x00"+status.GroupID] = status
 		if d.LastUpdateCheck == nil || status.CheckedAt.After(*d.LastUpdateCheck) {
 			checkedAt := status.CheckedAt
 			d.LastUpdateCheck = &checkedAt
@@ -300,6 +358,9 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 	for i := range d.Skills {
 		status, ok := statusByGroup[d.Skills[i].SourceGroupID]
 		if !ok {
+			status, ok = statusByGroup[d.Skills[i].RootID+"\x00"+d.Skills[i].SourceGroupID]
+		}
+		if !ok {
 			continue
 		}
 		d.Skills[i].LastChecked = &status.CheckedAt
@@ -308,7 +369,7 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 			d.Skills[i].UpdateStatus = "up-to-date"
 		}
 		for _, name := range status.OutdatedSkills {
-			if name == d.Skills[i].Name {
+			if name == d.Skills[i].Name || name == d.Skills[i].Identity {
 				d.Skills[i].UpdateStatus = "update-available"
 				break
 			}
@@ -326,7 +387,8 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 	}
 	activeRisks := map[string]bool{}
 	reportsByID := map[string]model.ScanReport{}
-	for skillName, state := range securityStates {
+	for _, state := range securityStates {
+		skillIdentity := model.QualifiedSkillIdentity(state.RootID, state.SkillName)
 		report, ok := reportsByID[state.ReportID]
 		if !ok {
 			report, err = m.store.Scan(state.ReportID)
@@ -337,16 +399,19 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 			reportsByID[state.ReportID] = report
 		}
 		for _, cluster := range report.Clusters {
-			if cluster.SkillName != "" && !strings.EqualFold(cluster.SkillName, skillName) {
+			if report.RootID != "" && state.RootID != "" && report.RootID != state.RootID {
+				continue
+			}
+			if cluster.SkillName != "" && !strings.EqualFold(cluster.SkillName, state.SkillName) {
 				continue
 			}
 			if !cluster.Ignored && (cluster.Severity == model.RiskHigh || cluster.Severity == model.RiskCritical) {
-				activeRisks[skillName+"\x00"+cluster.ID] = true
+				activeRisks[skillIdentity+"\x00"+cluster.ID] = true
 			}
 		}
 	}
 	for _, report := range latestScans {
-		if ensureWithinOrEqual(m.Config.Paths.SkillsRoot, report.Target) != nil {
+		if !m.targetWithinRoots(report.Target) {
 			continue
 		}
 		if len(report.Skills) > 0 {
@@ -381,10 +446,12 @@ func mergeTransactionHistory(recent, required []model.Transaction) []model.Trans
 func applyGroupLayout(skills []model.Skill, sourceGroups []model.Group, layout model.GroupLayoutState) ([]model.Skill, []model.Group) {
 	preferences := map[string]model.GroupPreference{}
 	for _, preference := range layout.Groups {
-		preferences[preference.ID] = preference
+		preferences[layoutKey(preference.RootID, preference.ID)] = preference
+		preferences[preference.ID] = preference // v1 compatibility
 	}
 	assignments := map[string]model.SkillGroupAssignment{}
 	for _, assignment := range layout.Assignments {
+		assignments[layoutKey(assignment.RootID, assignment.SkillName)] = assignment
 		assignments[assignment.SkillName] = assignment
 	}
 	groups := map[string]*model.Group{}
@@ -392,7 +459,12 @@ func applyGroupLayout(skills []model.Skill, sourceGroups []model.Group, layout m
 	for _, source := range sourceGroups {
 		group := source
 		group.SkillNames = nil
-		if preference, ok := preferences[group.ID]; ok {
+		if preference, ok := preferences[layoutKey(group.RootID, group.ID)]; ok {
+			if strings.TrimSpace(preference.Name) != "" {
+				group.Name = preference.Name
+			}
+			group.Position = preference.Position
+		} else if preference, ok := preferences[group.ID]; ok {
 			if strings.TrimSpace(preference.Name) != "" {
 				group.Name = preference.Name
 			}
@@ -401,20 +473,23 @@ func applyGroupLayout(skills []model.Skill, sourceGroups []model.Group, layout m
 			group.Position = defaultPosition
 		}
 		defaultPosition++
-		groups[group.ID] = &group
+		groups[layoutKey(group.RootID, group.ID)] = &group
 	}
 	for _, preference := range layout.Groups {
 		if !preference.Manual {
 			continue
 		}
-		if _, exists := groups[preference.ID]; exists {
+		if preference.RootID == "" {
+			preference.RootID = model.RootIDCodexDefault
+		}
+		if _, exists := groups[layoutKey(preference.RootID, preference.ID)]; exists {
 			continue
 		}
 		group := model.Group{
-			ID: preference.ID, Name: preference.Name, Provider: "manual",
+			ID: preference.ID, RootID: preference.RootID, Name: preference.Name, Provider: "manual",
 			Manual: true, Position: preference.Position, Status: "healthy",
 		}
-		groups[group.ID] = &group
+		groups[layoutKey(group.RootID, group.ID)] = &group
 	}
 	for i := range skills {
 		skill := &skills[i]
@@ -422,12 +497,19 @@ func applyGroupLayout(skills []model.Skill, sourceGroups []model.Group, layout m
 			skill.SourceGroupID, skill.SourceGroupName = skill.GroupID, skill.GroupName
 		}
 		targetID := skill.SourceGroupID
-		if assignment, ok := assignments[skill.Name]; ok && !skill.System {
-			if _, exists := groups[assignment.GroupID]; exists {
+		assignment, assigned := assignments[layoutKey(skill.RootID, skill.Name)]
+		if !assigned {
+			assignment, assigned = assignments[skill.Name]
+		}
+		if assigned && !skill.System {
+			if _, exists := groups[layoutKey(skill.RootID, assignment.GroupID)]; exists {
 				targetID = assignment.GroupID
 			}
 		}
-		group, exists := groups[targetID]
+		group, exists := groups[layoutKey(skill.RootID, targetID)]
+		if !exists {
+			group, exists = groups[targetID]
+		}
 		if !exists {
 			continue
 		}
@@ -454,9 +536,21 @@ func applyGroupLayout(skills []model.Skill, sourceGroups []model.Group, layout m
 	return skills, out
 }
 
-func (m *Manager) CreateGroup(name string) (model.Transaction, error) {
+func layoutKey(rootID, value string) string {
+	return rootID + "\x00" + value
+}
+
+func (m *Manager) CreateGroup(name string, targetRootID ...string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return model.Transaction{}, errors.New("group name is required")
@@ -466,7 +560,7 @@ func (m *Manager) CreateGroup(name string) (model.Transaction, error) {
 		return model.Transaction{}, err
 	}
 	for _, group := range dashboard.Groups {
-		if strings.EqualFold(group.Name, name) {
+		if group.RootID == root.ID && strings.EqualFold(group.Name, name) {
 			return model.Transaction{}, fmt.Errorf("group name already exists: %s", name)
 		}
 	}
@@ -475,13 +569,21 @@ func (m *Manager) CreateGroup(name string) (model.Transaction, error) {
 		return model.Transaction{}, err
 	}
 	id := "group-" + time.Now().UTC().Format("20060102T150405.000000000")
-	layout.Groups = append(layout.Groups, model.GroupPreference{ID: id, Name: name, Position: len(dashboard.Groups), Manual: true})
-	return m.applyGroupLayoutChange("group-create", []string{id}, layout)
+	layout.Groups = append(layout.Groups, model.GroupPreference{ID: id, RootID: root.ID, Name: name, Position: len(dashboard.Groups), Manual: true})
+	return m.applyGroupLayoutChange("group-create", root.ID, []string{id}, layout)
 }
 
-func (m *Manager) RenameGroup(id, name string) (model.Transaction, error) {
+func (m *Manager) RenameGroup(id, name string, targetRootID ...string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
 	id, name = strings.TrimSpace(id), strings.TrimSpace(name)
 	if id == "" || name == "" {
 		return model.Transaction{}, errors.New("explicit group ID and name are required")
@@ -493,6 +595,9 @@ func (m *Manager) RenameGroup(id, name string) (model.Transaction, error) {
 	var target *model.Group
 	for i := range dashboard.Groups {
 		group := &dashboard.Groups[i]
+		if group.RootID != root.ID {
+			continue
+		}
 		if strings.EqualFold(group.Name, name) && group.ID != id {
 			return model.Transaction{}, fmt.Errorf("group name already exists: %s", name)
 		}
@@ -512,7 +617,12 @@ func (m *Manager) RenameGroup(id, name string) (model.Transaction, error) {
 	}
 	found := false
 	for i := range layout.Groups {
-		if layout.Groups[i].ID == id {
+		preferenceRoot := layout.Groups[i].RootID
+		if preferenceRoot == "" {
+			preferenceRoot = model.RootIDCodexDefault
+		}
+		if layout.Groups[i].ID == id && preferenceRoot == root.ID {
+			layout.Groups[i].RootID = root.ID
 			layout.Groups[i].Name = name
 			found = true
 			break
@@ -520,22 +630,30 @@ func (m *Manager) RenameGroup(id, name string) (model.Transaction, error) {
 	}
 	if !found {
 		layout.Groups = append(layout.Groups, model.GroupPreference{
-			ID: id, Name: name, Position: target.Position, Manual: target.Manual,
+			ID: id, RootID: root.ID, Name: name, Position: target.Position, Manual: target.Manual,
 		})
 	}
-	return m.applyGroupLayoutChange("group-rename", []string{id}, layout)
+	return m.applyGroupLayoutChange("group-rename", root.ID, []string{id}, layout)
 }
 
-func (m *Manager) ReorderGroups(ids []string) (model.Transaction, error) {
+func (m *Manager) ReorderGroups(ids []string, targetRootID ...string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
 	dashboard, err := m.Dashboard()
 	if err != nil {
 		return model.Transaction{}, err
 	}
 	expected := map[string]model.Group{}
 	for _, group := range dashboard.Groups {
-		if !group.ReadOnly {
+		if group.RootID == root.ID && !group.ReadOnly {
 			expected[group.ID] = group
 		}
 	}
@@ -554,29 +672,47 @@ func (m *Manager) ReorderGroups(ids []string) (model.Transaction, error) {
 		return model.Transaction{}, err
 	}
 	byID := map[string]model.GroupPreference{}
+	untouched := make([]model.GroupPreference, 0, len(layout.Groups))
 	for _, preference := range layout.Groups {
-		byID[preference.ID] = preference
+		preferenceRoot := preference.RootID
+		if preferenceRoot == "" {
+			preferenceRoot = model.RootIDCodexDefault
+		}
+		if preferenceRoot == root.ID {
+			preference.RootID = root.ID
+			byID[preference.ID] = preference
+		} else {
+			untouched = append(untouched, preference)
+		}
 	}
 	for position, id := range ids {
 		preference, exists := byID[id]
 		if !exists {
 			group := expected[id]
-			preference = model.GroupPreference{ID: id, Name: group.Name, Manual: group.Manual}
+			preference = model.GroupPreference{ID: id, RootID: root.ID, Name: group.Name, Manual: group.Manual}
 		}
 		preference.Position = position + 1
 		byID[id] = preference
 	}
-	layout.Groups = layout.Groups[:0]
+	layout.Groups = append(layout.Groups[:0], untouched...)
 	for _, preference := range byID {
 		layout.Groups = append(layout.Groups, preference)
 	}
 	sort.Slice(layout.Groups, func(i, j int) bool { return layout.Groups[i].Position < layout.Groups[j].Position })
-	return m.applyGroupLayoutChange("group-reorder", append([]string(nil), ids...), layout)
+	return m.applyGroupLayoutChange("group-reorder", root.ID, append([]string(nil), ids...), layout)
 }
 
-func (m *Manager) MoveSkillsToGroup(names []string, groupID string) (model.Transaction, error) {
+func (m *Manager) MoveSkillsToGroup(names []string, groupID string, targetRootID ...string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
 	groupID = strings.TrimSpace(groupID)
 	if len(names) == 0 || groupID == "" {
 		return model.Transaction{}, errors.New("explicit skills and target group are required")
@@ -587,7 +723,7 @@ func (m *Manager) MoveSkillsToGroup(names []string, groupID string) (model.Trans
 	}
 	validGroup := false
 	for _, group := range dashboard.Groups {
-		if group.ID == groupID {
+		if group.RootID == root.ID && group.ID == groupID {
 			if group.ReadOnly {
 				return model.Transaction{}, errors.New("skills cannot be moved into a system group")
 			}
@@ -599,7 +735,9 @@ func (m *Manager) MoveSkillsToGroup(names []string, groupID string) (model.Trans
 	}
 	skills := map[string]model.Skill{}
 	for _, skill := range dashboard.Skills {
-		skills[skill.Name] = skill
+		if skill.RootID == root.ID {
+			skills[skill.Name] = skill
+		}
 	}
 	unique := make([]string, 0, len(names))
 	seen := map[string]bool{}
@@ -626,23 +764,27 @@ func (m *Manager) MoveSkillsToGroup(names []string, groupID string) (model.Trans
 	}
 	filtered := layout.Assignments[:0]
 	for _, assignment := range layout.Assignments {
-		if !seen[assignment.SkillName] {
+		assignmentRoot := assignment.RootID
+		if assignmentRoot == "" {
+			assignmentRoot = model.RootIDCodexDefault
+		}
+		if assignmentRoot != root.ID || !seen[assignment.SkillName] {
 			filtered = append(filtered, assignment)
 		}
 	}
 	layout.Assignments = filtered
 	for position, name := range unique {
 		layout.Assignments = append(layout.Assignments, model.SkillGroupAssignment{
-			SkillName: name, GroupID: groupID, Position: position,
+			SkillName: name, RootID: root.ID, GroupID: groupID, Position: position,
 		})
 	}
-	return m.applyGroupLayoutChange("group-move", unique, layout)
+	return m.applyGroupLayoutChange("group-move", root.ID, unique, layout)
 }
 
-func (m *Manager) applyGroupLayoutChange(kind string, targets []string, layout model.GroupLayoutState) (model.Transaction, error) {
+func (m *Manager) applyGroupLayoutChange(kind, rootID string, targets []string, layout model.GroupLayoutState) (model.Transaction, error) {
 	tx := model.Transaction{
-		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
-		Type: kind, Status: "running", Targets: targets, StartedAt: time.Now().UTC(),
+		ID:     "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
+		RootID: rootID, Type: kind, Status: "running", Targets: targets, StartedAt: time.Now().UTC(),
 	}
 	if err := m.store.SaveTransaction(tx); err != nil {
 		return model.Transaction{}, fmt.Errorf("start group layout transaction: %w", err)
@@ -664,18 +806,27 @@ func (m *Manager) applyGroupLayoutChange(kind string, targets []string, layout m
 	return tx, nil
 }
 
-func (m *Manager) Audit(target string) (model.ScanReport, error) {
-	if target == "" {
-		target = m.Config.Paths.SkillsRoot
+func (m *Manager) Audit(target string, requestedRootID ...string) (model.ScanReport, error) {
+	rootID := ""
+	if len(requestedRootID) > 0 {
+		rootID = requestedRootID[0]
 	}
-	if err := ensureWithinOrEqual(m.Config.Paths.SkillsRoot, target); err != nil {
+	root, err := m.resolveRoot(rootID)
+	if err != nil {
+		return model.ScanReport{}, err
+	}
+	if target == "" {
+		target = root.Path
+	}
+	if err := ensureWithinOrEqual(root.Path, target); err != nil {
 		return model.ScanReport{}, err
 	}
 	scan := scanner.Scan
-	if strings.EqualFold(filepath.Clean(target), filepath.Clean(m.Config.Paths.SkillsRoot)) {
+	if strings.EqualFold(filepath.Clean(target), filepath.Clean(root.Path)) {
 		scan = scanner.ScanSkillsRoot
 	}
 	report, err := scan(target, m.Config.MaxFiles, m.Config.MaxFileBytes)
+	report.RootID = root.ID
 	if err != nil {
 		report.Status = "failed"
 	}
@@ -690,16 +841,20 @@ func (m *Manager) Audit(target string) (model.ScanReport, error) {
 	return report, err
 }
 
-func (m *Manager) AuditSkills(names []string) (model.ScanReport, error) {
+func (m *Manager) AuditSkills(names []string, requestedRootID ...string) (model.ScanReport, error) {
 	names = uniqueNonEmpty(names)
 	if len(names) == 0 {
 		return model.ScanReport{}, errors.New("at least one explicit Skill is required")
+	}
+	rootID := ""
+	if len(requestedRootID) > 0 {
+		rootID = strings.TrimSpace(requestedRootID[0])
 	}
 	lock, err := m.store.LoadLock()
 	if err != nil {
 		return model.ScanReport{}, err
 	}
-	skills, sourceGroups, _, err := inventory.Discover(m.Config.Paths.SkillsRoot, lock)
+	skills, sourceGroups, _, err := inventory.DiscoverRoots(m.configuredRoots(), lock)
 	if err != nil {
 		return model.ScanReport{}, err
 	}
@@ -708,19 +863,34 @@ func (m *Manager) AuditSkills(names []string) (model.ScanReport, error) {
 		return model.ScanReport{}, err
 	}
 	skills, _ = applyGroupLayout(skills, sourceGroups, layout)
-	byName := make(map[string]model.Skill, len(skills))
+	byName := make(map[string][]model.Skill, len(skills))
 	for _, skill := range skills {
-		if !skill.System {
-			byName[skill.Name] = skill
+		if !skill.System && (rootID == "" || skill.RootID == rootID) {
+			byName[skill.Name] = append(byName[skill.Name], skill)
 		}
 	}
 	selected := make([]model.Skill, 0, len(names))
 	for _, name := range names {
-		skill, ok := byName[name]
-		if !ok {
+		matches := byName[name]
+		if len(matches) == 0 {
 			return model.ScanReport{}, fmt.Errorf("Skill not found or not selectable: %s", name)
 		}
-		selected = append(selected, skill)
+		if len(matches) > 1 {
+			return model.ScanReport{}, fmt.Errorf("Skill %q exists in multiple roots; specify rootId", name)
+		}
+		selected = append(selected, matches[0])
+	}
+	if rootID == "" {
+		rootID = selected[0].RootID
+	}
+	for _, skill := range selected {
+		if skill.RootID != rootID {
+			return model.ScanReport{}, errors.New("selected Skills span multiple roots; scan one root at a time")
+		}
+	}
+	root, err := m.resolveRoot(rootID)
+	if err != nil {
+		return model.ScanReport{}, err
 	}
 	sort.Slice(selected, func(i, j int) bool {
 		if selected[i].GroupName == selected[j].GroupName {
@@ -731,7 +901,7 @@ func (m *Manager) AuditSkills(names []string) (model.ScanReport, error) {
 
 	now := time.Now().UTC()
 	report := model.ScanReport{
-		ID: "scan-" + now.Format("20060102T150405.000000000"), Target: m.Config.Paths.SkillsRoot,
+		ID: "scan-" + now.Format("20060102T150405.000000000"), RootID: root.ID, Target: root.Path,
 		StartedAt: now, HighestSeverity: model.RiskInfo, ActiveHighestSeverity: model.RiskInfo,
 		Findings: []model.Finding{}, Skills: []model.ScanSkillSummary{},
 		Status: "passed", ScannerVersion: scanner.Version,
@@ -746,19 +916,20 @@ func (m *Manager) AuditSkills(names []string) (model.ScanReport, error) {
 			m.recordScan(report)
 			return report, fmt.Errorf("scan %s: %w", skill.Name, scanErr)
 		}
-		relative, relErr := filepath.Rel(m.Config.Paths.SkillsRoot, skill.Path)
+		relative, relErr := filepath.Rel(root.Path, skill.Path)
 		if relErr != nil || relative == "." || strings.HasPrefix(relative, "..") || filepath.IsAbs(relative) {
 			return model.ScanReport{}, fmt.Errorf("invalid Skill path: %s", skill.Path)
 		}
 		sourcePath := filepath.ToSlash(relative)
 		for _, finding := range part.Findings {
 			finding.File = filepath.ToSlash(filepath.Join(sourcePath, filepath.FromSlash(finding.File)))
-			finding.SkillName, finding.GroupID, finding.GroupName = skill.Name, skill.GroupID, skill.GroupName
+			finding.SkillName, finding.RootID = skill.Name, skill.RootID
+			finding.GroupID, finding.GroupName = skill.GroupID, skill.GroupName
 			report.Findings = append(report.Findings, finding)
 		}
 		report.FilesScanned += part.FilesScanned
 		report.Skills = append(report.Skills, model.ScanSkillSummary{
-			SkillName: skill.Name, SourcePath: sourcePath, GroupID: skill.GroupID,
+			SkillName: skill.Name, RootID: skill.RootID, SourcePath: sourcePath, GroupID: skill.GroupID,
 			GroupName: skill.GroupName, FilesScanned: part.FilesScanned,
 			HighestSeverity: highestFindingSeverity(part.Findings, false),
 		})
@@ -780,7 +951,7 @@ func (m *Manager) AuditSkills(names []string) (model.ScanReport, error) {
 	states := make([]model.SkillSecurityState, 0, len(selected))
 	for _, skill := range selected {
 		states = append(states, model.SkillSecurityState{
-			SkillName: skill.Name, ContentHash: skillContentHash(skill.Files),
+			SkillName: skill.Name, RootID: skill.RootID, ContentHash: skillContentHash(skill.Files),
 			ReportID: report.ID, CheckedAt: report.CompletedAt,
 		})
 	}
@@ -955,15 +1126,27 @@ func (m *Manager) persistedRiskCluster(requested model.RiskCluster) (model.RiskC
 	return model.RiskCluster{}, errors.New("risk cluster was not found in persisted scan evidence")
 }
 
-func (m *Manager) PrepareGitHub(ctx context.Context, rawURL, ref string) (model.InstallPreview, error) {
-	return m.prepareGitHub(ctx, rawURL, ref, nil)
+func (m *Manager) PrepareGitHub(ctx context.Context, rawURL, ref string, targetRootID ...string) (model.InstallPreview, error) {
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	return m.prepareGitHub(ctx, rawURL, ref, nil, rootID)
+}
+
+func (m *Manager) PrepareGitHubForRoot(ctx context.Context, rawURL, ref, targetRootID string) (model.InstallPreview, error) {
+	return m.PrepareGitHub(ctx, rawURL, ref, targetRootID)
 }
 
 // prepareGitHub resolves and downloads an immutable repository snapshot, then
 // scans only the Skill directories that can be selected by the resulting plan.
 // Repository-level files are not installation targets and must not affect the
 // plan's risk decision.
-func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selected map[string]bool) (model.InstallPreview, error) {
+func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selected map[string]bool, targetRootID string) (model.InstallPreview, error) {
+	targetRoot, err := m.resolveWritableRoot(targetRootID)
+	if err != nil {
+		return model.InstallPreview{}, err
+	}
 	repo, err := m.github.Resolve(ctx, rawURL, ref)
 	if err != nil {
 		return model.InstallPreview{}, err
@@ -973,11 +1156,11 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 	}
 	id := "plan-" + time.Now().UTC().Format("20060102T150405.000000000")
 	stage := filepath.Join(m.Config.Paths.StagingRoot, id)
-	root, err := m.github.Download(ctx, repo, stage, m.Config.MaxFileBytes)
+	sourceRoot, err := m.github.Download(ctx, repo, stage, m.Config.MaxFileBytes)
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
-	candidates, err := githubsource.Discover(root, repo.SourcePath)
+	candidates, err := githubsource.Discover(sourceRoot, repo.SourcePath)
 	if err != nil {
 		var conflict *githubsource.SkillNameConflictError
 		if errors.As(err, &conflict) && conflict.SuggestedSourcePath != "" {
@@ -1014,7 +1197,8 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 			return model.InstallPreview{}, errors.New("the updated repository no longer contains any installed Skills")
 		}
 	}
-	report, scanErr := scanCandidateSkills(root, candidates, m.Config.MaxFiles, m.Config.MaxFileBytes)
+	report, scanErr := scanCandidateSkills(sourceRoot, candidates, m.Config.MaxFiles, m.Config.MaxFileBytes)
+	report.RootID = targetRoot.ID
 	annotateCandidateScan(&report, candidates, "github:"+strings.ToLower(repo.FullName), repo.FullName)
 	ignored, ignoreErr := m.store.IgnoredFindings()
 	if ignoreErr != nil {
@@ -1028,8 +1212,8 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 		return model.InstallPreview{}, scanErr
 	}
 	preview := model.InstallPreview{
-		ID: id, Repository: repo, Skills: candidates, Scan: report,
-		StagingPath: root, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+		ID: id, TargetRootID: targetRoot.ID, Repository: repo, Skills: candidates, Scan: report,
+		StagingPath: sourceRoot, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 	}
 	if err := sealInstallPreview(&preview); err != nil {
 		return model.InstallPreview{}, err
@@ -1043,7 +1227,15 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 	return preview, nil
 }
 
-func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
+func (m *Manager) PrepareLocal(path string, targetRootID ...string) (model.InstallPreview, error) {
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.InstallPreview{}, err
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return model.InstallPreview{}, err
@@ -1078,6 +1270,7 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
+	report.RootID = root.ID
 	annotateCandidateScan(
 		&report, candidates, "local:"+strings.ToLower(filepath.Clean(abs)), filepath.Base(abs),
 	)
@@ -1090,7 +1283,7 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 	_ = m.store.SaveScan(report)
 	m.recordScan(report)
 	preview := model.InstallPreview{
-		ID: id,
+		ID: id, TargetRootID: root.ID,
 		Repository: model.Repository{
 			Provider: "local", Name: filepath.Base(abs), FullName: "local:" + filepath.Base(abs),
 			LocalPath: abs, SourcePath: "", ResolvedRef: "local",
@@ -1110,9 +1303,17 @@ func (m *Manager) PrepareLocal(path string) (model.InstallPreview, error) {
 	return preview, nil
 }
 
-func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, error) {
+func (m *Manager) PrepareAdoption(selected []string, targetRootID ...string) (model.AdoptionPreview, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = strings.TrimSpace(targetRootID[0])
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.AdoptionPreview{}, err
+	}
 	selected = uniqueNonEmpty(selected)
 	if len(selected) == 0 {
 		return model.AdoptionPreview{}, errors.New("at least one unmanaged skill is required")
@@ -1121,7 +1322,7 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 	if err != nil {
 		return model.AdoptionPreview{}, err
 	}
-	skills, _, _, err := inventory.Discover(m.Config.Paths.SkillsRoot, lock)
+	skills, _, _, err := inventory.DiscoverRoots([]model.SkillRoot{root}, lock)
 	if err != nil {
 		return model.AdoptionPreview{}, err
 	}
@@ -1132,13 +1333,14 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 		}
 	}
 	preview := model.AdoptionPreview{
-		ID:        "adopt-plan-" + time.Now().UTC().Format("20060102T150405.000000000"),
-		Skills:    []model.Skill{},
-		Sources:   []model.DetectedSource{},
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+		ID:           "adopt-plan-" + time.Now().UTC().Format("20060102T150405.000000000"),
+		TargetRootID: root.ID,
+		Skills:       []model.Skill{},
+		Sources:      []model.DetectedSource{},
+		CreatedAt:    time.Now().UTC(),
+		ExpiresAt:    time.Now().UTC().Add(24 * time.Hour),
 		Scan: model.ScanReport{
-			ID: "scan-" + time.Now().UTC().Format("20060102T150405.000000000"), Target: "未管理 Skills",
+			ID: "scan-" + time.Now().UTC().Format("20060102T150405.000000000"), RootID: root.ID, Target: root.Path,
 			StartedAt: time.Now().UTC(), HighestSeverity: model.RiskInfo,
 			ActiveHighestSeverity: model.RiskInfo, Findings: []model.Finding{},
 			Status: "passed", ScannerVersion: scanner.Version,
@@ -1155,7 +1357,7 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 		}
 		for _, finding := range report.Findings {
 			finding.File = filepath.ToSlash(filepath.Join(name, filepath.FromSlash(finding.File)))
-			finding.SkillName = name
+			finding.SkillName, finding.RootID = name, root.ID
 			preview.Scan.Findings = append(preview.Scan.Findings, finding)
 		}
 		preview.Scan.FilesScanned += report.FilesScanned
@@ -1173,7 +1375,7 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 		preview.Skills = append(preview.Skills, skill)
 		preview.Sources = append(preview.Sources, source)
 		preview.Scan.Skills = append(preview.Scan.Skills, model.ScanSkillSummary{
-			SkillName: name, SourcePath: name, GroupID: source.GroupID, GroupName: source.GroupName,
+			SkillName: name, RootID: root.ID, SourcePath: name, GroupID: source.GroupID, GroupName: source.GroupName,
 			FilesScanned: report.FilesScanned, HighestSeverity: report.HighestSeverity,
 		})
 		for index := range preview.Scan.Findings {
@@ -1196,6 +1398,9 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 	summarizeScanSkills(&preview.Scan)
 	_ = m.store.SaveScan(preview.Scan)
 	m.recordScan(preview.Scan)
+	if err := sealAdoptionPreview(&preview); err != nil {
+		return model.AdoptionPreview{}, err
+	}
 	m.adoptions[preview.ID] = preview
 	if err := saveAdoptionPreview(m.Config.Paths.DataRoot, preview); err != nil {
 		return model.AdoptionPreview{}, err
@@ -1203,7 +1408,7 @@ func (m *Manager) PrepareAdoption(selected []string) (model.AdoptionPreview, err
 	return preview, nil
 }
 
-func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transaction, error) {
+func (m *Manager) ApplyAdoption(planID string, selected []string, targetRootID ...string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	preview, ok := m.adoptions[planID]
@@ -1216,6 +1421,16 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 	}
 	if time.Now().UTC().After(preview.ExpiresAt) {
 		return model.Transaction{}, errors.New("adoption plan has expired")
+	}
+	if err := verifyAdoptionPreview(preview, planID); err != nil {
+		return model.Transaction{}, err
+	}
+	if len(targetRootID) > 0 && strings.TrimSpace(targetRootID[0]) != "" && targetRootID[0] != preview.TargetRootID {
+		return model.Transaction{}, errors.New("adoption plan target root does not match apply target")
+	}
+	root, err := m.resolveWritableRoot(preview.TargetRootID)
+	if err != nil {
+		return model.Transaction{}, err
 	}
 	selected = uniqueNonEmpty(selected)
 	allowed := map[string]bool{}
@@ -1237,7 +1452,7 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 		return model.Transaction{}, errors.New("no skills selected")
 	}
 	tx := model.Transaction{
-		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), Type: "manage",
+		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), RootID: root.ID, Type: "manage",
 		Status: "running", Targets: selected, StartedAt: time.Now().UTC(),
 	}
 	if err := m.store.SaveTransaction(tx); err != nil {
@@ -1250,12 +1465,27 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 	if err := m.snapshotLock(tx.ID); err != nil {
 		return m.fail(tx, err)
 	}
+	securitySnapshot, err := m.snapshotSecurityStates(tx.ID, root.ID, selected)
+	if err != nil {
+		return m.fail(tx, err)
+	}
+	tx.BackupPaths = append(tx.BackupPaths, securitySnapshot)
+	failAdoption := func(cause error) (model.Transaction, error) {
+		recoveryErr := errors.Join(m.restoreLockSnapshot(tx.ID), m.restoreSecurityStates(tx.ID))
+		if recoveryErr != nil {
+			tx.RecoveryStatus = "required"
+			cause = errors.Join(cause, recoveryErr)
+		} else {
+			tx.RecoveryStatus = "completed"
+		}
+		return m.fail(tx, cause)
+	}
 	securityStates := []model.SkillSecurityState{}
 	for _, name := range selected {
-		if _, managed := findManaged(lock, name); managed {
+		if _, managed := findManagedInRoot(lock, root.ID, name); managed {
 			return m.fail(tx, fmt.Errorf("%s is already managed", name))
 		}
-		target := filepath.Join(m.Config.Paths.SkillsRoot, name)
+		target := filepath.Join(root.Path, name)
 		if !validMutableSkillName(name) {
 			return m.fail(tx, fmt.Errorf("invalid skill name: %s", name))
 		}
@@ -1270,11 +1500,11 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 		if !ok {
 			return m.fail(tx, fmt.Errorf("source analysis is missing for %s", name))
 		}
-		packageID := source.GroupID
+		packageID := model.QualifiedPackageID(root.ID, source.GroupID)
 		pkg := lock.Packages[packageID]
 		if pkg.Skills == nil {
 			pkg = model.PackageLock{
-				Provider: source.Provider, Repository: source.Repository, SourceURL: source.SourceURL,
+				RootID: root.ID, Provider: source.Provider, Repository: source.Repository, SourceURL: source.SourceURL,
 				GroupName: source.GroupName, RequestedRef: source.RequestedRef,
 				InstalledAt: time.Now().UTC(), Skills: map[string]model.SkillLock{},
 			}
@@ -1284,25 +1514,25 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 			hashes[file.Path] = file.SHA256
 		}
 		pkg.Skills[name] = model.SkillLock{
-			SourcePath: source.SourcePath, LocalPath: name, Files: hashes,
+			RootID: root.ID, SourcePath: source.SourcePath, LocalPath: name, Files: hashes,
 			LastScanReport: preview.Scan.ID,
 		}
 		pkg.UpdatedAt = time.Now().UTC()
 		lock.Packages[packageID] = pkg
 		securityStates = append(securityStates, model.SkillSecurityState{
-			SkillName: name, ContentHash: skillContentHash(files),
+			RootID: root.ID, SkillName: name, ContentHash: skillContentHash(files),
 			ReportID: preview.Scan.ID, CheckedAt: scanCheckedAt(preview.Scan),
 		})
 	}
 	if err := m.store.SaveSkillSecurityStates(securityStates); err != nil {
-		return m.fail(tx, err)
+		return failAdoption(err)
 	}
 	if err := m.store.SaveLock(lock); err != nil {
-		return m.fail(tx, err)
+		return failAdoption(err)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
 	if err := m.store.SaveTransaction(tx); err != nil {
-		return m.fail(tx, fmt.Errorf("complete adoption transaction: %w", err))
+		return failAdoption(fmt.Errorf("complete adoption transaction: %w", err))
 	}
 	m.recordTransaction(tx)
 	return tx, nil
@@ -1311,7 +1541,27 @@ func (m *Manager) ApplyAdoption(planID string, selected []string) (model.Transac
 // ApplyInstall requires both the persisted, audited High-risk cluster decision
 // and a final caller acknowledgement. The boolean cannot create an acceptance
 // record and therefore cannot bypass the backend decision workflow.
-func (m *Manager) ApplyInstall(planID string, selected []string, acceptHighRisk bool) (model.Transaction, error) {
+func (m *Manager) ApplyInstall(planID string, selected []string, acceptHighRisk bool, targetRootID ...string) (model.Transaction, error) {
+	// The target root is sealed into the preview. An optional argument keeps
+	// older callers source-compatible while preventing apply-time retargeting.
+	if len(targetRootID) > 0 {
+		if strings.TrimSpace(targetRootID[0]) == "" {
+			targetRootID = nil
+		}
+	}
+	if len(targetRootID) > 0 {
+		preview, ok := m.previews[planID]
+		if !ok {
+			var err error
+			preview, err = loadPreview(m.Config.Paths.DataRoot, planID)
+			if err != nil {
+				return model.Transaction{}, err
+			}
+		}
+		if preview.TargetRootID != targetRootID[0] {
+			return model.Transaction{}, errors.New("install plan target root does not match apply target")
+		}
+	}
 	return m.applyInstallWithTransactionIDAndRisk(planID, selected, "", acceptHighRisk)
 }
 
@@ -1375,6 +1625,13 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 	if err := m.verifyInstallPreview(preview, chosen); err != nil {
 		return model.Transaction{}, err
 	}
+	root, err := m.resolveWritableRoot(preview.TargetRootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
+	if _, err := config.EnsureSkillRoot(m.Config, root.ID); err != nil {
+		return model.Transaction{}, fmt.Errorf("create target skill root: %w", err)
+	}
 	if transactionID == "" {
 		transactionID = "tx-" + time.Now().UTC().Format("20060102T150405.000000000")
 	}
@@ -1382,10 +1639,12 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 		return model.Transaction{}, errors.New("invalid installation transaction ID")
 	}
 	tx := model.Transaction{
-		ID:   transactionID,
+		ID: transactionID, RootID: root.ID,
 		Type: "install", Status: "running", StartedAt: time.Now().UTC(),
 	}
 	for _, c := range chosen {
+		// RootID qualifies transaction targets. Keep each target as the bare
+		// directory name so recovery never has to reinterpret a display identity.
 		tx.Targets = append(tx.Targets, c.Name)
 	}
 	if err := m.store.SaveTransaction(tx); err != nil {
@@ -1399,6 +1658,15 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 	if err := m.snapshotLock(tx.ID); err != nil {
 		return m.fail(tx, err)
 	}
+	selectedNames := make([]string, 0, len(chosen))
+	for _, candidate := range chosen {
+		selectedNames = append(selectedNames, candidate.Name)
+	}
+	securitySnapshot, err := m.snapshotSecurityStates(tx.ID, root.ID, selectedNames)
+	if err != nil {
+		return m.fail(tx, err)
+	}
+	tx.BackupPaths = append(tx.BackupPaths, securitySnapshot)
 	touched := []string{}
 	backups := map[string]string{}
 	securityStates := []model.SkillSecurityState{}
@@ -1410,7 +1678,11 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 	if provider == "local" {
 		pkgID = "local:" + strings.ToLower(filepath.Clean(preview.Repository.LocalPath))
 	}
-	pkg := lock.Packages[pkgID]
+	packageKey := model.QualifiedPackageID(root.ID, pkgID)
+	pkg, pkgFound := lock.Packages[packageKey]
+	if !pkgFound {
+		pkg, pkgFound = lock.Packages[pkgID]
+	}
 	if pkg.Skills == nil {
 		sourceURL := "https://github.com/" + preview.Repository.FullName
 		repository := preview.Repository.FullName
@@ -1419,7 +1691,7 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 			repository = preview.Repository.LocalPath
 		}
 		pkg = model.PackageLock{
-			Provider: provider, Repository: repository, GroupName: repository,
+			RootID: root.ID, Provider: provider, Repository: repository, GroupName: repository,
 			SourceURL:    sourceURL,
 			RequestedRef: preview.Repository.ResolvedRef, ResolvedCommit: preview.Repository.CommitSHA,
 			InstalledAt: time.Now().UTC(), Skills: map[string]model.SkillLock{},
@@ -1432,29 +1704,29 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 		}
 	}
 	for _, c := range chosen {
-		target := filepath.Join(m.Config.Paths.SkillsRoot, c.Name)
+		target := filepath.Join(root.Path, c.Name)
 		if !validMutableSkillName(c.Name) {
-			return m.failInstall(tx, touched, backups, fmt.Errorf("invalid skill name: %s", c.Name))
+			return m.failInstall(tx, root, touched, backups, fmt.Errorf("invalid skill name: %s", c.Name))
 		}
 		source := filepath.Join(preview.StagingPath, filepath.FromSlash(c.SourcePath))
 		recoveryTracked := false
 		if _, err := os.Stat(target); err == nil {
-			existing, managed := findManaged(lock, c.Name)
+			existing, managed := findManagedInRoot(lock, root.ID, c.Name)
 			expectedRepository := preview.Repository.FullName
 			if provider == "local" {
 				expectedRepository = preview.Repository.LocalPath
 			}
 			if !managed || !strings.EqualFold(existing.Repository, expectedRepository) {
-				return m.failInstall(tx, touched, backups, fmt.Errorf("skill name conflict: %s", c.Name))
+				return m.failInstall(tx, root, touched, backups, fmt.Errorf("skill name conflict: %s", c.Name))
 			}
 			backup := transactionContentPath(
-				m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", c.Name, tx.ID,
+				root.Path, m.Config.Paths.BackupsRoot, ".csm-backups", c.Name, tx.ID,
 			)
 			if err := os.MkdirAll(filepath.Dir(backup), 0o700); err != nil {
-				return m.failInstall(tx, touched, backups, err)
+				return m.failInstall(tx, root, touched, backups, err)
 			}
 			if err := os.Rename(target, backup); err != nil {
-				return m.failInstall(tx, touched, backups, fmt.Errorf("backup %s: %w", c.Name, err))
+				return m.failInstall(tx, root, touched, backups, fmt.Errorf("backup %s: %w", c.Name, err))
 			}
 			backups[c.Name] = backup
 			tx.BackupPaths = append(tx.BackupPaths, backup)
@@ -1464,49 +1736,50 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 			touched = append(touched, c.Name)
 			recoveryTracked = true
 			if err := m.store.SaveTransaction(tx); err != nil {
-				return m.failInstall(tx, touched, backups, err)
+				return m.failInstall(tx, root, touched, backups, err)
 			}
 		}
 		if !recoveryTracked {
 			touched = append(touched, c.Name)
 		}
 		if err := snapshotLocalSource(source, target, m.Config.MaxFiles, m.Config.MaxFileBytes); err != nil {
-			return m.failInstall(tx, touched, backups, err)
+			return m.failInstall(tx, root, touched, backups, err)
 		}
 		files, err := inventory.HashTree(target)
 		if err != nil {
-			return m.failInstall(tx, touched, backups, err)
+			return m.failInstall(tx, root, touched, backups, err)
 		}
 		if !sameFileRecords(files, c.Files) {
-			return m.failInstall(tx, touched, backups, fmt.Errorf("%s changed while being copied; installation was recovered", c.Name))
+			return m.failInstall(tx, root, touched, backups, fmt.Errorf("%s changed while being copied; installation was recovered", c.Name))
 		}
 		hashes := map[string]string{}
 		for _, f := range files {
 			hashes[f.Path] = f.SHA256
 		}
 		pkg.Skills[c.Name] = model.SkillLock{
-			SourcePath: c.SourcePath, LocalPath: c.Name, Files: hashes,
+			RootID: root.ID, SourcePath: c.SourcePath, LocalPath: c.Name, Files: hashes,
 			ResolvedCommit: preview.Repository.CommitSHA,
 			Pinned:         preview.Repository.ResolvedRef != preview.Repository.DefaultBranch,
 			LastScanReport: preview.Scan.ID,
 		}
 		securityStates = append(securityStates, model.SkillSecurityState{
-			SkillName: c.Name, ContentHash: skillContentHash(files),
+			RootID: root.ID, SkillName: c.Name, ContentHash: skillContentHash(files),
 			ReportID: preview.Scan.ID, CheckedAt: scanCheckedAt(preview.Scan),
 		})
 	}
 	pkg.UpdatedAt = time.Now().UTC()
 	pkg.ResolvedCommit = preview.Repository.CommitSHA
-	lock.Packages[pkgID] = pkg
+	pkg.RootID = root.ID
+	lock.Packages[packageKey] = pkg
 	if err := m.store.SaveSkillSecurityStates(securityStates); err != nil {
-		return m.failInstall(tx, touched, backups, err)
+		return m.failInstall(tx, root, touched, backups, err)
 	}
 	if err := m.store.SaveLock(lock); err != nil {
-		return m.failInstall(tx, touched, backups, err)
+		return m.failInstall(tx, root, touched, backups, err)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
 	if err := m.store.SaveTransaction(tx); err != nil {
-		return m.failInstall(tx, touched, backups, err)
+		return m.failInstall(tx, root, touched, backups, err)
 	}
 	m.recordTransaction(tx)
 	return tx, nil
@@ -1537,9 +1810,17 @@ func (m *Manager) verifyInstallPreview(preview model.InstallPreview, chosen []mo
 	return nil
 }
 
-func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappings map[string]string) error {
+func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappings map[string]string, targetRootID ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return err
+	}
 	if repository == "" || len(mappings) == 0 {
 		return errors.New("repository and mappings are required")
 	}
@@ -1548,8 +1829,9 @@ func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappin
 		return err
 	}
 	id := "github:" + strings.ToLower(repository)
+	packageKey := model.QualifiedPackageID(root.ID, id)
 	pkg := model.PackageLock{
-		Provider: "github", Repository: repository, SourceURL: sourceURL,
+		RootID: root.ID, Provider: "github", Repository: repository, SourceURL: sourceURL,
 		RequestedRef: ref, ResolvedCommit: commit, InstalledAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(), Skills: map[string]model.SkillLock{},
 	}
@@ -1557,7 +1839,10 @@ func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappin
 		if !validMutableSkillName(name) {
 			return fmt.Errorf("invalid Skill name: %s", name)
 		}
-		local := filepath.Join(m.Config.Paths.SkillsRoot, name)
+		local, err := config.SkillTarget(root, name)
+		if err != nil {
+			return err
+		}
 		files, err := inventory.HashTree(local)
 		if err != nil {
 			return fmt.Errorf("adopt %s: %w", name, err)
@@ -1567,10 +1852,10 @@ func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappin
 			hashes[f.Path] = f.SHA256
 		}
 		pkg.Skills[name] = model.SkillLock{
-			SourcePath: sourcePath, LocalPath: name, ResolvedCommit: commit, Files: hashes,
+			RootID: root.ID, SourcePath: sourcePath, LocalPath: name, ResolvedCommit: commit, Files: hashes,
 		}
 	}
-	lock.Packages[id] = pkg
+	lock.Packages[packageKey] = pkg
 	return m.store.SaveLock(lock)
 }
 
@@ -1604,7 +1889,7 @@ func (m *Manager) CheckUpdatesSelected(ctx context.Context, groupIDs []string, f
 			continue
 		}
 		status := model.UpdateStatus{
-			GroupID: id, GroupName: pkg.GroupName, Provider: pkg.Provider,
+			GroupID: id, RootID: pkg.RootID, GroupName: pkg.GroupName, Provider: pkg.Provider,
 			Repository: pkg.Repository, Status: "unsupported", CheckedAt: checkedAt,
 			CurrentCommits: map[string]string{}, OutdatedSkills: []string{},
 		}
@@ -1679,18 +1964,51 @@ func (m *Manager) CheckUpdatesSelected(ctx context.Context, groupIDs []string, f
 	return result, nil
 }
 
-func (m *Manager) PrepareUpdate(ctx context.Context, groupID string) (model.InstallPreview, error) {
+func (m *Manager) PrepareUpdate(ctx context.Context, groupID string, targetRootID ...string) (model.InstallPreview, error) {
 	groupID = strings.TrimSpace(groupID)
 	if groupID == "" {
 		return model.InstallPreview{}, errors.New("explicit source group ID is required")
+	}
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
 	}
 	lock, err := m.store.LoadLock()
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
-	pkg, ok := lock.Packages[groupID]
+	var pkg model.PackageLock
+	var ok bool
+	if rootID != "" {
+		pkg, ok = lock.Packages[model.QualifiedPackageID(rootID, groupID)]
+		if !ok {
+			pkg, ok = lock.Packages[groupID]
+		}
+	} else {
+		matches := make([]model.PackageLock, 0, 1)
+		for key, candidate := range lock.Packages {
+			if key == groupID || strings.HasSuffix(key, "\x00"+groupID) {
+				matches = append(matches, candidate)
+			}
+		}
+		if len(matches) == 1 {
+			pkg, ok = matches[0], true
+		} else if len(matches) > 1 {
+			return model.InstallPreview{}, errors.New("source group exists in multiple roots; specify rootId")
+		}
+	}
 	if !ok {
 		return model.InstallPreview{}, fmt.Errorf("source group not found: %s", groupID)
+	}
+	if pkg.RootID != "" {
+		if rootID != "" && pkg.RootID != rootID {
+			return model.InstallPreview{}, errors.New("source group does not belong to the requested root")
+		}
+		rootID = pkg.RootID
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.InstallPreview{}, err
 	}
 	if pkg.Provider != "github" || pkg.SourceURL == "" {
 		return model.InstallPreview{}, errors.New("this source does not support GitHub updates")
@@ -1699,7 +2017,7 @@ func (m *Manager) PrepareUpdate(ctx context.Context, groupID string) (model.Inst
 	for name := range pkg.Skills {
 		installed[name] = true
 	}
-	preview, err := m.prepareGitHub(ctx, pkg.SourceURL, pkg.RequestedRef, installed)
+	preview, err := m.prepareGitHub(ctx, pkg.SourceURL, pkg.RequestedRef, installed, root.ID)
 	if err != nil {
 		return model.InstallPreview{}, err
 	}
@@ -1796,9 +2114,17 @@ func annotateCandidateScan(
 	}
 }
 
-func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
+func (m *Manager) Quarantine(names []string, targetRootID ...string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
 	names = uniqueNonEmpty(names)
 	if len(names) == 0 {
 		return model.Transaction{}, errors.New("at least one explicit skill name is required")
@@ -1809,7 +2135,7 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 		}
 	}
 	tx := model.Transaction{
-		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
+		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), RootID: root.ID,
 		Type: "quarantine", Status: "running", Targets: names, StartedAt: time.Now().UTC(),
 	}
 	if err := m.store.SaveTransaction(tx); err != nil {
@@ -1846,12 +2172,12 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 		return m.fail(tx, cause)
 	}
 	for _, name := range names {
-		source := filepath.Join(m.Config.Paths.SkillsRoot, name)
+		source := filepath.Join(root.Path, name)
 		if _, err := os.Stat(source); err != nil {
 			return rollbackMoved(fmt.Errorf("%s: %w", name, err))
 		}
 		target := transactionContentPath(
-			m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, tx.ID,
+			root.Path, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, tx.ID,
 		)
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return rollbackMoved(err)
@@ -1862,6 +2188,9 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 		moved = append(moved, movedSkill{source: source, target: target})
 		tx.BackupPaths = append(tx.BackupPaths, target)
 		for id, pkg := range lock.Packages {
+			if pkg.RootID != "" && pkg.RootID != root.ID {
+				continue
+			}
 			if _, ok := pkg.Skills[name]; ok {
 				delete(pkg.Skills, name)
 				lock.Packages[id] = pkg
@@ -1880,9 +2209,17 @@ func (m *Manager) Quarantine(names []string) (model.Transaction, error) {
 	return tx, nil
 }
 
-func (m *Manager) Restore(name, transactionID string) (model.Transaction, error) {
+func (m *Manager) Restore(name, transactionID string, targetRootID ...string) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	rootID := ""
+	if len(targetRootID) > 0 {
+		rootID = targetRootID[0]
+	}
+	root, err := m.resolveWritableRoot(rootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
 	if transactionID == "" || !validMutableSkillName(name) {
 		return model.Transaction{}, errors.New("explicit skill name and transaction ID are required")
 	}
@@ -1890,23 +2227,32 @@ func (m *Manager) Restore(name, transactionID string) (model.Transaction, error)
 	if originalErr != nil {
 		return model.Transaction{}, originalErr
 	}
+	if len(targetRootID) == 0 && original.RootID != "" && original.RootID != root.ID {
+		root, err = m.resolveWritableRoot(original.RootID)
+		if err != nil {
+			return model.Transaction{}, err
+		}
+	}
 	if original.Type != "quarantine" {
 		return model.Transaction{}, fmt.Errorf("transaction type %s cannot restore quarantined content", original.Type)
+	}
+	if len(targetRootID) > 0 && original.RootID != "" && original.RootID != root.ID {
+		return model.Transaction{}, errors.New("quarantine transaction belongs to a different root")
 	}
 	source := transactionPathForName(original, name)
 	if source == "" {
 		source = transactionContentPath(
-			m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, transactionID,
+			root.Path, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, transactionID,
 		)
 	}
-	if err := ensureWithinRestoreRoots(m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", source); err != nil {
+	if err := ensureWithinRestoreRoots(root.Path, m.Config.Paths.QuarantineRoot, ".csm-quarantine", source); err != nil {
 		return model.Transaction{}, fmt.Errorf("invalid quarantine restore source: %w", err)
 	}
-	target := filepath.Join(m.Config.Paths.SkillsRoot, name)
+	target := filepath.Join(root.Path, name)
 	if _, err := os.Stat(target); err == nil {
 		return model.Transaction{}, fmt.Errorf("target already exists: %s", target)
 	}
-	tx := model.Transaction{ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), Type: "restore", Status: "running", Targets: []string{name}, StartedAt: time.Now().UTC()}
+	tx := model.Transaction{ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), RootID: root.ID, Type: "restore", Status: "running", Targets: []string{name}, StartedAt: time.Now().UTC()}
 	if err := m.store.SaveTransaction(tx); err != nil {
 		return model.Transaction{}, fmt.Errorf("start restore transaction: %w", err)
 	}
@@ -1960,6 +2306,9 @@ func (m *Manager) Restore(name, transactionID string) (model.Transaction, error)
 	}
 	restoredMapping := false
 	for id, originalPackage := range snapshot.Packages {
+		if originalPackage.RootID != "" && originalPackage.RootID != root.ID {
+			continue
+		}
 		originalSkill, ok := originalPackage.Skills[name]
 		if !ok {
 			continue
@@ -1999,6 +2348,10 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	root, err := m.resolveWritableRoot(original.RootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
 	if original.Type != "install" && original.Type != "adopt" && original.Type != "manage" &&
 		!strings.HasPrefix(original.Type, "group-") {
 		return model.Transaction{}, fmt.Errorf("transaction type %s cannot be rolled back; use its dedicated recovery action", original.Type)
@@ -2026,7 +2379,7 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 				return model.Transaction{}, fmt.Errorf("invalid rollback target: %s", name)
 			}
 			seen[strings.ToLower(name)] = true
-			target := filepath.Join(m.Config.Paths.SkillsRoot, name)
+			target := filepath.Join(root.Path, name)
 			targetInfo, targetErr := os.Stat(target)
 			targetExists := targetErr == nil
 			if targetErr != nil && !os.IsNotExist(targetErr) {
@@ -2039,7 +2392,7 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 			backup := recordedBackup
 			if backup == "" {
 				backup = transactionContentPath(
-					m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", name, transactionID,
+					root.Path, m.Config.Paths.BackupsRoot, ".csm-backups", name, transactionID,
 				)
 			}
 			backupInfo, backupErr := os.Stat(backup)
@@ -2054,7 +2407,7 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 				if !backupInfo.IsDir() {
 					return model.Transaction{}, fmt.Errorf("rollback backup is not a directory: %s", name)
 				}
-				if err := ensureWithinRestoreRoots(m.Config.Paths.SkillsRoot, m.Config.Paths.BackupsRoot, ".csm-backups", backup); err != nil {
+				if err := ensureWithinRestoreRoots(root.Path, m.Config.Paths.BackupsRoot, ".csm-backups", backup); err != nil {
 					return model.Transaction{}, fmt.Errorf("invalid rollback backup for %s: %w", name, err)
 				}
 			}
@@ -2078,7 +2431,7 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 		}
 	}
 	tx := model.Transaction{
-		ID:   "tx-" + time.Now().UTC().Format("20060102T150405.000000000"),
+		ID: "tx-" + time.Now().UTC().Format("20060102T150405.000000000"), RootID: root.ID,
 		Type: "rollback", Status: "running", Targets: append([]string(nil), original.Targets...),
 		StartedAt: time.Now().UTC(),
 	}
@@ -2088,7 +2441,7 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 	if original.Type == "install" {
 		for _, target := range installTargets {
 			target.failed = transactionContentPath(
-				m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", target.name, "rollback-"+tx.ID,
+				root.Path, m.Config.Paths.QuarantineRoot, ".csm-quarantine", target.name, "rollback-"+tx.ID,
 			)
 			if target.targetExists {
 				if err := os.MkdirAll(filepath.Dir(target.failed), 0o700); err != nil {
@@ -2116,6 +2469,7 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 		if err := json.Unmarshal(data, &layout); err != nil {
 			return m.fail(tx, err)
 		}
+		layout = mergeGroupLayoutRoot(previousLayout, layout, root.ID)
 		if err := m.store.ReplaceGroupLayout(layout); err != nil {
 			return m.fail(tx, err)
 		}
@@ -2146,8 +2500,13 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 		if err := json.Unmarshal(data, &lock); err != nil {
 			return m.fail(tx, err)
 		}
+		lock = mergeLockRoot(previousLock, lock, root.ID)
 		if err := m.store.SaveLock(lock); err != nil {
 			return m.fail(tx, err)
+		}
+		if err := m.restoreSecurityStates(transactionID); err != nil {
+			_ = m.store.SaveLock(previousLock)
+			return m.fail(tx, fmt.Errorf("restore security state snapshot: %w", err))
 		}
 		tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
 		tx.RecoveryStatus = "completed"
@@ -2208,8 +2567,12 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 			return rollbackInstall(fmt.Errorf("checkpoint rollback for %s: %w", target.name, err), false)
 		}
 	}
+	rollbackLock = mergeLockRoot(previousLock, rollbackLock, root.ID)
 	if err := m.store.SaveLock(rollbackLock); err != nil {
 		return rollbackInstall(fmt.Errorf("restore rollback source snapshot: %w", err), true)
+	}
+	if err := m.restoreSecurityStates(transactionID); err != nil {
+		return rollbackInstall(fmt.Errorf("restore security state snapshot: %w", err), true)
 	}
 	tx.Status, tx.CompletedAt = "completed", time.Now().UTC()
 	tx.RecoveryStatus = "completed"
@@ -2218,6 +2581,69 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 	}
 	m.recordTransaction(tx)
 	return tx, nil
+}
+
+func packageRootID(key string, pkg model.PackageLock) string {
+	if pkg.RootID != "" {
+		return pkg.RootID
+	}
+	if index := strings.IndexByte(key, '\x00'); index > 0 {
+		return key[:index]
+	}
+	return model.RootIDCodexDefault
+}
+
+func mergeLockRoot(current, snapshot model.SourcesLock, rootID string) model.SourcesLock {
+	merged := current
+	merged.Packages = make(map[string]model.PackageLock, len(current.Packages)+len(snapshot.Packages))
+	for key, pkg := range current.Packages {
+		merged.Packages[key] = pkg
+	}
+	for key, pkg := range merged.Packages {
+		if packageRootID(key, pkg) == rootID {
+			delete(merged.Packages, key)
+		}
+	}
+	for key, pkg := range snapshot.Packages {
+		if packageRootID(key, pkg) == rootID {
+			merged.Packages[key] = pkg
+		}
+	}
+	merged.SchemaVersion = model.SourcesLockSchemaVersion
+	return merged
+}
+
+func mergeGroupLayoutRoot(current, snapshot model.GroupLayoutState, rootID string) model.GroupLayoutState {
+	rootOf := func(value string) string {
+		if value == "" {
+			return model.RootIDCodexDefault
+		}
+		return value
+	}
+	merged := model.GroupLayoutState{Groups: []model.GroupPreference{}, Assignments: []model.SkillGroupAssignment{}}
+	for _, group := range current.Groups {
+		if rootOf(group.RootID) != rootID {
+			merged.Groups = append(merged.Groups, group)
+		}
+	}
+	for _, group := range snapshot.Groups {
+		if rootOf(group.RootID) == rootID {
+			group.RootID = rootID
+			merged.Groups = append(merged.Groups, group)
+		}
+	}
+	for _, assignment := range current.Assignments {
+		if rootOf(assignment.RootID) != rootID {
+			merged.Assignments = append(merged.Assignments, assignment)
+		}
+	}
+	for _, assignment := range snapshot.Assignments {
+		if rootOf(assignment.RootID) == rootID {
+			assignment.RootID = rootID
+			merged.Assignments = append(merged.Assignments, assignment)
+		}
+	}
+	return merged
 }
 
 func (m *Manager) BootstrapCurrentSkills() error {
@@ -2232,12 +2658,12 @@ func (m *Manager) BootstrapCurrentSkills() error {
 		"mock-interview": "skills/mock-interview", "offer-decision": "skills/offer-decision",
 	}
 	if existingMappings(m.Config.Paths.SkillsRoot, graph) {
-		if err := m.AdoptPackage("tirth8205/code-review-graph", "https://github.com/tirth8205/code-review-graph", "main", "", graph); err != nil {
+		if err := m.AdoptPackage("tirth8205/code-review-graph", "https://github.com/tirth8205/code-review-graph", "main", "", graph, model.RootIDCodexDefault); err != nil {
 			return err
 		}
 	}
 	if existingMappings(m.Config.Paths.SkillsRoot, career) {
-		if err := m.AdoptPackage("rebecha1227-a11y/CareerForge", "https://github.com/rebecha1227-a11y/CareerForge", "main", "f21dc27d1820bfdc67bc4c22b1f20cc2028692d2", career); err != nil {
+		if err := m.AdoptPackage("rebecha1227-a11y/CareerForge", "https://github.com/rebecha1227-a11y/CareerForge", "main", "f21dc27d1820bfdc67bc4c22b1f20cc2028692d2", career, model.RootIDCodexDefault); err != nil {
 			return err
 		}
 	}
@@ -2264,14 +2690,14 @@ func (m *Manager) fail(tx model.Transaction, err error) (model.Transaction, erro
 	return tx, err
 }
 
-func (m *Manager) failInstall(tx model.Transaction, touched []string, backups map[string]string, cause error) (model.Transaction, error) {
+func (m *Manager) failInstall(tx model.Transaction, root model.SkillRoot, touched []string, backups map[string]string, cause error) (model.Transaction, error) {
 	var rollbackErr error
 	for i := len(touched) - 1; i >= 0; i-- {
 		name := touched[i]
-		target := filepath.Join(m.Config.Paths.SkillsRoot, name)
+		target := filepath.Join(root.Path, name)
 		if _, err := os.Stat(target); err == nil {
 			failed := transactionContentPath(
-				m.Config.Paths.SkillsRoot, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, "failed-"+tx.ID,
+				root.Path, m.Config.Paths.QuarantineRoot, ".csm-quarantine", name, "failed-"+tx.ID,
 			)
 			if err := os.MkdirAll(filepath.Dir(failed), 0o700); err != nil {
 				if rollbackErr == nil {
@@ -2294,6 +2720,9 @@ func (m *Manager) failInstall(tx model.Transaction, touched []string, backups ma
 		}
 	}
 	if err := m.restoreLockSnapshot(tx.ID); err != nil && rollbackErr == nil {
+		rollbackErr = err
+	}
+	if err := m.restoreSecurityStates(tx.ID); err != nil && rollbackErr == nil {
 		rollbackErr = err
 	}
 	if rollbackErr != nil {
@@ -2332,6 +2761,53 @@ func (m *Manager) snapshotLock(transactionID string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o600)
+}
+
+type securityStateSnapshot struct {
+	RootID string                     `json:"rootId"`
+	Names  []string                   `json:"names"`
+	States []model.SkillSecurityState `json:"states"`
+}
+
+func (m *Manager) snapshotSecurityStates(transactionID, rootID string, names []string) (string, error) {
+	current, err := m.store.SkillSecurityStates()
+	if err != nil {
+		return "", err
+	}
+	snapshot := securityStateSnapshot{RootID: rootID, Names: uniqueNonEmpty(names), States: []model.SkillSecurityState{}}
+	for _, name := range snapshot.Names {
+		if value, ok := current[model.QualifiedSkillIdentity(rootID, name)]; ok {
+			snapshot.States = append(snapshot.States, value)
+		}
+	}
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "security-states.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func (m *Manager) restoreSecurityStates(transactionID string) error {
+	path := filepath.Join(m.Config.Paths.BackupsRoot, "_transactions", transactionID, "security-states.json")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil // Transactions from releases before 0.11 have no state snapshot.
+	}
+	if err != nil {
+		return err
+	}
+	var snapshot securityStateSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return err
+	}
+	return m.store.ReplaceSkillSecurityStates(snapshot.RootID, snapshot.Names, snapshot.States)
 }
 
 func (m *Manager) snapshotGroupLayout(transactionID string) (string, error) {
@@ -2520,6 +2996,9 @@ func loadPreview(root, id string) (model.InstallPreview, error) {
 }
 
 func saveAdoptionPreview(root string, preview model.AdoptionPreview) error {
+	if err := sealAdoptionPreview(&preview); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(preview, "", "  ")
 	if err != nil {
 		return err
@@ -2536,8 +3015,46 @@ func loadAdoptionPreview(root, id string) (model.AdoptionPreview, error) {
 		return model.AdoptionPreview{}, err
 	}
 	var preview model.AdoptionPreview
-	err = json.Unmarshal(data, &preview)
-	return preview, err
+	if err = json.Unmarshal(data, &preview); err != nil {
+		return model.AdoptionPreview{}, err
+	}
+	if err := verifyAdoptionPreview(preview, id); err != nil {
+		return model.AdoptionPreview{}, err
+	}
+	return preview, nil
+}
+
+func adoptionPreviewDigest(preview model.AdoptionPreview) (string, error) {
+	preview.PreviewDigest = ""
+	data, err := json.Marshal(preview)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(data)
+	return fmt.Sprintf("%x", digest[:]), nil
+}
+
+func sealAdoptionPreview(preview *model.AdoptionPreview) error {
+	digest, err := adoptionPreviewDigest(*preview)
+	if err != nil {
+		return err
+	}
+	preview.PreviewDigest = digest
+	return nil
+}
+
+func verifyAdoptionPreview(preview model.AdoptionPreview, expectedID string) error {
+	if preview.ID != expectedID || filepath.Base(preview.ID) != preview.ID || !strings.HasPrefix(preview.ID, "adopt-plan-") {
+		return errors.New("adoption preview identity mismatch")
+	}
+	digest, err := adoptionPreviewDigest(preview)
+	if err != nil {
+		return err
+	}
+	if preview.PreviewDigest == "" || !strings.EqualFold(preview.PreviewDigest, digest) {
+		return errors.New("adoption preview integrity digest mismatch")
+	}
+	return nil
 }
 
 func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]string) model.ScanReport {
@@ -2567,7 +3084,7 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 			canonicalFile = filepath.ToSlash(filepath.Join(rel, filepath.FromSlash(finding.File)))
 		}
 		identity := strings.ToLower(strings.Join([]string{
-			finding.RuleID, canonicalFile, strings.TrimSpace(finding.Evidence),
+			report.RootID, finding.RuleID, canonicalFile, strings.TrimSpace(finding.Evidence),
 		}, "\x00"))
 		if finding.Evidence == "" {
 			identity += fmt.Sprintf("\x00%d", finding.Line)
@@ -2584,7 +3101,7 @@ func (m *Manager) decorateScan(report model.ScanReport, ignored map[string]strin
 			finding.Deterministic = true
 		}
 		clusterParts := []string{
-			finding.RuleID, finding.Category, finding.FileClass, fmt.Sprintf("%t", finding.Deterministic),
+			report.RootID, finding.RuleID, finding.Category, finding.FileClass, fmt.Sprintf("%t", finding.Deterministic),
 		}
 		if finding.SkillName != "" || finding.GroupID != "" {
 			clusterParts = append([]string{finding.GroupID, finding.SkillName}, clusterParts...)
@@ -2810,6 +3327,18 @@ func findManaged(lock model.SourcesLock, name string) (model.PackageLock, bool) 
 	return model.PackageLock{}, false
 }
 
+func findManagedInRoot(lock model.SourcesLock, rootID, name string) (model.PackageLock, bool) {
+	for _, pkg := range lock.Packages {
+		if pkg.RootID != "" && pkg.RootID != rootID {
+			continue
+		}
+		if _, ok := pkg.Skills[name]; ok {
+			return pkg, true
+		}
+	}
+	return model.PackageLock{}, false
+}
+
 func uniqueNonEmpty(in []string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -2834,13 +3363,17 @@ func applySkillSecurityState(
 		checked  time.Time
 	}{}
 	for _, pkg := range lock.Packages {
+		rootID := pkg.RootID
+		if rootID == "" {
+			rootID = model.RootIDCodexDefault
+		}
 		checked := pkg.UpdatedAt
 		if checked.IsZero() {
 			checked = pkg.InstalledAt
 		}
 		for name, skill := range pkg.Skills {
 			if skill.LastScanReport != "" {
-				legacy[name] = struct {
+				legacy[model.QualifiedSkillIdentity(rootID, name)] = struct {
 					reportID string
 					checked  time.Time
 				}{skill.LastScanReport, checked}
@@ -2853,7 +3386,11 @@ func applySkillSecurityState(
 			continue
 		}
 		currentHash := skillContentHash(skill.Files)
-		if state, ok := states[skill.Name]; ok {
+		state, ok := states[model.QualifiedSkillIdentity(skill.RootID, skill.Name)]
+		if !ok {
+			state, ok = states[skill.Name] // v1 compatibility
+		}
+		if ok {
 			checkedAt := state.CheckedAt
 			skill.LastSecurityScan = &checkedAt
 			skill.SecurityChanged = state.ContentHash != currentHash
@@ -2864,7 +3401,7 @@ func applySkillSecurityState(
 			}
 			continue
 		}
-		if previous, ok := legacy[skill.Name]; ok && !skill.LocalModified {
+		if previous, ok := legacy[model.QualifiedSkillIdentity(skill.RootID, skill.Name)]; ok && !skill.LocalModified {
 			checkedAt := previous.checked
 			skill.LastSecurityScan = &checkedAt
 			skill.SecurityStatus = "checked"

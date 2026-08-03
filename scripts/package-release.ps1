@@ -101,6 +101,7 @@ $rootDocuments = @(
     "CODE_OF_CONDUCT.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
+    "Handoff.md",
     "LICENSE",
     "README.md",
     "README_EN.md",

@@ -380,6 +380,7 @@ func (m *Manager) analyzeInstallWithCodex(
 		plan.ProjectScanID = projectScan.ID
 		plan.ProjectScanDigest = projectScan.ScanDigest
 	}
+	plan.TargetRootID = preview.TargetRootID
 	plan, err = codexreview.FinalizeAssistedInstallPlan(
 		plan,
 		preview.Skills,
@@ -550,6 +551,18 @@ func (m *Manager) ApplyAssistedInstall(
 	projectRoot string,
 	progress AssistedInstallProgressFunc,
 ) (model.AssistedInstallResult, error) {
+	return m.ApplyAssistedInstallForRoot(ctx, planID, selectedSkills, permissionIDs, projectRoot, "", progress)
+}
+
+func (m *Manager) ApplyAssistedInstallForRoot(
+	ctx context.Context,
+	planID string,
+	selectedSkills []string,
+	permissionIDs []string,
+	projectRoot string,
+	targetRootID string,
+	progress AssistedInstallProgressFunc,
+) (model.AssistedInstallResult, error) {
 	m.assistMu.Lock()
 	defer m.assistMu.Unlock()
 
@@ -561,6 +574,9 @@ func (m *Manager) ApplyAssistedInstall(
 	)
 	if err != nil {
 		return model.AssistedInstallResult{}, err
+	}
+	if targetRootID != "" && targetRootID != plan.TargetRootID {
+		return model.AssistedInstallResult{}, errors.New("assisted-install plan target root does not match apply target")
 	}
 	selectedNames := make([]string, 0, len(chosen))
 	for _, candidate := range chosen {
@@ -611,6 +627,7 @@ func (m *Manager) ApplyAssistedInstall(
 	}
 	tx := model.Transaction{
 		ID:          transactionID,
+		RootID:      plan.TargetRootID,
 		Type:        "assisted-install",
 		Status:      "running",
 		Targets:     append([]string(nil), selectedNames...),
@@ -928,6 +945,11 @@ func (m *Manager) preflightAssistedInstall(
 	preview, err := m.assistedSourcePreview(plan.SourcePlanID)
 	if err != nil {
 		return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, err
+	}
+	if plan.TargetRootID == "" || plan.TargetRootID != preview.TargetRootID {
+		return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, errors.New(
+			"assisted-install plan target root does not match its source plan",
+		)
 	}
 	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
 		return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, err

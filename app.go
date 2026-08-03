@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,6 +25,7 @@ type App struct {
 
 type QuarantineItem struct {
 	Skill         string `json:"skill"`
+	RootID        string `json:"rootId"`
 	TransactionID string `json:"transactionId"`
 	Path          string `json:"path"`
 }
@@ -65,62 +67,86 @@ func (a *App) BootstrapCurrentSkills() error {
 	return a.mgr.BootstrapCurrentSkills()
 }
 
-func (a *App) PrepareAdoption(names []string) (model.AdoptionPreview, error) {
+func (a *App) PrepareAdoption(names []string, rootID string) (model.AdoptionPreview, error) {
 	if err := a.ready(); err != nil {
 		return model.AdoptionPreview{}, err
 	}
-	return a.mgr.PrepareAdoption(names)
+	if err := requireRootID(rootID); err != nil {
+		return model.AdoptionPreview{}, err
+	}
+	return a.mgr.PrepareAdoption(names, rootID)
 }
 
-func (a *App) ApplyAdoption(planID string, names []string) (model.Transaction, error) {
+func (a *App) ApplyAdoption(planID string, names []string, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.ApplyAdoption(planID, names)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApplyAdoption(planID, names, rootID)
 }
 
-func (a *App) CreateGroup(name string) (model.Transaction, error) {
+func (a *App) CreateGroup(name, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.CreateGroup(name)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.CreateGroup(name, rootID)
 }
 
-func (a *App) RenameGroup(id, name string) (model.Transaction, error) {
+func (a *App) RenameGroup(id, name, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.RenameGroup(id, name)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.RenameGroup(id, name, rootID)
 }
 
-func (a *App) ReorderGroups(ids []string) (model.Transaction, error) {
+func (a *App) ReorderGroups(ids []string, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.ReorderGroups(ids)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ReorderGroups(ids, rootID)
 }
 
-func (a *App) MoveSkillsToGroup(names []string, groupID string) (model.Transaction, error) {
+func (a *App) MoveSkillsToGroup(names []string, groupID, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.MoveSkillsToGroup(names, groupID)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.MoveSkillsToGroup(names, groupID, rootID)
 }
 
-func (a *App) PrepareGitHub(rawURL, ref string) (model.InstallPreview, error) {
+func (a *App) PrepareGitHub(rawURL, ref, rootID string) (model.InstallPreview, error) {
 	if err := a.ready(); err != nil {
 		return model.InstallPreview{}, err
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Minute)
 	defer cancel()
-	return a.mgr.PrepareGitHub(ctx, rawURL, ref)
+	if strings.TrimSpace(rootID) == "" {
+		rootID = model.RootIDCodexDefault
+	}
+	return a.mgr.PrepareGitHub(ctx, rawURL, ref, rootID)
 }
 
-func (a *App) PrepareLocal(path string) (model.InstallPreview, error) {
+func (a *App) PrepareLocal(path, rootID string) (model.InstallPreview, error) {
 	if err := a.ready(); err != nil {
 		return model.InstallPreview{}, err
 	}
-	return a.mgr.PrepareLocal(path)
+	if strings.TrimSpace(rootID) == "" {
+		rootID = model.RootIDCodexDefault
+	}
+	return a.mgr.PrepareLocal(path, rootID)
 }
 
 // AssessInstallSource performs the mandatory deterministic local assessment.
@@ -139,11 +165,14 @@ func (a *App) GetProjectAssessment(reference string) (model.ProjectAssessment, e
 	return a.mgr.GetProjectAssessment(reference)
 }
 
-func (a *App) ApplyInstall(planID string, skills []string, acceptHighRisk bool) (model.Transaction, error) {
+func (a *App) ApplyInstall(planID string, skills []string, acceptHighRisk bool, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.ApplyInstall(planID, skills, acceptHighRisk)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApplyInstall(planID, skills, acceptHighRisk, rootID)
 }
 
 // ScanProjectWithCodex is the read-only first phase for planned installation.
@@ -187,16 +216,21 @@ func (a *App) ApplyAssistedInstall(
 	skills []string,
 	permissionIDs []string,
 	projectRoot string,
+	rootID string,
 ) (model.AssistedInstallResult, error) {
 	if err := a.ready(); err != nil {
 		return model.AssistedInstallResult{}, err
 	}
-	return a.mgr.ApplyAssistedInstall(
+	if err := requireRootID(rootID); err != nil {
+		return model.AssistedInstallResult{}, err
+	}
+	return a.mgr.ApplyAssistedInstallForRoot(
 		a.ctx,
 		planID,
 		skills,
 		permissionIDs,
 		projectRoot,
+		rootID,
 		func(progress model.AssistedInstallProgress) {
 			wailsruntime.EventsEmit(a.ctx, "assisted-install-progress", progress)
 		},
@@ -224,21 +258,27 @@ func (a *App) CancelAssistedInstall(referenceID string) error {
 	return a.mgr.CancelAssistedInstall(referenceID)
 }
 
-func (a *App) AuditSkill(name string) (model.ScanReport, error) {
+func (a *App) AuditSkill(name, rootID string) (model.ScanReport, error) {
 	if err := a.ready(); err != nil {
 		return model.ScanReport{}, err
 	}
 	if strings.TrimSpace(name) == "" {
-		return a.mgr.Audit("")
+		return model.ScanReport{}, errors.New("Skill name is required")
 	}
-	return a.mgr.AuditSkills([]string{name})
+	if err := requireRootID(rootID); err != nil {
+		return model.ScanReport{}, err
+	}
+	return a.mgr.AuditSkills([]string{name}, rootID)
 }
 
-func (a *App) AuditSkills(names []string) (model.ScanReport, error) {
+func (a *App) AuditSkills(names []string, rootID string) (model.ScanReport, error) {
 	if err := a.ready(); err != nil {
 		return model.ScanReport{}, err
 	}
-	return a.mgr.AuditSkills(names)
+	if err := requireRootID(rootID); err != nil {
+		return model.ScanReport{}, err
+	}
+	return a.mgr.AuditSkills(names, rootID)
 }
 
 func (a *App) SetFindingIgnored(finding model.Finding, ignored bool, reason string) (bool, error) {
@@ -289,27 +329,36 @@ func (a *App) CheckUpdatesSelected(groupIDs []string, force bool) (model.UpdateC
 	return a.mgr.CheckUpdatesSelected(ctx, groupIDs, force)
 }
 
-func (a *App) PrepareUpdate(groupID string) (model.InstallPreview, error) {
+func (a *App) PrepareUpdate(groupID, rootID string) (model.InstallPreview, error) {
 	if err := a.ready(); err != nil {
 		return model.InstallPreview{}, err
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
 	defer cancel()
-	return a.mgr.PrepareUpdate(ctx, groupID)
+	if err := requireRootID(rootID); err != nil {
+		return model.InstallPreview{}, err
+	}
+	return a.mgr.PrepareUpdate(ctx, groupID, rootID)
 }
 
-func (a *App) QuarantineSkills(names []string) (model.Transaction, error) {
+func (a *App) QuarantineSkills(names []string, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.Quarantine(names)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.Quarantine(names, rootID)
 }
 
-func (a *App) RestoreSkill(name, transactionID string) (model.Transaction, error) {
+func (a *App) RestoreSkill(name, transactionID, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
 	}
-	return a.mgr.Restore(name, transactionID)
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.Restore(name, transactionID, rootID)
 }
 
 func (a *App) Rollback(transactionID string) (model.Transaction, error) {
@@ -377,17 +426,38 @@ func (a *App) ReviewScanWithCodex(report model.ScanReport, skillNames []string) 
 	})
 }
 
-func (a *App) ListQuarantine() ([]QuarantineItem, error) {
+func (a *App) ListQuarantine(rootID string) ([]QuarantineItem, error) {
 	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if err := requireRootID(rootID); err != nil {
 		return nil, err
 	}
 	out := make([]QuarantineItem, 0)
 	seen := map[string]bool{}
+	rootPath := ""
+	for _, root := range a.mgr.Config.SkillRoots {
+		if root.ID == rootID && root.Enabled {
+			rootPath = root.Path
+			break
+		}
+	}
+	if rootPath == "" {
+		return nil, fmt.Errorf("unknown or disabled Skill root: %s", rootID)
+	}
 	roots := []string{
 		a.mgr.Config.Paths.QuarantineRoot,
-		filepath.Join(a.mgr.Config.Paths.SkillsRoot, ".csm-quarantine"),
+		filepath.Join(rootPath, ".csm-quarantine"),
 	}
-	for _, root := range roots {
+	history, err := a.mgr.History(1000)
+	if err != nil {
+		return nil, err
+	}
+	txRoots := make(map[string]string, len(history))
+	for _, tx := range history {
+		txRoots[tx.ID] = tx.RootID
+	}
+	for rootIndex, root := range roots {
 		skills, err := os.ReadDir(root)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -401,11 +471,22 @@ func (a *App) ListQuarantine() ([]QuarantineItem, error) {
 			}
 			txs, _ := os.ReadDir(filepath.Join(root, skill.Name()))
 			for _, tx := range txs {
+				recordedRoot := txRoots[tx.Name()]
+				if recordedRoot == "" {
+					if rootIndex == 0 {
+						recordedRoot = model.RootIDCodexDefault
+					} else {
+						recordedRoot = rootID
+					}
+				}
+				if recordedRoot != rootID {
+					continue
+				}
 				content := filepath.Join(root, skill.Name(), tx.Name(), "content")
 				key := strings.ToLower(skill.Name() + "\x00" + tx.Name())
 				if _, err := os.Stat(content); err == nil && !seen[key] {
 					seen[key] = true
-					out = append(out, QuarantineItem{Skill: skill.Name(), TransactionID: tx.Name(), Path: content})
+					out = append(out, QuarantineItem{Skill: skill.Name(), RootID: rootID, TransactionID: tx.Name(), Path: content})
 				}
 			}
 		}
@@ -441,5 +522,14 @@ func (a *App) GetDiagnostics() (map[string]any, error) {
 		"reportsRoot":      a.mgr.Config.Paths.ReportsRoot,
 		"skillsRootExists": exists(a.mgr.Config.Paths.SkillsRoot),
 		"dataRootExists":   exists(a.mgr.Config.Paths.DataRoot),
+		"skillRoots":       a.mgr.Config.SkillRoots,
+		"defaultRootId":    a.mgr.Config.DefaultRootID,
 	}, nil
+}
+
+func requireRootID(rootID string) error {
+	if strings.TrimSpace(rootID) == "" {
+		return errors.New("explicit rootId is required")
+	}
+	return nil
 }
