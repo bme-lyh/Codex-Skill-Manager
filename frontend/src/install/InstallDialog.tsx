@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -13,6 +14,7 @@ import {
   FolderGit2,
   KeyRound,
   LoaderCircle,
+  MoreHorizontal,
   OctagonX,
   RefreshCw,
   RotateCcw,
@@ -1373,14 +1375,16 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       }
       return <>
         <button type="button" className="ghost" disabled={busy !== ""} onClick={resetForNewSource}><ArrowLeft size={16} />{t("返回", "Back")}</button>
-        <button type="button" className="ghost" disabled={busy !== "" || !preview || !assessment || assessment.gate === "blocked" || assessment.gate === "incomplete"}
-          onClick={() => {
-            if (!preview) return;
-            setInstallMethod("assisted");
-            void scanWithCodex(preview.id).catch(() => undefined);
-          }}>
-          <Sparkles size={16} />{t("运行增强项目扫描", "Run enhanced project scan")}
-        </button>
+        <SecondaryActions>
+          <button type="button" className="ghost" disabled={busy !== "" || !preview || !assessment || assessment.gate === "blocked" || assessment.gate === "incomplete"}
+            onClick={() => {
+              if (!preview) return;
+              setInstallMethod("assisted");
+              void scanWithCodex(preview.id).catch(() => undefined);
+            }}>
+            <Sparkles size={16} />{t("运行增强项目扫描", "Run enhanced project scan")}
+          </button>
+        </SecondaryActions>
         <button type="button" className="primary" disabled={busy !== "" || !selectedSkills.length || hasBlockingWarnings || !assessmentAllowsInstall}
           onClick={() => void installStandard()}>
           {busy === "standard" ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
@@ -1393,9 +1397,11 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         <button type="button" className="ghost" disabled={busy !== ""} onClick={resetForNewSource}>
           <ArrowLeft size={16} />{t("返回", "Back")}
         </button>
-        <button type="button" className="ghost" disabled={busy !== "" || !preview} onClick={switchToStandard}>
-          {t("切换到标准安装", "Switch to standard installation")}
-        </button>
+        <SecondaryActions>
+          <button type="button" className="ghost" disabled={busy !== "" || !preview} onClick={switchToStandard}>
+            {t("切换到标准安装", "Switch to standard installation")}
+          </button>
+        </SecondaryActions>
         <button type="button" className="primary" disabled={busy !== "" || !assessment ||
 			(assessment.gate !== "ready" && assessment.gate !== "attention")}
           onClick={() => void createPlanFromProjectScan()}>
@@ -1412,9 +1418,11 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         </button>;
       }
       return <>
-        <button type="button" className="ghost" disabled={busy !== ""} onClick={switchToStandard}>
-          {t("切换到标准安装", "Switch to standard installation")}
-        </button>
+        <SecondaryActions>
+          <button type="button" className="ghost" disabled={busy !== ""} onClick={switchToStandard}>
+            {t("切换到标准安装", "Switch to standard installation")}
+          </button>
+        </SecondaryActions>
         <button type="button" className="primary" disabled={busy !== "" || !preview}
           onClick={() => preview && void scanWithCodex(preview.id).catch(() => undefined)}>
           <RefreshCw size={17} />{t("重试增强项目扫描", "Retry enhanced project scan")}
@@ -1452,9 +1460,11 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     const { manualRequired, manualOnly } = assistedPlanDisposition(plan);
     return <>
       <button type="button" className="ghost" disabled={busy !== ""} onClick={resetForNewSource}>{t("重新开始", "Start over")}</button>
-      <button type="button" className="ghost" disabled={busy !== ""} onClick={switchToStandard}>
-        {t("切换到标准安装", "Switch to standard installation")}
-      </button>
+      <SecondaryActions>
+        <button type="button" className="ghost" disabled={busy !== ""} onClick={switchToStandard}>
+          {t("切换到标准安装", "Switch to standard installation")}
+        </button>
+      </SecondaryActions>
       <button type="button" className="primary" disabled={busy !== "" || !permissionsReady ||
         !!permissionDependencyIssue || !rootReady ||
 		(candidates.length > 0 && !selectedSkills.length) || hasBlockingWarnings || manualOnly || !assessmentAllowsInstall}
@@ -1473,8 +1483,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       aria-labelledby="install-dialog-title" tabIndex={-1}>
       <div className="modal-head install-dialog-head">
         <div>
-          <h2 id="install-dialog-title">{t("检查并安装 Skills", "Review and install Skills")}</h2>
-          <span>{t("先评估来源，再复核并安装", "Assess the source, then review and install")}</span>
+          <h2 id="install-dialog-title">{t("添加项目", "Add project")}</h2>
+          <span>{t("输入来源后，系统会理解项目并制定检查计划", "Enter a source and the app will understand the project and build a check plan")}</span>
         </div>
         <button type="button" onClick={canHideInBackground ? close : dismiss}
           disabled={cannotClose && !canHideInBackground}
@@ -1515,6 +1525,14 @@ function currentWorkflowStage(
   if (assessment || projectScan || plan) return "review";
   if (preview) return "assess";
   return "source";
+}
+
+function SecondaryActions({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
+  return <details className="install-secondary-actions">
+    <summary><MoreHorizontal size={16} />{t("更多选项", "More options")}</summary>
+    <div>{children}</div>
+  </details>;
 }
 
 function fallbackIncompleteAssessment(preview: InstallPreview): ProjectAssessment {

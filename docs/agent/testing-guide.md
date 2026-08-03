@@ -41,7 +41,7 @@ unsigned-release notice plus SHA-256 manifest with:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\package-release.ps1 -Version 0.10.1
+  -File .\scripts\package-release.ps1 -Version 0.10.2
 ```
 
 The build script records the source commit, dirty flag, version, and binary

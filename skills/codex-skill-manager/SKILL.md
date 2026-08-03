@@ -18,17 +18,20 @@ transaction IDs, and keep the user informed before any filesystem mutation.
    evidence, confidence, file snapshot and scan findings, then apply only the
    exact confirmed names.
 4. For GitHub or local installation, create a plan first. The manager pins a
-   full GitHub Commit or creates a bounded local snapshot, then enforces the
-   mandatory persisted layered assessment before any apply or optional Codex
-   phase. Run `install --plan-id PLAN --assess` and show the resolved source,
-   discovered Skills, assessment gate, target scope, and scan findings. If different Skill
-   contents share one name, report every conflicting source path and select a
-   specific repository subtree before creating a plan. Prefer an explicitly
-   identified `skills-codex` mirror for Codex only after showing that scope.
-5. When the user explicitly requests planned installation for a complex
-   repository, use `install --assist` to create a read-only Codex project scan.
-   Present its overview, advisory security conclusion, evidence limitations,
-   and declarative installation methods. Only after the user explicitly agrees,
+   full GitHub Commit or creates a bounded local snapshot, understands the
+   project type and installation route, then enforces the mandatory persisted
+   layered assessment before any apply or optional Codex phase. Run
+   `install --plan-id PLAN --assess` and show the resolved source, discovered
+   Skills, project classification, assessment gate, target scope, and scan
+   findings. If different Skill contents share one name, report every
+   conflicting source path and select a specific repository subtree before
+   creating a plan. Prefer an explicitly identified `skills-codex` mirror for
+   Codex only after showing that scope.
+5. Codex is a semantic check provider, not an installation mode. When the user
+   explicitly requests deeper checks for a complex repository, use
+   `install --assist` to create a read-only Codex project scan. Present its
+   overview, advisory security conclusion, evidence limitations, and
+   declarative installation methods. Only after the user explicitly agrees,
    use `--assist --project-scan-id ... --create-plan`. Present the resulting
    requirements, warnings, typed steps, exact Skills, permission IDs, manual
    work, and project-root requirement. Do not apply it in the same command.

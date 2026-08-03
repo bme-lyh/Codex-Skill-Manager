@@ -1,152 +1,165 @@
 # Desktop GUI guide
 
-The GUI uses one workflow for every source: required local assessment, optional
-an Enhanced project scan, explicit review, and apply. Review the exact targets
-and permissions before writing. Critical findings cannot be ignored; High
-findings need per-cluster confirmation and a non-empty reason; every replacement
-and removal has a recovery path.
+The unified desktop shell has five primary areas: **Home**, **Assets**,
+**Security**, **Activity**, and **Settings**. Assets and Activity expose their
+own secondary tabs. The **Add project** dialog uses one four-step flow for every
+source; it always starts with required local checks before any optional Codex
+work. Review exact targets, permissions, and recovery information before
+writing. Critical findings cannot be ignored; High findings require per-cluster
+confirmation and a non-empty reason.
 
-## Overview
+## Navigation
 
-Shows managed, unmanaged, and system Skill counts, active high-risk findings, source groups, and recent transactions.
+- **Home** shows managed, unmanaged, and system Skill counts, open reports,
+  source groups, and recent operations.
+- **Assets** contains **Skills** and **Groups**.
+- **Security** contains the local Skill scanner and risk-review results.
+- **Activity** contains **Updates**, **History & Rollback**, **Quarantine**, and
+  **Reports**.
+- **Settings** contains language, storage, GitHub, scheduled checks, optional
+  Codex review, and diagnostics.
 
-## Skills
+The header's **Add project** action is available from the main shell. Existing
+Page routes and the Wails/API compatibility boundary remain for integrations,
+but the visible UI uses the labels in this guide.
 
-Search and inspect complete source, status, and version information. Hover or focus a cell to see untruncated values. Use select all, invert, or clear. Selected unmanaged Skills can be analyzed and managed; selected personal Skills can be moved to quarantine.
+## Home
 
-## Install Skill
+Home is a status overview, not a second installation surface. It summarizes
+managed and unmanaged Skills, read-only system Skills, open security reports,
+groups, and recent installation, update, management, and rollback activity.
 
-The dialog has one **Source → Assess → Review → Apply** workflow. After a GitHub
-or local source is entered, mandatory checks run automatically and end in a
-plain `ready`, `attention`, `blocked`, or `incomplete` decision. The assessment
-groups required, conditionally triggered, and optional checks and shows project
-classification, documentation, Codex Skills, evidence, exact write targets, and
-reversibility. Ordinary Skill repositories do not require choosing an install mode.
+## Assets
 
-GitHub sources are bound to a full commit. Local sources are copied to a managed
-snapshot so review and apply never read a changing original directory. Unknown
-states, digest mismatch, unsupported targets, and every case variant of `.system`
-fail closed. Only `ready` and `attention` assessments can proceed.
-Discovered Skills install under the configured Skills root, which defaults to
-`%USERPROFILE%\.codex\skills`; `.system` is read-only. Projects with no Codex
-Skill are not copied to that global folder. Unsupported work remains manual,
-and an MCP project directory must be selected explicitly.
+### Skills
 
-The installation dialog keeps source input, analysis, permissions, execution
-progress, and errors in one workflow. GitHub 403 responses, invalid input,
-staging failures, and scan errors appear inside the dialog with an appropriate
-retry path; you do not need to close it to find a global notification. A rate
-limit shows its reset time and countdown, blocks premature retries, and links
-to credential settings.
+Search and inspect source, status, version, and local-change information. Select
+all, invert, or clear the current results. Selected unmanaged Skills can be
+analyzed and managed; selected personal Skills can be moved to **Quarantine**.
+System Skills are not selectable.
 
-If different same-name Skills are present in separate repository directories,
-the dialog lists the conflicting paths. When a `skills-codex` mirror is
-detected, **Use suggested Codex directory** retries with that subtree without
-requiring the user to rebuild the URL.
+Managing an existing Skill creates a read-only provenance and safety plan.
+Confirming it records source information and hashes; it does not move or rewrite
+Skill content. Source groups are detected from trusted directories, explicit
+`SKILL.md` provenance, Git remotes, and GitHub links. An uncertain remote source
+is kept in its own local group.
 
-**Standard installation** writes only the explicitly selected Skills. For a
-complex repository, the review page offers an explicit **Run enhanced project
-scan** action. Codex reuses the same mandatory assessment and then runs a
-read-only project scan: bounded summaries cover the eligible text inventory and
-a deterministic focus set receives deeper analysis. Credential-like files are
-metadata-only and large text is truncated. Codex first returns a project
-overview, security conclusion, evidence limitations, and declarative
-installation methods. It uses
-the configured model and reasoning effort, consumes Codex usage, and treats the
-local risk overview only as supplemental context.
+### Groups
 
-The scan does not create a plan, download dependencies, or authorize
-installation. The user must review it and choose **Approve and create
-installation plan** before Codex can propose typed steps and permissions.
+Source groups remain the authority for updates. Display groups can be created,
+renamed, reordered, and populated by dragging Skills. Layout changes are
+journaled and reversible; they do not change the Skill's source content.
 
-Codex text is never executed as a command. Automatic steps are restricted to
-installing selected Skills, installing a repository-matched exact-version Python
-tool from official PyPI, and adding a Codex MCP entry for that managed tool.
-Managed-tool and MCP automation requires a GitHub source so package ownership
-can be verified. Everything else remains a manual instruction. Approved
-automatic steps run first, and the result reports `partial` with the remaining
-manual work. MCP setup requires a real Git or SVN target project and will not
-replace an existing same-name MCP entry.
+## Add project
 
-When a Python tool is proposed, plan creation downloads its complete Wheel closure
-from official PyPI into isolated staging and displays the locked filenames and
-SHA256 values. Nothing is installed or run during analysis. Source
-distributions are rejected; native-code Wheels are marked high risk and need a
-separate approval. Apply installs only those locked files offline.
+The dialog has four visible steps:
 
-Every required permission must be approved before execution. The timeline shows
-the current step, completed count, activity, and errors. Use the top-right
-button to hide the dialog while work continues in the background; reopening it
-restores the latest progress. A process interrupted by application exit is
-reported explicitly instead of treating a source preview as an install plan.
-When Codex CLI reports a failure event, the dialog shows its actual error
-without storing normal model output or repository text. If no reliable plan can
-be generated, the source check, risk result, and Skill selection remain
-available for standard installation.
-After a failed run, the approval view restores only the exact prior Skill
-subset, permissions, and project root and requires another review before retry.
-Failure or cancellation recovers reversible steps in reverse order. Partial
-results keep their manual steps and rollback entry in History until recovery
-finishes. If Codex is unavailable or cannot produce a reliable plan, preserve
-the source analysis and Skill selection and switch to standard installation.
+1. **Source** accepts a GitHub repository, directory, or direct `SKILL.md` link,
+   or an absolute local directory containing one or more Skills. GitHub input is
+   resolved to a full commit. A local directory is copied to a bounded,
+   manager-owned snapshot before review.
+2. **Understand & plan** reads project documentation and installation markers,
+   classifies the project, discovers Codex Skills, inventories the source, and
+   scans the actual write targets. Required, conditionally triggered, and
+   optional checks are shown separately. This local phase does not call Codex,
+   download dependencies, or execute repository scripts.
+3. **Check & confirm** shows the evidence, project classification, Skill
+   selection, exact targets, findings, permissions, and reversibility. Its four
+   conclusions are **Ready to install**, **Review before installing**,
+   **Installation blocked**, and **Assessment incomplete**. Only the first two
+   can proceed, and the latter two fail closed.
+4. **Install & result** applies the selected Skills or approved structured
+   steps, shows progress and activity, records a transaction, and refreshes the
+   latest Skills and operation status after the change. The result keeps the
+   transaction ID, completed targets, manual work, and recovery state visible.
 
-## Groups
+Adding a project starts one unified flow. For a complex repository, **More options** contains **Run enhanced
+project scan**. This is an explicit, optional semantic scan provided by Codex,
+not a separate installation mode. It reuses the local assessment, sends bounded
+source context with shell access disabled, and returns a project overview,
+security conclusion, evidence limitations, and declarative installation methods.
+The scan does not authorize installation, create a plan, or download
+dependencies. Review it and choose **Approve and create installation plan**
+before typed steps and permissions can be proposed.
 
-Source groups are detected automatically and remain the authority for updates. Display groups may be created, renamed, reordered, and populated by dragging Skills. These changes are journaled and reversible.
+Codex text is never executed as a command. Automatic steps are limited to
+selected Skill installation, an exact-version Python tool from official PyPI,
+and a manager-owned Codex MCP entry. Repository scripts, arbitrary shell
+commands, unsupported package managers, and other work remain manual. Managed
+Python and MCP automation requires a GitHub source so package ownership can be
+verified; an MCP target must be a real, explicitly selected Git or SVN project
+directory and an existing same-name entry is not replaced.
 
-## Update Center
+If a Python tool is approved in a generated plan, dependency resolution obtains
+the complete Wheel closure from official PyPI into isolated staging and locks
+filenames and SHA256 values. Nothing is installed or run during analysis.
+Source distributions are rejected; native-code Wheels require separate High-risk
+approval. Apply verifies the locked files and installs offline.
 
-The page shows the last check time and a clear status for every source. Select one or many available sources, then review the immutable commit, exact target files, security results, and Skill selection for each source.
+Every required permission must be approved before execution. The dialog can be
+hidden while a long task continues in the background; reopening restores its
+latest progress. If a Codex plan cannot be generated, the source assessment,
+risk result, and Skill selection remain available. **More options** also offers
+**Switch to standard installation**, which writes only the selected Skill
+directories and does not configure MCP or extra dependencies.
 
-Each source is applied as an independent transaction with its own backup and rollback entry. A failure in one source is reported without hiding the result of completed sources.
+After failure or cancellation, reversible steps are recovered in reverse order.
+A partial result keeps unsupported manual steps and its rollback entry. If the
+operation completes but the dashboard refresh fails, the result is preserved;
+retry the refresh instead of running installation again. Rollback refuses to
+overwrite a target changed after installation and provides a manual recovery
+path. Use **History & Rollback** for transaction recovery and **Quarantine** for
+removed Skills.
 
-## Security Center
+## Security
 
-Skills with no trusted scan record or changed content are selected by default. Checked and unchanged Skills are skipped by default, but can be added with checkboxes, Select all, or Invert. Results and counts follow Group → Skill → Warning. Groups, Skill details, and Codex conclusions are collapsed by default so large reports remain readable.
+Skills without a trusted scan record or with changed content are selected by
+default. Results follow **Group → Skill → Warning**, with details collapsed by
+default for large reports. Repeated scans count unique active High/Critical
+findings from the latest effective report per target.
 
-Repeated scans do not inflate the badge: it counts unique active High/Critical
-findings from the latest effective report per target. Critical findings cannot
-be ignored and always block writes. High findings require per-cluster explicit
-confirmation and a non-empty reason. Batch actions cannot bypass either rule;
-the backend resolves persisted severity instead of trusting UI metadata.
+Critical findings always block writes and cannot be ignored. High findings need
+per-cluster confirmation and a non-empty reason; batch actions cannot bypass
+that rule. Medium and lower findings use the ordinary ignore flow. Restoring a
+previously accepted High cluster immediately reactivates the gate.
 
-Active High/Critical findings block installation and update. A confirmed High
-decision clears only that cluster; restoring it immediately reactivates the gate.
-Critical remains blocked. Optional Codex risk review packages the complete
-selected group with shell access disabled and treats local rule hits as
-supplemental leads.
+The Security page's optional **Codex review** packages the selected group with
+shell access disabled. It is advisory, treats local rule hits as supplemental
+leads, and leaves the final decision to the user. The Settings toggle controls
+this Security review only; it does not silently enable the Add project scan.
 
-## History, quarantine, and reports
+## Activity
 
-History lists mutations and offers rollback when a backup exists. Quarantine restores removed Skills without permanent deletion. Reports provide human-readable and structured audit records.
+### Updates
+
+Updates compares source commits and reports a clear status and last-check time
+for each source. Review the immutable commit, exact target files, security
+results, and Skill selection before applying. Each source is an independent
+transaction with its own backup and rollback entry; one failure does not hide
+completed sources. Scheduled checks are read-only and never install updates
+automatically.
+
+### History & Rollback
+
+History lists mutations, transaction status, progress, and recovery information.
+When a backup exists, it offers rollback. Recovery stops safely rather than
+overwriting a managed target that changed after installation.
+
+### Quarantine and Reports
+
+Quarantine stores explicitly removed personal Skills without permanent deletion
+and allows restoration. Reports provide human-readable and structured audit
+records for local scans and operations.
 
 ## Settings
 
 Language supports Simplified Chinese and English. Chinese is used on first run
-and for older configurations with no saved language. Choosing a language updates
-the interface immediately, saves it automatically, and restores it on the next
-launch. Paths, rule names, logs, and user-defined Skill or group content remain
-unchanged.
+and when no saved language exists. Switching language is immediate, saved
+automatically, and restored on the next launch.
 
 Configure absolute paths, scheduled read-only checks, private GitHub
-credentials, optional Codex review, and diagnostics. The enable toggle controls
-Security Center risk review only. Choosing **Run enhanced project scan** in the
-Install Skill dialog, or using CLI `--assist`, is the opt-in for that installation;
-it still uses the CLI path, model, and reasoning effort configured here.
-
-When the CLI path is blank, the application skips unusable WindowsApps
-candidates and probes PATH plus the current user's npm directory for a working
-independent CLI. It checks capabilities instead of pinning a CLI version and
-refreshes status when focus returns after browser authentication. Once
-authenticated, the model picker loads the current CLI's visible model catalog
-instead of using a hard-coded list.
-
-Each application group is one risk-review task, so Skills in the same group keep
-shared context. Groups run serially by default; higher concurrency can cause CLI
-model-refresh contention or rate limiting. Local rule input is a count-only
-overview; Codex reads evidence from the repository. Reviews return a separate
-summary for every Skill with live progress. Switching pages keeps the task and
-result alive. A failed or incomplete group is retried once serially. Codex
-requires an installed, signed-in CLI and consumes account usage. Background
-probes run without flashing console windows. Tokens are stored in Windows
-Credential Manager and never written to logs or reports.
+credentials, optional Security-page Codex review, and diagnostics. Credentials
+are stored in Windows Credential Manager and are not written to logs or reports.
+The Codex status area checks the configured CLI, sign-in state, capabilities, and
+visible model catalog. Codex requires an installed, signed-in CLI and consumes
+account usage.

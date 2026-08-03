@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  ArchiveRestore, Boxes, CheckCircle2, ChevronRight, CircleAlert, Clock3,
-  Download, FileClock, FolderGit2, Gauge, GitBranch, History, LayoutDashboard,
+  ArchiveRestore, CheckCircle2, ChevronRight, CircleAlert, Clock3,
+  FolderGit2, Gauge, History,
   Link2, ListRestart, LoaderCircle, Pencil, Plus, RefreshCw, RotateCcw, Search,
   Settings, ShieldCheck, ShieldAlert, Trash2, X, GripVertical, CheckSquare2,
   ArrowUpCircle, KeyRound, Stethoscope, Sparkles, Languages
@@ -10,12 +10,44 @@ import { api } from "./api";
 import { isPackagedFullContextMode } from "./codexContext";
 import { I18nProvider, normalizeLocale, translate, useI18n } from "./i18n";
 import { InstallDialog } from "./install/InstallDialog";
+import { SectionTabs } from "./shell/SectionTabs";
+import { Sidebar } from "./shell/Sidebar";
+import type { NavigationGroupId, NavigationTabId } from "./shell/navigation";
 import type { AppLocale, Translate } from "./i18n";
 import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateStatus } from "./types";
 
 type Page = "overview" | "skills" | "groups" | "updates" | "security" | "history" | "quarantine" | "reports" | "settings";
 type Operation = { label: string; detail: string; status: "running" | "success" | "error" };
 type RunOperation = <T>(label: string, task: () => Promise<T>, successDetail?: string) => Promise<T | undefined>;
+
+const pageTitles: Record<Page, { zhCN: string; enUS: string }> = {
+  overview: { zhCN: "首页", enUS: "Home" },
+  skills: { zhCN: "Skills", enUS: "Skills" },
+  groups: { zhCN: "分组", enUS: "Groups" },
+  updates: { zhCN: "更新", enUS: "Updates" },
+  security: { zhCN: "安全", enUS: "Security" },
+  history: { zhCN: "历史与回滚", enUS: "History & Rollback" },
+  quarantine: { zhCN: "隔离区", enUS: "Quarantine" },
+  reports: { zhCN: "报告", enUS: "Reports" },
+  settings: { zhCN: "设置", enUS: "Settings" }
+};
+
+const pageGroups: Record<Page, NavigationGroupId> = {
+  overview: "home", skills: "assets", groups: "assets", updates: "activity",
+  security: "security", history: "activity", quarantine: "activity", reports: "activity", settings: "settings"
+};
+
+const defaultPages: Record<NavigationGroupId, Page> = {
+  home: "overview", assets: "skills", security: "security", activity: "updates", settings: "settings"
+};
+
+const tabPages: Record<NavigationTabId, Page> = {
+  skills: "skills", groups: "groups", updates: "updates", history: "history", quarantine: "quarantine", reports: "reports"
+};
+
+const tabByPage: Partial<Record<Page, NavigationTabId>> = {
+  skills: "skills", groups: "groups", updates: "updates", history: "history", quarantine: "quarantine", reports: "reports"
+};
 
 function useCodexProgress() {
   const [progress, setProgress] = useState<CodexReviewProgress | null>(null);
@@ -28,18 +60,6 @@ function useCodexProgress() {
   })), []);
   return { progress, clearProgress: () => setProgress(null) };
 }
-
-const navItems: Array<{ id: Page; zhCN: string; enUS: string; icon: any }> = [
-  { id: "overview", zhCN: "概览", enUS: "Overview", icon: LayoutDashboard },
-  { id: "skills", zhCN: "Skills", enUS: "Skills", icon: Boxes },
-  { id: "groups", zhCN: "分组", enUS: "Groups", icon: GitBranch },
-  { id: "updates", zhCN: "更新中心", enUS: "Updates", icon: RefreshCw },
-  { id: "security", zhCN: "安全中心", enUS: "Security", icon: ShieldCheck },
-  { id: "history", zhCN: "历史与回滚", enUS: "History & Rollback", icon: History },
-  { id: "quarantine", zhCN: "隔离区", enUS: "Quarantine", icon: ArchiveRestore },
-  { id: "reports", zhCN: "报告", enUS: "Reports", icon: FileClock },
-  { id: "settings", zhCN: "设置", enUS: "Settings", icon: Settings }
-];
 
 export default function App() {
   const [locale, setLocale] = useState<AppLocale>("zh-CN");
@@ -91,28 +111,14 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
     }
   };
 
-  const nav = navItems.map(item => ({ ...item, label: t(item.zhCN, item.enUS) }));
-  const title = nav.find(item => item.id === page)?.label ?? t("概览", "Overview");
+  const activeGroupId = pageGroups[page];
+  const activeTabId = tabByPage[page];
+  const navigateToGroup = (groupId: NavigationGroupId) => setPage(defaultPages[groupId]);
+  const navigateToTab = (tabId: NavigationTabId) => setPage(tabPages[tabId]);
+  const title = t(pageTitles[page].zhCN, pageTitles[page].enUS);
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand" title="Codex Skill Manager">
-          <div className="brand-copy"><span>CODEX</span><strong>Skill Manager</strong></div>
-        </div>
-        <nav>
-          {nav.map(item => {
-            const Icon = item.icon;
-            return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}>
-              <Icon size={18} /><span>{item.label}</span>
-              {item.id === "security" && data?.riskCount ? <em>{data.riskCount}</em> : null}
-            </button>;
-          })}
-        </nav>
-        <div className="sidebar-foot">
-          <span className="status-dot" />
-          <div><strong>{t("本地模式", "Local mode")}</strong><small>{t("Codex 复核需单独启用", "Codex review is opt-in")}</small></div>
-        </div>
-      </aside>
+      <Sidebar activeGroupId={activeGroupId} badges={{ securityRiskCount: data?.riskCount ?? 0 }} onSelect={navigateToGroup} />
 
       <main>
         <header>
@@ -121,9 +127,12 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
             <button className="ghost" disabled={loading} onClick={() => void runOperation(t("刷新 Skills 清单", "Refresh Skills"), refresh, t("清单已刷新", "Skills refreshed"))}>
               <RefreshCw size={17} className={loading ? "spin" : ""} />{loading ? t("刷新中…", "Refreshing…") : t("刷新", "Refresh")}
             </button>
-            <button className="primary" onClick={() => setInstallOpen(true)}><Download size={17} />{t("安装 Skills", "Install Skills")}</button>
+            <button className="primary" onClick={() => setInstallOpen(true)}><Plus size={17} />{t("添加项目", "Add project")}</button>
           </div>
         </header>
+        {activeTabId && <div className="section-tabs-wrap">
+          <SectionTabs groupId={activeGroupId} activeTabId={activeTabId} onSelect={navigateToTab} />
+        </div>}
         {error && <div className="error-banner"><CircleAlert size={18} />{error}<button onClick={() => setError("")}>×</button></div>}
         {operation && <OperationBanner operation={operation} dismiss={() => setOperation(null)} />}
         {loading && !data ? <Loading /> : data ? (
@@ -143,7 +152,7 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
         ) : null}
       </main>
       {installOpen && <InstallDialog close={() => setInstallOpen(false)} refresh={refreshStrict}
-        openSettings={() => { setInstallOpen(false); setPage("settings"); }} />}
+        openSettings={() => { setInstallOpen(false); navigateToGroup("settings"); }} />}
     </div>
   );
 }

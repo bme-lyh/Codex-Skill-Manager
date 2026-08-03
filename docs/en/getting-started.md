@@ -7,101 +7,115 @@
 3. Double-click `CodexSkillManager.exe`.
 4. The default Skills root is `%USERPROFILE%\.codex\skills`.
 
-Portable releases contain `portable.marker` and store configuration and runtime state under the release directory. Standard installations store application state under `%USERPROFILE%\.codex\skill-manager`.
+Portable releases contain `portable.marker` and store configuration and runtime
+state under the release directory. Standard installations store application
+state under `%USERPROFILE%\.codex\skill-manager`.
 
 The first-run interface is Simplified Chinese. Open **Settings → Language** and
 choose **English**. On first run, those labels appear as **设置 → 语言**. The
 change is immediate and saved automatically.
 
-The release also includes `agent-skill\codex-skill-manager`. To install this
-helper into the global Codex Skills directory, open **Install Skill**, choose
-**Local folder**, select the release's `agent-skill` directory, review the
-assessment, and apply the Skill.
+The shell has five primary areas: **Home**, **Assets**, **Security**,
+**Activity**, and **Settings**. Assets contains **Skills** and **Groups**;
+Activity contains **Updates**, **History & Rollback**, **Quarantine**, and
+**Reports**.
 
-## Install a source build to a chosen directory
+## Add a project
 
-From the repository root, build the application and then run the source-only
-installation script:
+Open **Add project** from the top-right action. The dialog uses the same four
+steps for a GitHub link and a local directory:
 
-```powershell
-pnpm --dir frontend install --frozen-lockfile
-.\scripts\build.ps1
-.\scripts\install.ps1 -InstallDirectory "D:\Apps\CodexSkillManager"
-```
+1. **Source**: enter a repository, directory, or direct `SKILL.md` link. A
+   GitHub source is pinned to a full commit. A local source is copied into a
+   bounded, manager-owned snapshot.
+2. **Understand & plan**: the app reads project documentation and markers,
+   classifies the project, discovers Codex Skills, and scans the exact targets.
+   Required, conditional, and optional checks are shown separately. The local
+   phase does not call Codex, download dependencies, or execute repository
+   scripts.
+3. **Check & confirm**: review evidence, selected Skills, exact write targets,
+   risks, permissions, and recovery. The four conclusions are **Ready to
+   install**, **Review before installing**, **Installation blocked**, and
+   **Assessment incomplete**. Only the first two can continue.
+4. **Install & result**: approve the selected targets or structured steps. The
+   dialog shows progress, records a transaction, refreshes the latest Skills and
+   operation status, and keeps the recovery state visible.
 
-If Windows execution policy blocks the source installation script, use:
+The entry point does not ask you to choose an installation mode. For a complex
+repository, open **More options** and choose **Run enhanced project scan**.
+Codex is an optional semantic-check provider, not a separate installation mode.
+The scan is read-only, has shell access disabled, and still requires local
+validation and explicit approval. **Switch to standard installation** is also a
+technical action under **More options**; it writes only selected Skill
+directories and does not configure MCP or extra dependencies.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\install.ps1 `
-  -InstallDirectory "D:\Apps\CodexSkillManager"
-```
+The assessment groups checks automatically and ends in one of four UI outcomes.
+Expired, replaced, digest-mismatched, unknown, unsupported, or case-variant
+`.system` targets fail closed and require a fresh check. `.system` is always
+read-only. A project with no Codex Skill is not copied to the global Skills
+folder, and an MCP project directory must be selected explicitly.
 
-Release archives do not require this script: extract the selected archive and
-run the executable directly.
+The default Skills root is `%USERPROFILE%\.codex\skills`. After installation,
+the dialog refreshes the Skills list and operation status. If the refresh fails,
+the completed result is preserved; retry the refresh instead of repeating the
+installation. Use **History & Rollback** for the transaction and rollback path,
+or **Quarantine** to restore removed Skills.
+
+## Add the bundled Codex Skill
+
+Release archives include `agent-skill\codex-skill-manager`. To add it to the
+global Codex Skills directory, open **Add project**, choose **Local directory**,
+select the archive's `agent-skill` directory, review the four steps, and install
+the selected Skill. A source checkout provides the same content at
+`skills\codex-skill-manager`.
 
 ## Manage existing Skills
 
-Open **Skills**, select unmanaged items, and click **Manage**. The read-only preview shows detected repositories, source paths, proposed groups, confidence, and scan results. Confirming the plan records provenance and hashes; it does not move or rewrite Skill content.
+Open **Assets → Skills**, select unmanaged items, and choose **Manage**. The
+read-only preview shows detected repositories, source paths, proposed groups,
+confidence, and scan results. Confirming the plan records provenance and hashes;
+it does not move or rewrite Skill content.
 
-## Install a new Skill
+## Optional enhanced project scan
 
-Click **Install Skill**, choose GitHub or local directory, and provide the
-source. GitHub input may be a repository URL, a path inside a repository, or a
-direct `SKILL.md` URL. The dialog uses one **Source → Assess → Review → Apply**
-workflow. GitHub input is pinned to an immutable commit; an explicit local
-directory is copied into a bounded manager-owned snapshot. The mandatory local
-assessment reads documentation and installation markers, classifies the project,
-discovers Codex Skills, scans actual targets, and groups checks as required,
-triggered, or optional. Only `ready` and `attention` assessments can continue.
-Expired, replaced, digest-mismatched, unknown, or case-variant `.system` targets
-fail closed and require a fresh assessment.
+The **Run enhanced project scan** action is for repositories that also need a
+Python tool or Codex MCP integration. Check Codex in **Settings** and make sure
+the CLI is installed, signed in, and has available usage. The app packages the
+prepared source with shell access disabled and returns a project summary,
+security conclusion, evidence limits, declarative methods, typed steps, and
+permissions.
 
-Discovered Skills are installed under the configured Skills root, which defaults
-to `%USERPROFILE%\.codex\skills`. A project with no Codex Skill is not copied
-there as an ordinary application. Unsupported work remains manual; an MCP
-project directory, when needed, must be chosen explicitly.
+Automatic execution is limited to selected Skill installation, a verified
+repository-matched Python tool from official PyPI, and a manager-owned Codex MCP
+entry. Repository scripts, free-form commands, unsupported work, and other
+unsafe-to-automate steps remain manual. Managed Python and MCP automation
+requires a GitHub source so package ownership can be verified; MCP needs a real
+Git or SVN project directory. A partial result records the completed automatic
+steps and the remaining manual work.
 
-**Standard installation** copies only the selected Skill directories. It does
-not install extra tools, configure MCP, or execute repository scripts.
-
-The optional **Enhanced project scan** is for repositories that also need a Python
-tool or Codex MCP integration. It never replaces the mandatory local assessment.
-Clicking **Run enhanced project scan** is the explicit opt-in for the current
-installation. Check Codex in Settings and make sure the CLI is
-installed, signed in, and has available usage. The app packages the complete
-prepared source for Codex with shell access disabled, then shows a summary, requirements,
-typed steps, and required permissions. Select the Skills, approve each required
-permission, and provide a real Git or SVN project directory if MCP configuration
-needs one.
-
-Automatic execution is limited to installing Skills, installing a verified
-Python tool from official PyPI, and writing a manager-owned Codex MCP entry.
-Repository scripts and free-form commands proposed by Codex are never run.
-Unsupported work remains a manual step. The app can finish supported steps
-first, then reports a partial result until the manual work is complete. Managed
-Python and MCP automation requires a GitHub source so PyPI ownership can be
-verified. The read-only enhanced project scan never downloads dependencies.
-Only after you separately approve plan generation may the app download Wheels
-from official PyPI into isolated staging to create a complete dependency lock; no
-package is installed or run at that stage. Local directories still support
-standard installation and the Enhanced project scan. Source context is processed
+The read-only scan does not download dependencies. Only after you approve plan
+generation may the app download the complete Wheel closure from official PyPI
+into isolated staging and lock its filenames and SHA256 values. No package is
+installed or run during analysis. Source distributions are rejected and
+native-code Wheels require separate High-risk approval. Source context is sent
 through Codex CLI, so private-repository users should consider their data and
-usage requirements before enabling it.
+usage requirements before enabling the optional scan.
 
-Source, GitHub 403, Codex, and execution errors stay visible inside the
-installation dialog. Rate limits show a reset countdown, and Codex CLI errors
-link to Settings. You can retry, cancel, roll back, or preserve the source
-analysis and switch to standard installation. Long-running work can continue
-after the dialog is hidden. Reopening restores its progress. A failed retry
-returns to approval with only the exact prior Skill subset, permissions, and
-project root. Partial manual work and its rollback entry remain in History.
+Source, GitHub 403, Codex, and execution errors stay visible inside the Add
+project dialog. Rate limits show a reset countdown. You can retry or cancel;
+long-running work can continue after hiding the dialog, and reopening restores
+its progress. After a failed run, the approval view restores only the exact
+prior Skill subset, permissions, and project root for a new review. Failure or
+cancellation recovers reversible steps in reverse order.
 
-The CLI exposes the same layered source, assessment, review, and apply workflow;
+The CLI retains its lower-level compatibility contract for scripted workflows;
 see the [CLI reference](cli-reference.md#codex-assisted-installation).
 
 ## Check for updates
 
-Open **Update Center** and click **Check updates**. This only compares commits. Select one or many sources, review the generated plans and findings, then select the individual Skills to update.
+Open **Activity → Updates** and click **Check updates**. This compares commits
+only. Select one or more available sources, review the immutable commit, exact
+targets, findings, and Skill selection, then apply the chosen updates. Each
+source has an independent transaction, backup, and rollback entry.
 
 No scheduled check installs updates automatically.
