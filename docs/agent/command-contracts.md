@@ -6,6 +6,10 @@ Global options are accepted before the command:
 csm --config <absolute-config-path> --json <command>
 ```
 
+Root-scoped commands accept `--root codex-default|agents`. Compatibility calls
+default to `codex-default`, but automation should always send an explicit root.
+Plans seal `targetRootId`, and apply rejects a different root.
+
 Read-only commands:
 
 - `doctor`, `dashboard`/`discover`, `audit [--skill NAME]`, `check`;
@@ -113,14 +117,14 @@ Mutating commands:
 - `bootstrap`: manage the two known existing packages without replacing files;
 - `manage --skill NAME...`: create a persisted source-detection and scan plan;
 - `manage --plan-id ID --apply --skill NAME...`: apply an explicit plan;
-- `group create --name NAME`;
+- `group create --root ROOT_ID --name NAME`;
 - `group rename --id ID --name NAME`;
 - `group reorder --id ID...`;
 - `group move --group ID --skill NAME...`;
-- `install --plan-id ID --apply --skill NAME... [--accept-high-risk]`;
+- `install --root ROOT_ID --plan-id ID --apply --skill NAME... [--accept-high-risk]`;
 - assisted apply: `install --assist --plan-id ID --apply --skill NAME... --grant ID... [--project-root PATH]`;
-- `remove NAME...`: move explicit names into quarantine;
-- `restore --skill NAME --transaction ID`;
+- `remove --root ROOT_ID NAME...`: move explicit names into quarantine;
+- `restore --root ROOT_ID --skill NAME --transaction ID`;
 - `rollback --transaction ID`;
 - `warning --fingerprint HASH --rule ID --file PATH [--reason TEXT]`:
   persist an ignore decision; `--restore` removes it;

@@ -5,6 +5,16 @@ CSM is a single Go codebase with two entry points:
 - `cmd/csm`: deterministic CLI and JSON automation surface;
 - repository root: Wails desktop application embedding the React build.
 
+## Root model
+
+Configuration schema 2 registers `codex-default` at
+`%USERPROFILE%\.codex\skills` and `agents` at
+`%USERPROFILE%\.agents\skills`. Codex is the default only for legacy callers;
+current mutation APIs carry an explicit `rootId`. Skill, source, scan, group,
+update, quarantine, restore, and transaction records keep that root identity.
+Roots must be absolute, enabled, non-overlapping, and outside manager data
+paths. Each root's top-level `.system` directory is read-only.
+
 Core packages:
 
 - `config`: validated absolute-path configuration;
@@ -20,6 +30,12 @@ Core packages:
 - `codexreview`: opt-in CLI discovery, auth diagnostics, group-scoped risk review,
   full-repository installation analysis, monotonic JSONL activity progress,
   no-tool isolated execution, retry handling, and JSON-Schema-validated output.
+
+`codexreview.Runner` is the shared process boundary for every Codex-backed
+workflow. It owns executable discovery, environment filtering, timeouts,
+bounded output, retries, JSONL diagnostics, and schema validation. Project
+scans, install planning, security review, and related flows call this runner
+instead of starting Codex independently.
 
 The GUI calls the same manager facade as the CLI. The source lock is the
 portable source of truth; SQLite is operational history. Filesystem changes,

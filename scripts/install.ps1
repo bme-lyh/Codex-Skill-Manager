@@ -2,7 +2,8 @@
 param(
     [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA "CodexSkillManager"),
     [string]$DataDirectory = (Join-Path $env:USERPROFILE ".codex\skill-manager"),
-    [string]$SkillsDirectory = (Join-Path $env:USERPROFILE ".codex\skills")
+    [string]$SkillsDirectory = (Join-Path $env:USERPROFILE ".codex\skills"),
+    [string]$AgentsSkillsDirectory = (Join-Path $env:USERPROFILE ".agents\skills")
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +27,7 @@ Copy-Item -LiteralPath (Join-Path $binaryRoot "CodexSkillManager.exe") -Destinat
 $configPath = Join-Path $DataDirectory "config.yaml"
 if (-not (Test-Path -LiteralPath $configPath)) {
     $config = @"
-schemaVersion: 1
+schemaVersion: 2
 paths:
   skillsRoot: '$SkillsDirectory'
   dataRoot: '$DataDirectory'
@@ -36,6 +37,20 @@ paths:
   quarantineRoot: '$(Join-Path $DataDirectory "quarantine")'
   cacheRoot: '$(Join-Path $DataDirectory "cache")'
   stagingRoot: '$(Join-Path $DataDirectory "staging")'
+skillRoots:
+  - id: codex-default
+    name: Codex Skills
+    kind: codex
+    path: '$SkillsDirectory'
+    enabled: true
+    systemDir: .system
+  - id: agents
+    name: Agents Skills
+    kind: agents
+    path: '$AgentsSkillsDirectory'
+    enabled: true
+    systemDir: .system
+defaultRootId: codex-default
 schedule:
   enabled: false
   frequency: weekly

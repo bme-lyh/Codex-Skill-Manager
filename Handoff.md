@@ -1,0 +1,162 @@
+# Codex Skill Manager handoff
+
+## Project snapshot
+
+- Product: Windows desktop and CLI manager for Codex-compatible Skills.
+- Release line: `0.11.0`.
+- Desktop: Wails v2 with a React/Vite/TypeScript frontend.
+- CLI: `cmd/csm`, with stable JSON envelopes for automation.
+- Default data directory: `%USERPROFILE%\.codex\skill-manager`.
+- Managed Skill roots:
+  - `codex-default` → `%USERPROFILE%\.codex\skills` (default install target)
+  - `agents` → `%USERPROFILE%\.agents\skills`
+
+## Architecture
+
+```text
+Wails UI / csm CLI
+        │
+        ▼
+internal/manager        use cases, plans, gates, transactions, recovery
+   ├─ config            schema migration and path/root validation
+   ├─ inventory         root-aware discovery and content hashes
+   ├─ scanner           deterministic local security checks
+   ├─ githubsource      immutable GitHub resolution and safe staging
+   ├─ provenance        source detection for existing Skills
+   ├─ codexreview       optional semantic review through one Runner
+   ├─ state             SQLite operational state
+   └─ reporting         Markdown/JSON audit records
+        │
+        ├─ sources.lock.json   portable source truth (schema 2)
+        └─ state.db            scans, approvals, groups, updates, history
+```
+
+The GUI and CLI call the same manager. UI code must not reproduce authorization
+rules: previews, risk gates, target validation, and transaction decisions belong
+to the Go backend.
+
+## Root and identity model
+
+Names are unique only inside a root. Persisted or cross-root operations use
+`rootId + name`; source packages are stored under `rootId + NUL + packageId`.
+Install, adoption, grouping, scan, update, quarantine, restore, and rollback
+carry `rootId`. Compatibility wrappers may default an omitted root to
+`codex-default`, but new API and CLI calls should always send `--root` or
+`rootId` explicitly.
+
+Both roots reserve a top-level `.system` directory. Never create, install,
+quarantine, restore, or roll back that target. Registered roots must be
+absolute, enabled, non-overlapping, and separate from manager data, staging,
+backup, report, cache, and quarantine paths.
+
+## Installation and update flow
+
+1. Resolve GitHub branches/tags to a full commit SHA, or snapshot a local source.
+2. Discover candidate Skills and run the local scanner against exact targets.
+3. Seal the preview, including `TargetRootID`, candidates, scan, source, and expiry.
+4. Build a project assessment and show its gate, evidence, targets, and recovery path.
+5. Apply only the selected candidates from the sealed preview.
+6. Back up replacements, journal each checkpoint, update the root-qualified lock
+   and security state, then report the transaction.
+
+Updates create a new immutable preview and remain bound to the package's original
+root. Removal always means moving one explicit Skill directory to quarantine.
+
+## Codex review module
+
+`internal/codexreview/runner.go` is the single process boundary for Codex CLI
+work. It centralizes CLI discovery, filtered environment, timeouts, output
+limits, retries, diagnostics, and schema validation. Project scanning,
+installation analysis, Skill security review, and related update work reuse it.
+Codex output is untrusted proposal data. Shell access remains disabled and all
+paths, permissions, package locks, and actions are revalidated locally.
+
+## Desktop UI
+
+The shell uses a collapsible sidebar, a root selector, system appearance,
+Windows accent color, visible focus, and reduced-motion/high-contrast support.
+Primary sections are Home, Assets, Security, Activity, and Settings. English and
+Chinese strings live in `frontend/src/i18n.tsx`; keep wording short, literal,
+and task-focused. Avoid promotional copy, vague assurances, and invented jargon.
+
+The add-project dialog selects a root before analysis. Once a plan exists, the
+target is locked. Same-name Skills in different roots are valid; ambiguous or
+cross-root bulk actions must stop and ask for a single root.
+
+## Important files
+
+- `app.go`: Wails facade and desktop-only helpers.
+- `cmd/csm/main.go`: CLI parsing and JSON command surface.
+- `internal/model/model.go`: shared domain and API schema.
+- `internal/manager/manager.go`: standard install/manage/update/recovery flows.
+- `internal/manager/assisted_install.go`: typed assisted-install execution.
+- `internal/config/config.go`: schema 2 root defaults and path validation.
+- `internal/state/state.go`: SQLite schemas and v1 migrations.
+- `frontend/src/App.tsx`: application state and page composition.
+- `frontend/src/api.ts`: Wails/demo API adapter.
+- `scripts/build.ps1`: verified production build into `build/bin`.
+- `scripts/dev.ps1`: local Wails development launcher.
+- `scripts/deploy-local.ps1`: dry-run-first, manifest-verified local deployment.
+- `scripts/package-release.ps1`: standard/portable release archives and checksums.
+
+## Development workflow
+
+```powershell
+# Frontend
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend test
+pnpm --dir frontend run build
+
+# Go (the repository can use .toolchains/go when system Go is unavailable)
+go test ./...
+go vet ./...
+
+# Desktop + CLI; this refreshes the project-local applications
+.\scripts\build.ps1
+
+# Optional installed copy; dry run first
+.\scripts\deploy-local.ps1
+.\scripts\deploy-local.ps1 -Apply
+```
+
+Use `wails build` through `scripts/build.ps1`; plain `go build` is not a valid
+desktop build. After changing `skills/codex-skill-manager`, run the bundled
+validator. Windows path-security tests may require running outside the Codex
+sandbox, but test fixtures must remain under `t.TempDir()` and must never point
+at the real user Skill roots.
+
+## Release checklist
+
+1. Update versions in `internal/model/model.go`, `frontend/package.json`,
+   `wails.json`, and the first `CHANGELOG.md` entry.
+2. Update README download links, user/agent docs, and this handoff when contracts
+   or architecture change.
+3. Refresh English and Chinese screenshots/carousels from fictional demo data.
+4. Run `gofmt`, frontend tests/build, `go test ./...`, `go vet ./...`, validator,
+   and `git diff --check`.
+5. Run `scripts/build.ps1`; verify `build/bin/build-manifest.json` and launch the
+   desktop executable briefly.
+6. Commit the clean release state, package with
+   `scripts/package-release.ps1 -Version <version>`, verify checksums, tag, push,
+   and publish the GitHub Release.
+
+## Safety invariants
+
+- Never execute scripts from a Skill repository.
+- Never write to either `.system` directory.
+- Never permanently delete Skill directories; quarantine explicit targets.
+- Never log tokens, cookies, authorization headers, or credential-helper output.
+- Cloud/Codex scanning stays opt-in.
+- Preserve local edits unless replacement is explicitly approved.
+- Resolve mutable GitHub refs to immutable commits before showing an apply plan.
+- Every mutation needs an explicit target, preview, journal, backup/quarantine,
+  structured result, failure status, and recovery path.
+
+## Known maintenance notes
+
+- `Paths.SkillsRoot` remains as the schema 1 compatibility alias for the default
+  Codex root. New code should use configured roots and `rootId`.
+- Old persisted plans without root-bound digests should be regenerated instead
+  of silently upgraded.
+- Release binaries are currently unsigned; users should verify published
+  SHA-256 checksums.

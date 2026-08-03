@@ -8,28 +8,31 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import { isPackagedFullContextMode } from "./codexContext";
-import { I18nProvider, normalizeLocale, translate, useI18n } from "./i18n";
+import { I18nProvider, normalizeLocale, translate, uiCopy, useI18n } from "./i18n";
 import { InstallDialog } from "./install/InstallDialog";
 import { SectionTabs } from "./shell/SectionTabs";
 import { Sidebar } from "./shell/Sidebar";
+import { matchesRoot, normalizeRootContract, rootKindLabel } from "./roots";
+import type { RootContract } from "./roots";
+import { Loading, OperationBanner } from "./shell/AppChrome";
+import type { Operation } from "./shell/AppChrome";
 import type { NavigationGroupId, NavigationTabId } from "./shell/navigation";
 import type { AppLocale, Translate } from "./i18n";
 import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateStatus } from "./types";
 
 type Page = "overview" | "skills" | "groups" | "updates" | "security" | "history" | "quarantine" | "reports" | "settings";
-type Operation = { label: string; detail: string; status: "running" | "success" | "error" };
 type RunOperation = <T>(label: string, task: () => Promise<T>, successDetail?: string) => Promise<T | undefined>;
 
 const pageTitles: Record<Page, { zhCN: string; enUS: string }> = {
-  overview: { zhCN: "首页", enUS: "Home" },
-  skills: { zhCN: "Skills", enUS: "Skills" },
-  groups: { zhCN: "分组", enUS: "Groups" },
-  updates: { zhCN: "更新", enUS: "Updates" },
-  security: { zhCN: "安全", enUS: "Security" },
-  history: { zhCN: "历史与回滚", enUS: "History & Rollback" },
-  quarantine: { zhCN: "隔离区", enUS: "Quarantine" },
-  reports: { zhCN: "报告", enUS: "Reports" },
-  settings: { zhCN: "设置", enUS: "Settings" }
+  overview: { zhCN: uiCopy.home[0], enUS: uiCopy.home[1] },
+  skills: { zhCN: uiCopy.skills[0], enUS: uiCopy.skills[1] },
+  groups: { zhCN: uiCopy.groups[0], enUS: uiCopy.groups[1] },
+  updates: { zhCN: uiCopy.updates[0], enUS: uiCopy.updates[1] },
+  security: { zhCN: uiCopy.security[0], enUS: uiCopy.security[1] },
+  history: { zhCN: uiCopy.history[0], enUS: uiCopy.history[1] },
+  quarantine: { zhCN: uiCopy.quarantine[0], enUS: uiCopy.quarantine[1] },
+  reports: { zhCN: uiCopy.reports[0], enUS: uiCopy.reports[1] },
+  settings: { zhCN: uiCopy.settings[0], enUS: uiCopy.settings[1] }
 };
 
 const pageGroups: Record<Page, NavigationGroupId> = {
@@ -63,13 +66,21 @@ function useCodexProgress() {
 
 export default function App() {
   const [locale, setLocale] = useState<AppLocale>("zh-CN");
+  const [rootContract, setRootContract] = useState<{ roots: RootContract[]; defaultRootId: string }>({ roots: [], defaultRootId: "" });
   useEffect(() => {
-    void api.config().then(cfg => setLocale(normalizeLocale(cfg?.locale))).catch(() => undefined);
+    void api.config().then(cfg => {
+      setLocale(normalizeLocale(cfg?.locale));
+      setRootContract(normalizeRootContract(cfg));
+    }).catch(() => undefined);
   }, []);
-  return <I18nProvider locale={locale}><AppShell locale={locale} setLocale={setLocale} /></I18nProvider>;
+  return <I18nProvider locale={locale}><AppShell locale={locale} setLocale={setLocale} rootContract={rootContract} /></I18nProvider>;
 }
 
-function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale: AppLocale) => void }) {
+function AppShell({ locale, setLocale, rootContract }: {
+  locale: AppLocale;
+  setLocale: (locale: AppLocale) => void;
+  rootContract: { roots: RootContract[]; defaultRootId: string };
+}) {
   const { t } = useI18n();
   const [page, setPage] = useState<Page>("overview");
   const [data, setData] = useState<Dashboard | null>(null);
@@ -78,6 +89,14 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
   const [installOpen, setInstallOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [operation, setOperation] = useState<Operation | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return window.localStorage.getItem("csm.sidebar.collapsed") === "1"; } catch { return false; }
+  });
+  const [rootFilter, setRootFilter] = useState("all");
+
+  useEffect(() => {
+    try { window.localStorage.setItem("csm.sidebar.collapsed", sidebarCollapsed ? "1" : "0"); } catch { /* optional preference */ }
+  }, [sidebarCollapsed]);
 
   const loadDashboard = async (throwOnError: boolean) => {
     setLoading(true);
@@ -116,14 +135,24 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
   const navigateToGroup = (groupId: NavigationGroupId) => setPage(defaultPages[groupId]);
   const navigateToTab = (tabId: NavigationTabId) => setPage(tabPages[tabId]);
   const title = t(pageTitles[page].zhCN, pageTitles[page].enUS);
+  const roots: RootContract[] = data?.roots?.length ? data.roots : rootContract.roots;
+  const defaultRootId = data?.defaultRootId || rootContract.defaultRootId || roots[0]?.rootId || "";
   return (
-    <div className="shell">
-      <Sidebar activeGroupId={activeGroupId} badges={{ securityRiskCount: data?.riskCount ?? 0 }} onSelect={navigateToGroup} />
+    <div className={`shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+      <Sidebar activeGroupId={activeGroupId} badges={{ securityRiskCount: data?.riskCount ?? 0 }}
+        collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)} onSelect={navigateToGroup} />
 
       <main>
         <header>
           <h1>{title}</h1>
           <div className="header-actions">
+            {roots.length > 0 && <label className="root-filter">
+              <span>{t("筛选根目录", "Filter roots")}</span>
+              <select aria-label={t("按根目录筛选", "Filter by root")} value={rootFilter} onChange={event => setRootFilter(event.target.value)}>
+                <option value="all">{t("全部根目录", "All roots")}</option>
+                {roots.map(root => <option key={root.rootId} value={root.rootId}>{root.rootName}</option>)}
+              </select>
+            </label>}
             <button className="ghost" disabled={loading} onClick={() => void runOperation(t("刷新 Skills 清单", "Refresh Skills"), refresh, t("清单已刷新", "Skills refreshed"))}>
               <RefreshCw size={17} className={loading ? "spin" : ""} />{loading ? t("刷新中…", "Refreshing…") : t("刷新", "Refresh")}
             </button>
@@ -133,43 +162,29 @@ function AppShell({ locale, setLocale }: { locale: AppLocale; setLocale: (locale
         {activeTabId && <div className="section-tabs-wrap">
           <SectionTabs groupId={activeGroupId} activeTabId={activeTabId} onSelect={navigateToTab} />
         </div>}
-        {error && <div className="error-banner"><CircleAlert size={18} />{error}<button onClick={() => setError("")}>×</button></div>}
+        {error && <div className="error-banner" role="alert"><CircleAlert size={18} aria-hidden="true" />{error}<button type="button" aria-label={t("关闭错误提示", "Dismiss error")} onClick={() => setError("")}>×</button></div>}
         {operation && <OperationBanner operation={operation} dismiss={() => setOperation(null)} />}
         {loading && !data ? <Loading /> : data ? (
           <div className="content">
             {page === "overview" && <Overview data={data} onNavigate={setPage} />}
-            {page === "skills" && <SkillsPage data={data} selected={selected} setSelected={setSelected} refresh={refresh} runOperation={runOperation} />}
-            {page === "groups" && <GroupsPage data={data} refresh={refresh} runOperation={runOperation} />}
+            {page === "skills" && <SkillsPage data={data} selected={selected} setSelected={setSelected} refresh={refresh} runOperation={runOperation} rootFilter={rootFilter} roots={roots} />}
+            {page === "groups" && <GroupsPage data={data} refresh={refresh} runOperation={runOperation} defaultRootId={defaultRootId} />}
             {page === "updates" && <UpdatesPage data={data} refresh={refresh} runOperation={runOperation} />}
             <div className="persistent-page" hidden={page !== "security"}>
-              <SecurityPage data={data} refresh={refresh} runOperation={runOperation} />
+              <SecurityPage data={data} refresh={refresh} runOperation={runOperation} rootFilter={rootFilter} defaultRootId={defaultRootId} />
             </div>
             {page === "history" && <HistoryPage data={data} refresh={refresh} runOperation={runOperation} />}
-            {page === "quarantine" && <QuarantinePage refresh={refresh} runOperation={runOperation} />}
+            {page === "quarantine" && <QuarantinePage refresh={refresh} runOperation={runOperation} rootId={rootFilter === "all" ? defaultRootId : rootFilter} />}
             {page === "reports" && <ReportsPage data={data} />}
             {page === "settings" && <SettingsPage locale={locale} setLocale={setLocale} refresh={refresh} runOperation={runOperation} />}
           </div>
         ) : null}
       </main>
       {installOpen && <InstallDialog close={() => setInstallOpen(false)} refresh={refreshStrict}
+        roots={roots} defaultRootId={defaultRootId}
         openSettings={() => { setInstallOpen(false); navigateToGroup("settings"); }} />}
     </div>
   );
-}
-
-function OperationBanner({ operation, dismiss }: { operation: Operation; dismiss: () => void }) {
-  return <div className={`operation-banner ${operation.status}`}>
-    {operation.status === "running" ? <LoaderCircle className="spin" size={19} /> :
-      operation.status === "success" ? <CheckCircle2 size={19} /> : <CircleAlert size={19} />}
-    <div><strong>{operation.label}</strong><span>{operation.detail}</span></div>
-    {operation.status !== "running" && <button onClick={dismiss}><X size={16} /></button>}
-    {operation.status === "running" && <i />}
-  </div>;
-}
-
-function Loading() {
-  const { t } = useI18n();
-  return <div className="loading"><LoaderCircle className="spin" /><span>{t("正在读取本地 Skill 清单…", "Loading local Skills…")}</span></div>;
 }
 
 function Overview({ data, onNavigate }: { data: Dashboard; onNavigate: (p: Page) => void }) {
@@ -287,16 +302,34 @@ function Timeline({ data }: { data: Dashboard["recentHistory"] }) {
     <em>{transactionStatusLabel(tx.status, locale)}</em></div>)}</div>;
 }
 
-function SkillsPage({ data, selected, setSelected, refresh, runOperation }: {
-  data: Dashboard; selected: string[]; setSelected: (s: string[]) => void; refresh: () => Promise<void>; runOperation: RunOperation;
+function SkillsPage({ data, selected, setSelected, refresh, runOperation, rootFilter, roots }: {
+  data: Dashboard;
+  selected: string[];
+  setSelected: (s: string[]) => void;
+  refresh: () => Promise<void>;
+  runOperation: RunOperation;
+  rootFilter: string;
+  roots: RootContract[];
 }) {
   const { t, locale } = useI18n();
   const [query, setQuery] = useState("");
   const [working, setWorking] = useState(false);
   const [adoption, setAdoption] = useState<AdoptionPreview | null>(null);
-  const filtered = data.skills.filter(s => (s.name + s.description + s.groupName).toLowerCase().includes(query.toLowerCase()));
+  const filtered = data.skills.filter(s =>
+    matchesRoot(s.rootId, rootFilter) &&
+    (s.name + s.description + s.groupName + (s.rootName ?? "")).toLowerCase().includes(query.toLowerCase())
+  );
   const selectable = filtered.filter(skill => !skill.system).map(skill => skill.name);
+  const rootNameFor = (skill: Skill) => skill.rootName || roots.find(root => root.rootId === skill.rootId)?.rootName || skill.rootId || "";
+  const rootBadgeFor = (skill: Skill) => {
+    const root = roots.find(value => value.rootId === skill.rootId);
+    return root ? `${rootNameFor(skill)} · ${rootKindLabel(root.rootKind, locale)}` : rootNameFor(skill);
+  };
   const unmanagedSelected = selected.filter(name => data.skills.some(skill => skill.name === name && !skill.managed && !skill.system));
+  const selectedRoots = Array.from(new Set(data.skills
+    .filter(skill => selected.includes(skill.name) && !skill.system)
+    .map(skill => skill.rootId || "codex-default")));
+  const actionRootId = rootFilter !== "all" ? rootFilter : selectedRoots.length === 1 ? selectedRoots[0] : "";
   const toggle = (name: string) => setSelected(selected.includes(name) ? selected.filter(n => n !== name) : [...selected, name]);
   const selectAll = () => setSelected(Array.from(new Set([...selected, ...selectable])));
   const invert = () => setSelected(Array.from(new Set([
@@ -311,7 +344,7 @@ function SkillsPage({ data, selected, setSelected, refresh, runOperation }: {
     ))) return;
     setWorking(true);
     try {
-      const result = await runOperation(t("移动 Skills 到隔离区", "Move Skills to quarantine"), () => api.quarantine(selected), t("已安全移入隔离区", "Moved to quarantine"));
+      const result = await runOperation(t("移动 Skills 到隔离区", "Move Skills to quarantine"), () => api.quarantine(selected, actionRootId), t("已安全移入隔离区", "Moved to quarantine"));
       if (result) { setSelected([]); await refresh(); }
     } finally { setWorking(false); }
   };
@@ -319,7 +352,7 @@ function SkillsPage({ data, selected, setSelected, refresh, runOperation }: {
     if (!unmanagedSelected.length) return;
     setWorking(true);
     try {
-      const preview = await runOperation(t("分析未管理 Skills", "Analyze unmanaged Skills"), () => api.prepareAdoption(unmanagedSelected), t("分析完成，可以确认管理", "Analysis complete; review the management plan"));
+      const preview = await runOperation(t("分析未管理 Skills", "Analyze unmanaged Skills"), () => api.prepareAdoption(unmanagedSelected, actionRootId), t("分析完成，可以确认管理", "Analysis complete; review the management plan"));
       if (preview) setAdoption(preview);
     } finally { setWorking(false); }
   };
@@ -327,7 +360,7 @@ function SkillsPage({ data, selected, setSelected, refresh, runOperation }: {
     if (selected.length !== 1) return;
     setWorking(true);
     try {
-      const report = await runOperation(t(`扫描 ${selected[0]}`, `Scan ${selected[0]}`), () => api.audit(selected[0]), t("安全扫描已完成，可在安全中心查看", "Security scan complete; view it in Security"));
+      const report = await runOperation(t(`扫描 ${selected[0]}`, `Scan ${selected[0]}`), () => api.audit(selected[0], actionRootId), t("安全扫描已完成，可在安全中心查看", "Security scan complete; view it in Security"));
       if (report) await refresh();
     } finally { setWorking(false); }
   };
@@ -339,20 +372,21 @@ function SkillsPage({ data, selected, setSelected, refresh, runOperation }: {
         <button className="ghost" onClick={clear} disabled={!selected.length}><X size={15} />{t("清空", "Clear")}</button>
       </div>
       {selected.length > 0 && <div className="selection"><span>{t(`已选 ${selected.length}`, `${selected.length} selected`)}</span>
-        {selected.length === 1 && <button className="ghost" onClick={auditSelected} disabled={working}>
+        {selected.length === 1 && <button className="ghost" onClick={auditSelected} disabled={working || !actionRootId}>
           <ShieldCheck size={16} />{t("扫描此 Skill", "Scan this Skill")}
         </button>}
-        {unmanagedSelected.length > 0 && <button className="ghost adopt-button" onClick={analyzeAdoption} disabled={working}>
+        {unmanagedSelected.length > 0 && <button className="ghost adopt-button" onClick={analyzeAdoption} disabled={working || !actionRootId}>
           {working ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />}{t(`管理 ${unmanagedSelected.length} 个`, `Manage ${unmanagedSelected.length}`)}
         </button>}
-        <button className="danger" onClick={remove} disabled={working}><Trash2 size={16} />{working ? t("处理中…", "Working…") : t("移至隔离区", "Move to quarantine")}</button></div>}
+        <button className="danger" onClick={remove} disabled={working || !actionRootId}><Trash2 size={16} />{working ? t("处理中…", "Working…") : t("移至隔离区", "Move to quarantine")}</button></div>}
     </div>
     <div className="table">
       <div className="tr th"><span /><span>Skill</span><span>{t("来源分组", "Source group")}</span><span>{t("状态", "Status")}</span><span>{t("版本", "Version")}</span></div>
-      {filtered.map(skill => <div className="tr" key={skill.name}>
+      {filtered.map(skill => <div className="tr" key={skill.identity || `${skill.rootId ?? "default"}::${skill.name}`}>
         <input type="checkbox" disabled={skill.system} checked={selected.includes(skill.name)} onChange={() => toggle(skill.name)} />
-        <DetailCell summary={<span className="skill-text"><strong>{skill.name}</strong><small>{skill.description}</small></span>}
-          rows={[[t("名称", "Name"), skill.name], [t("说明", "Description"), skill.description], [t("路径", "Path"), skill.path], [t("文件数量", "Files"), String(skill.files?.length ?? 0)]]} />
+        <DetailCell summary={<span className="skill-text"><strong>{skill.name}</strong><small>{skill.description}</small>
+          {rootNameFor(skill) && <em className="root-badge">{rootBadgeFor(skill)}</em>}</span>}
+          rows={[[t("名称", "Name"), skill.name], [t("根目录", "Root"), rootNameFor(skill) || t("默认", "Default")], [t("说明", "Description"), skill.description], [t("路径", "Path"), skill.path], [t("文件数量", "Files"), String(skill.files?.length ?? 0)]]} />
         <DetailCell summary={<span><b>{displayGroupName(skill.groupName, locale)}</b><small>{skill.sourceRepository || displayGroupName(skill.sourceGroupName, locale) || (skill.system ? "Codex" : t("本地", "Local"))}</small></span>}
           rows={[
             [t("当前分组", "Current group"), displayGroupName(skill.groupName, locale)],
@@ -412,7 +446,7 @@ function AdoptionDialog({ preview, close, refresh, runOperation, onCompleted }: 
   const apply = async () => {
     setWorking(true);
     try {
-      const result = await runOperation(t("管理现有 Skills", "Manage existing Skills"), () => api.applyAdoption(preview.id, selected), t("已完成管理", "Management complete"));
+      const result = await runOperation(t("管理现有 Skills", "Manage existing Skills"), () => api.applyAdoption(preview.id, selected, preview.targetRootId || preview.skills[0]?.rootId || "codex-default"), t("已完成管理", "Management complete"));
       if (result) { onCompleted(); await refresh(); close(); }
     } finally { setWorking(false); }
   };
@@ -456,7 +490,7 @@ function DetailCell({ summary, rows }: { summary: React.ReactNode; rows: Array<[
   </div>;
 }
 
-function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation }) {
+function GroupsPage({ data, refresh, runOperation, defaultRootId }: { data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation; defaultRootId: string }) {
   const { t, locale } = useI18n();
   const [active, setActive] = useState(data.groups[0]?.id ?? "");
   const [working, setWorking] = useState(false);
@@ -469,7 +503,7 @@ function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh:
     if (!name) return;
     setWorking(true);
     try {
-      const result = await runOperation(t("新建管理分组", "Create group"), () => api.createGroup(name), t(`分组“${name}”已创建`, `Group “${name}” created`));
+      const result = await runOperation(t("新建管理分组", "Create group"), () => api.createGroup(name, group?.rootId || defaultRootId), t(`分组“${name}”已创建`, `Group “${name}” created`));
       if (result) await refresh();
     } finally { setWorking(false); }
   };
@@ -478,7 +512,7 @@ function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh:
     if (!name || name === target.name) return;
     setWorking(true);
     try {
-      const result = await runOperation(t("重命名管理分组", "Rename group"), () => api.renameGroup(target.id, name), t(`分组已改名为“${name}”`, `Group renamed to “${name}”`));
+      const result = await runOperation(t("重命名管理分组", "Rename group"), () => api.renameGroup(target.id, name, target.rootId || defaultRootId), t(`分组已改名为“${name}”`, `Group renamed to “${name}”`));
       if (result) await refresh();
     } finally { setWorking(false); }
   };
@@ -486,17 +520,19 @@ function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh:
     event.preventDefault();
     const skillName = event.dataTransfer.getData("application/x-csm-skill");
     if (skillName) {
-      if (target.readOnly) return;
+      const sourceRootId = event.dataTransfer.getData("application/x-csm-root");
+      if (target.readOnly || !sourceRootId || sourceRootId !== (target.rootId || defaultRootId)) return;
       setWorking(true);
       try {
-        const result = await runOperation(t("移动 Skill 到分组", "Move Skill to group"), () => api.moveSkills([skillName], target.id), t(`${skillName} 已移入“${target.name}”`, `${skillName} moved to “${target.name}”`));
+        const result = await runOperation(t("移动 Skill 到分组", "Move Skill to group"), () => api.moveSkills([skillName], target.id, target.rootId || defaultRootId), t(`${skillName} 已移入“${target.name}”`, `${skillName} moved to “${target.name}”`));
         if (result) { setActive(target.id); await refresh(); }
       } finally { setWorking(false); }
       return;
     }
     const draggedID = event.dataTransfer.getData("application/x-csm-group");
     if (!draggedID || draggedID === target.id || target.readOnly) return;
-    const editable = data.groups.filter(item => !item.readOnly);
+    const targetRootId = target.rootId || defaultRootId;
+    const editable = data.groups.filter(item => !item.readOnly && (item.rootId || defaultRootId) === targetRootId);
     const from = editable.findIndex(item => item.id === draggedID);
     const to = editable.findIndex(item => item.id === target.id);
     if (from < 0 || to < 0) return;
@@ -505,7 +541,7 @@ function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh:
     reordered.splice(to, 0, moved);
     setWorking(true);
     try {
-      const result = await runOperation(t("调整分组顺序", "Reorder groups"), () => api.reorderGroups(reordered.map(item => item.id)), t("分组顺序已保存", "Group order saved"));
+      const result = await runOperation(t("调整分组顺序", "Reorder groups"), () => api.reorderGroups(reordered.map(item => item.id), targetRootId), t("分组顺序已保存", "Group order saved"));
       if (result) await refresh();
     } finally { setWorking(false); }
   };
@@ -528,9 +564,12 @@ function GroupsPage({ data, refresh, runOperation }: { data: Dashboard; refresh:
     <section className="panel relation-panel"><PanelHead title={group ? displayGroupName(group.name, locale) : t("分组详情", "Group details")} subtitle={t("拖动 Skill 可更换分组", "Drag a Skill to change its group")} />
       {group ? <>
         <div className="group-skill-list">{group.skillNames.length ? group.skillNames.map(name => {
-          const skill = data.skills.find(item => item.name === name);
+          const skill = data.skills.find(item => item.name === name && (item.rootId || defaultRootId) === (group.rootId || defaultRootId));
           return <article key={name} draggable={!skill?.system && !working}
-            onDragStart={event => event.dataTransfer.setData("application/x-csm-skill", name)}>
+            onDragStart={event => {
+              event.dataTransfer.setData("application/x-csm-skill", name);
+              event.dataTransfer.setData("application/x-csm-root", skill?.rootId || defaultRootId);
+            }}>
             <GripVertical size={15} /><div><strong>{name}</strong><small>{skill?.description || t("暂无说明", "No description")}</small></div>
             <span>{skill?.sourceGroupName && skill.sourceGroupName !== group.name ? `${t("来源", "Source")}: ${displayGroupName(skill.sourceGroupName, locale)}` : skill?.sourceProvider}</span>
           </article>;
@@ -580,7 +619,7 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
         const failures: string[] = [];
         for (const group of groups) {
           try {
-            ready.push({ group, value: await api.prepareUpdate(group.id) });
+            ready.push({ group, value: await api.prepareUpdate(group.id, group.rootId || "codex-default") });
           } catch (error: any) {
             failures.push(`${group.name}：${error?.message ?? String(error)}`);
           }
@@ -785,7 +824,8 @@ function UpdateDialog({ items, close, refresh }: {
           `Updating ${displayGroupName(group.name, locale)} (${attempted}/${targets.length})`));
         try {
 					await api.apply(value.id, selected[value.id],
-						(scans[value.id].clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored));
+						(scans[value.id].clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored),
+						value.targetRootId || group.rootId || "codex-default");
           succeeded.push(value.id);
         } catch (error: any) {
           errors.push(`${displayGroupName(group.name, locale)}: ${error?.message ?? String(error)}`);
@@ -1083,17 +1123,23 @@ function RiskOverview({ report }: { report: ScanReport }) {
   </div>;
 }
 
-function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation }) {
+function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }: {
+  data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation; rootFilter: string; defaultRootId: string;
+}) {
   const { t, locale, formatDate } = useI18n();
   const [report, setReport] = useState<ScanReport | null>(data.recentReports[0] ?? null);
   const [working, setWorking] = useState(false);
   const [codexWorking, setCodexWorking] = useState(false);
   const [reviewing, setReviewing] = useState("");
-  const selectable = data.skills.filter(skill => !skill.system);
+  const activeRootId = rootFilter === "all" ? defaultRootId : rootFilter;
+  const selectable = data.skills.filter(skill => !skill.system && (skill.rootId || "codex-default") === activeRootId);
   const recommendedNames = () => selectable.filter(skill =>
     !isSecurityCurrent(skill)).map(skill => skill.name);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(() => new Set(recommendedNames()));
   const { progress: codexProgress, clearProgress } = useCodexProgress();
+  useEffect(() => {
+    setSelectedSkills(new Set(recommendedNames()));
+  }, [activeRootId]);
   useEffect(() => {
     const latest = data.recentReports[0] ?? null;
     if (!working && !codexWorking && latest?.id !== report?.id) setReport(latest);
@@ -1104,7 +1150,7 @@ function SecurityPage({ data, refresh, runOperation }: { data: Dashboard; refres
     setWorking(true);
     try {
       const scanned = await runOperation(
-        t(`扫描 ${names.length} 个 Skills`, `Scan ${names.length} Skills`), () => api.auditSkills(names), t("安全扫描已完成", "Security scan completed")
+        t(`扫描 ${names.length} 个 Skills`, `Scan ${names.length} Skills`), () => api.auditSkills(names, activeRootId), t("安全扫描已完成", "Security scan completed")
       );
       if (scanned) {
         setReport(scanned);
@@ -1417,20 +1463,20 @@ function HistoryPage({ data, refresh, runOperation }: { data: Dashboard; refresh
   </section>;
 }
 
-function QuarantinePage({ refresh, runOperation }: { refresh: () => Promise<void>; runOperation: RunOperation }) {
+function QuarantinePage({ refresh, runOperation, rootId }: { refresh: () => Promise<void>; runOperation: RunOperation; rootId: string }) {
   const { t } = useI18n();
-  const [items, setItems] = useState<Array<{ skill: string; transactionId: string; path: string }>>([]);
+  const [items, setItems] = useState<Array<{ skill: string; rootId: string; transactionId: string; path: string }>>([]);
   const [working, setWorking] = useState("");
-  useEffect(() => { void api.quarantineList().then(setItems); }, []);
+  useEffect(() => { void api.quarantineList(rootId).then(setItems); }, [rootId]);
   const restore = async (skill: string, tx: string) => {
     setWorking(skill + tx);
     try {
-      const result = await runOperation(t(`恢复 ${skill}`, `Restore ${skill}`), () => api.restore(skill, tx), t("Skill 已恢复", "Skill restored"));
-      if (result) { setItems(await api.quarantineList()); await refresh(); }
+      const result = await runOperation(t(`恢复 ${skill}`, `Restore ${skill}`), () => api.restore(skill, tx, rootId), t("Skill 已恢复", "Skill restored"));
+      if (result) { setItems(await api.quarantineList(rootId)); await refresh(); }
     } finally { setWorking(""); }
   };
   return <section className="panel full"><PanelHead title={t("隔离区", "Quarantine")} subtitle={t("查看已移除的 Skills，并选择恢复", "View removed Skills and restore them when needed")} />
-    <div className="history-list">{items.length === 0 ? <Empty text={t("隔离区为空", "Quarantine is empty")} /> : items.map(item => <article key={item.skill + item.transactionId}>
+    <div className="history-list">{items.length === 0 ? <Empty text={t("隔离区为空", "Quarantine is empty")} /> : items.map(item => <article key={item.rootId + item.skill + item.transactionId}>
       <div className="tx-icon"><ArchiveRestore size={19} /></div><div className="grow"><strong>{item.skill}</strong><span>{item.transactionId}</span><small>{item.path}</small></div>
       <button className="ghost" disabled={!!working} onClick={() => restore(item.skill, item.transactionId)}>
         {working === item.skill + item.transactionId ? <LoaderCircle className="spin" size={16} /> : <RotateCcw size={16} />}

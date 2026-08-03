@@ -1,4 +1,5 @@
 export type Severity = "informational" | "low" | "medium" | "high" | "critical";
+export type Root = import("./roots").RootContract;
 
 export interface Relation {
   from: string;
@@ -10,6 +11,11 @@ export interface Relation {
 
 export interface Skill {
   name: string;
+  /** Root-qualified identity fields introduced by the v0.11 API contract. */
+  rootId?: string;
+  rootKind?: string;
+  rootName?: string;
+  identity?: string;
   description: string;
   path: string;
   groupId: string;
@@ -34,6 +40,7 @@ export interface Skill {
 
 export interface Group {
   id: string;
+  rootId?: string;
   name: string;
   provider: string;
   repository?: string;
@@ -62,6 +69,7 @@ export interface Finding {
   clusterId: string;
   deterministic: boolean;
   skillName?: string;
+  rootId?: string;
   groupId?: string;
   groupName?: string;
 }
@@ -81,6 +89,7 @@ export interface RiskCluster {
   ignored: boolean;
   ignoreReason?: string;
   skillName?: string;
+  rootId?: string;
   groupId?: string;
   groupName?: string;
 }
@@ -190,6 +199,7 @@ export interface CodexModelOption {
 export interface ScanReport {
   id: string;
   target: string;
+  rootId?: string;
   highestSeverity: Severity;
   activeHighestSeverity: Severity;
   findings: Finding[];
@@ -205,6 +215,7 @@ export interface ScanReport {
 
 export interface ScanSkillSummary {
   skillName: string;
+  rootId?: string;
   sourcePath: string;
   groupId: string;
   groupName: string;
@@ -216,6 +227,7 @@ export interface ScanSkillSummary {
 
 export interface Transaction {
   id: string;
+  rootId?: string;
   type: string;
   status: string;
   targets: string[];
@@ -230,6 +242,7 @@ export interface Transaction {
 
 export interface UpdateStatus {
   groupId: string;
+  rootId?: string;
   groupName: string;
   provider: string;
   repository?: string;
@@ -267,6 +280,9 @@ export interface Dashboard {
   systemCount: number;
   riskCount: number;
   updateCount: number;
+  /** Optional while older desktop builds are still in the field. */
+  roots?: import("./roots").RootContract[];
+  defaultRootId?: string;
 }
 
 export interface Candidate {
@@ -277,6 +293,7 @@ export interface Candidate {
 
 export interface InstallPreview {
   id: string;
+  targetRootId?: string;
   repository: {
     provider: string;
     fullName: string;
@@ -311,6 +328,9 @@ export interface LayeredSecurityCheck {
 
 export interface InstallTargetPreview {
   kind: "codex-skill" | string;
+  rootId?: string;
+  rootKind?: string;
+  rootName?: string;
   displayName: string;
   path: string;
   supported: boolean;
@@ -464,6 +484,7 @@ export interface AssistedInstallStep {
 
 export interface AssistedInstallPlan {
   id: string;
+  targetRootId?: string;
   sourcePlanId: string;
   projectScanId?: string;
   projectScanDigest?: string;
@@ -533,9 +554,11 @@ export interface AssistedInstallResult {
 
 export interface AdoptionPreview {
   id: string;
+  targetRootId?: string;
   skills: Skill[];
   sources: Array<{
     skillName: string;
+    rootId?: string;
     provider: string;
     repository?: string;
     sourceUrl?: string;

@@ -5,7 +5,7 @@
 1. Download and extract the Windows release archive.
 2. Keep both `CodexSkillManager.exe` and `csm.exe` in the same directory.
 3. Double-click `CodexSkillManager.exe`.
-4. The default Skills root is `%USERPROFILE%\.codex\skills`.
+4. The app lists both Codex and Agents roots; new installations default to Codex.
 
 Portable releases contain `portable.marker` and store configuration and runtime
 state under the release directory. Standard installations store application
@@ -55,7 +55,10 @@ Expired, replaced, digest-mismatched, unknown, unsupported, or case-variant
 read-only. A project with no Codex Skill is not copied to the global Skills
 folder, and an MCP project directory must be selected explicitly.
 
-The default Skills root is `%USERPROFILE%\.codex\skills`. After installation,
+The app reads both `%USERPROFILE%\.codex\skills` and
+`%USERPROFILE%\.agents\skills`. Choose the target before analysis; the plan
+locks that root before apply. Same-name Skills remain independent, and both
+`.system` directories are read-only. After installation,
 the dialog refreshes the Skills list and operation status. If the refresh fails,
 the completed result is preserved; retry the refresh instead of repeating the
 installation. Use **History & Rollback** for the transaction and rollback path,

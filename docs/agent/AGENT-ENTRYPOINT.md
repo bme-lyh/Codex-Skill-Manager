@@ -10,7 +10,12 @@ preview-and-apply workflow:
 2. apply it only after the user has approved the exact skills and any accepted
    high-risk findings.
 
-Version 0.10.2 uses one **Source → Understand & plan → Check & confirm → Install & result**
+Version 0.11.0 manages both `.codex/skills` and `.agents/skills`. Every Skill,
+group, scan, update, and transaction is identified by `rootId`; omitted install
+targets default to `codex-default` only for compatibility. New integrations
+must send the root explicitly. Both `.system` directories are read-only.
+
+The app uses one **Source → Understand & plan → Check & confirm → Install & result**
 workflow for every GitHub and local source. The application identifies the
 project type and installation route automatically, runs mandatory layered checks,
 and reports one of four gates: installable, needs confirmation, blocked, or

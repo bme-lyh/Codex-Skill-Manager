@@ -1,8 +1,22 @@
 package model
 
-import "time"
+import (
+	"path/filepath"
+	"strings"
+	"time"
+)
 
-const Version = "0.10.2"
+const Version = "0.11.0"
+const SourcesLockSchemaVersion = 2
+
+// Skill root identifiers are part of the persisted identity of a Skill.  A
+// name is only unique within a root; callers must use the qualified identity
+// when addressing a Skill across roots.
+const (
+	RootIDCodexDefault = "codex-default"
+	RootIDAgents       = "agents"
+	DefaultRootID      = RootIDCodexDefault
+)
 
 const (
 	AssistedInstallStepInstallSkills     = "install-skills"
@@ -43,6 +57,26 @@ type Paths struct {
 	StagingRoot    string `json:"stagingRoot" yaml:"stagingRoot"`
 }
 
+// SkillRoot describes one Codex-compatible Skills directory.  Enabled roots
+// are discovered when present, but are deliberately not created by config
+// loading.  A writer must explicitly create its target root before mutation.
+type SkillRoot struct {
+	ID        string `json:"id" yaml:"id"`
+	Name      string `json:"name,omitempty" yaml:"name,omitempty"`
+	Kind      string `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Path      string `json:"path" yaml:"path"`
+	Enabled   bool   `json:"enabled" yaml:"enabled"`
+	ReadOnly  bool   `json:"readOnly,omitempty" yaml:"readOnly,omitempty"`
+	SystemDir string `json:"systemDir,omitempty" yaml:"systemDir,omitempty"`
+}
+
+// Root is retained as a source-compatible alias for integrations that use the
+// shorter name in their API payloads.
+type Root = SkillRoot
+
+type RootConfig = SkillRoot
+type SkillRootConfig = SkillRoot
+
 type Schedule struct {
 	Enabled   bool   `json:"enabled" yaml:"enabled"`
 	Frequency string `json:"frequency" yaml:"frequency"`
@@ -61,8 +95,14 @@ type CodexReviewConfig struct {
 }
 
 type Config struct {
-	SchemaVersion int               `json:"schemaVersion" yaml:"schemaVersion"`
-	Paths         Paths             `json:"paths" yaml:"paths"`
+	SchemaVersion int         `json:"schemaVersion" yaml:"schemaVersion"`
+	Paths         Paths       `json:"paths" yaml:"paths"`
+	SkillRoots    []SkillRoot `json:"skillRoots,omitempty" yaml:"skillRoots,omitempty"`
+	// Roots is an API spelling accepted by schema v2 readers.  Save emits only
+	// SkillRoots; Load mirrors it into both fields for callers during the v0.11
+	// transition.
+	Roots         []SkillRoot       `json:"roots,omitempty" yaml:"roots,omitempty"`
+	DefaultRootID string            `json:"defaultRootId" yaml:"defaultRootId"`
 	Schedule      Schedule          `json:"schedule" yaml:"schedule"`
 	Locale        string            `json:"locale" yaml:"locale"`
 	GitHubHost    string            `json:"githubHost" yaml:"githubHost"`
@@ -81,6 +121,8 @@ type FileRecord struct {
 
 type Skill struct {
 	Name             string       `json:"name"`
+	RootID           string       `json:"rootId,omitempty"`
+	Identity         string       `json:"identity,omitempty"`
 	Description      string       `json:"description"`
 	Path             string       `json:"path"`
 	GroupID          string       `json:"groupId"`
@@ -108,6 +150,7 @@ type Skill struct {
 
 type Group struct {
 	ID         string   `json:"id"`
+	RootID     string   `json:"rootId,omitempty"`
 	Name       string   `json:"name"`
 	Provider   string   `json:"provider"`
 	Repository string   `json:"repository,omitempty"`
@@ -120,6 +163,7 @@ type Group struct {
 
 type DetectedSource struct {
 	SkillName    string  `json:"skillName"`
+	RootID       string  `json:"rootId,omitempty"`
 	Provider     string  `json:"provider"`
 	Repository   string  `json:"repository"`
 	SourceURL    string  `json:"sourceUrl"`
@@ -133,6 +177,7 @@ type DetectedSource struct {
 
 type GroupPreference struct {
 	ID       string `json:"id"`
+	RootID   string `json:"rootId,omitempty"`
 	Name     string `json:"name"`
 	Position int    `json:"position"`
 	Manual   bool   `json:"manual"`
@@ -140,6 +185,7 @@ type GroupPreference struct {
 
 type SkillGroupAssignment struct {
 	SkillName string `json:"skillName"`
+	RootID    string `json:"rootId,omitempty"`
 	GroupID   string `json:"groupId"`
 	Position  int    `json:"position"`
 }
@@ -152,6 +198,7 @@ type GroupLayoutState struct {
 type Relation struct {
 	From       string  `json:"from"`
 	To         string  `json:"to"`
+	RootID     string  `json:"rootId,omitempty"`
 	Type       string  `json:"type"`
 	Confidence float64 `json:"confidence"`
 	Evidence   string  `json:"evidence,omitempty"`
@@ -175,6 +222,7 @@ type Finding struct {
 	ClusterID      string       `json:"clusterId"`
 	Deterministic  bool         `json:"deterministic"`
 	SkillName      string       `json:"skillName,omitempty"`
+	RootID         string       `json:"rootId,omitempty"`
 	GroupID        string       `json:"groupId,omitempty"`
 	GroupName      string       `json:"groupName,omitempty"`
 }
@@ -288,6 +336,7 @@ type CodexReviewResult struct {
 type ScanReport struct {
 	ID                    string             `json:"id"`
 	Target                string             `json:"target"`
+	RootID                string             `json:"rootId,omitempty"`
 	StartedAt             time.Time          `json:"startedAt"`
 	CompletedAt           time.Time          `json:"completedAt"`
 	HighestSeverity       RiskSeverity       `json:"highestSeverity"`
@@ -305,6 +354,7 @@ type ScanReport struct {
 
 type ScanSkillSummary struct {
 	SkillName           string       `json:"skillName"`
+	RootID              string       `json:"rootId,omitempty"`
 	SourcePath          string       `json:"sourcePath"`
 	GroupID             string       `json:"groupId"`
 	GroupName           string       `json:"groupName"`
@@ -316,12 +366,14 @@ type ScanSkillSummary struct {
 
 type SkillSecurityState struct {
 	SkillName   string    `json:"skillName"`
+	RootID      string    `json:"rootId,omitempty"`
 	ContentHash string    `json:"contentHash"`
 	ReportID    string    `json:"reportId"`
 	CheckedAt   time.Time `json:"checkedAt"`
 }
 
 type PackageLock struct {
+	RootID         string               `json:"rootId,omitempty"`
 	Provider       string               `json:"provider"`
 	Repository     string               `json:"repository,omitempty"`
 	GroupName      string               `json:"groupName,omitempty"`
@@ -334,6 +386,7 @@ type PackageLock struct {
 }
 
 type SkillLock struct {
+	RootID         string            `json:"rootId,omitempty"`
 	SourcePath     string            `json:"sourcePath"`
 	LocalPath      string            `json:"localPath"`
 	ResolvedCommit string            `json:"resolvedCommit,omitempty"`
@@ -346,6 +399,62 @@ type SkillLock struct {
 type SourcesLock struct {
 	SchemaVersion int                    `json:"schemaVersion"`
 	Packages      map[string]PackageLock `json:"packages"`
+}
+
+// QualifiedSkillIdentity is the canonical key used by inventory, state, and
+// manager callers.  It intentionally keeps the separator out of ordinary
+// Skill names by using a NUL byte, while the human-readable form is exposed by
+// SkillIdentity.
+func QualifiedSkillIdentity(rootID, name string) string {
+	return rootID + "\x00" + name
+}
+
+func SkillIdentity(rootID, name string) string {
+	if rootID == "" {
+		return name
+	}
+	return rootID + ":" + name
+}
+
+// QualifiedPackageID namespaces source-lock package IDs by root.  Existing
+// v1 package IDs are migrated to this form without touching installed files.
+func QualifiedPackageID(rootID, packageID string) string {
+	if rootID == "" {
+		return packageID
+	}
+	return rootID + "\x00" + packageID
+}
+
+func DefaultSkillRoots(codexPath, agentsPath string) []SkillRoot {
+	return []SkillRoot{
+		{ID: RootIDCodexDefault, Name: "Codex Skills", Kind: "codex", Path: codexPath, Enabled: true, SystemDir: ".system"},
+		{ID: RootIDAgents, Name: "Agents Skills", Kind: "agents", Path: agentsPath, Enabled: true, SystemDir: ".system"},
+	}
+}
+
+func IsSystemSkillName(name string) bool {
+	return len(name) > 0 && strings.EqualFold(name, ".system")
+}
+
+func RootSystemDir(root SkillRoot) string {
+	if strings.TrimSpace(root.SystemDir) == "" {
+		return ".system"
+	}
+	return root.SystemDir
+}
+
+func IsSystemSkillPath(root SkillRoot, target string) bool {
+	base := filepath.Clean(root.Path)
+	candidate := filepath.Clean(target)
+	relative, err := filepath.Rel(base, candidate)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return false
+	}
+	first := relative
+	if index := strings.IndexRune(relative, filepath.Separator); index >= 0 {
+		first = relative[:index]
+	}
+	return strings.EqualFold(first, RootSystemDir(root))
 }
 
 type Repository struct {
@@ -372,6 +481,7 @@ type CandidateSkill struct {
 
 type InstallPreview struct {
 	ID            string           `json:"id"`
+	TargetRootID  string           `json:"targetRootId,omitempty"`
 	Repository    Repository       `json:"repository"`
 	Skills        []CandidateSkill `json:"skills"`
 	Scan          ScanReport       `json:"scan"`
@@ -497,6 +607,7 @@ type AssistedInstallPermission struct {
 type AssistedInstallPlan struct {
 	ID                string                       `json:"id"`
 	SourcePlanID      string                       `json:"sourcePlanId"`
+	TargetRootID      string                       `json:"targetRootId"`
 	ProjectScanID     string                       `json:"projectScanId,omitempty"`
 	ProjectScanDigest string                       `json:"projectScanDigest,omitempty"`
 	Status            string                       `json:"status"`
@@ -565,16 +676,19 @@ type AssistedInstallResult struct {
 }
 
 type AdoptionPreview struct {
-	ID        string           `json:"id"`
-	Skills    []Skill          `json:"skills"`
-	Sources   []DetectedSource `json:"sources"`
-	Scan      ScanReport       `json:"scan"`
-	CreatedAt time.Time        `json:"createdAt"`
-	ExpiresAt time.Time        `json:"expiresAt"`
+	ID            string           `json:"id"`
+	TargetRootID  string           `json:"targetRootId,omitempty"`
+	PreviewDigest string           `json:"previewDigest"`
+	Skills        []Skill          `json:"skills"`
+	Sources       []DetectedSource `json:"sources"`
+	Scan          ScanReport       `json:"scan"`
+	CreatedAt     time.Time        `json:"createdAt"`
+	ExpiresAt     time.Time        `json:"expiresAt"`
 }
 
 type UpdateStatus struct {
 	GroupID                 string            `json:"groupId"`
+	RootID                  string            `json:"rootId,omitempty"`
 	GroupName               string            `json:"groupName"`
 	Provider                string            `json:"provider"`
 	Repository              string            `json:"repository,omitempty"`
@@ -638,6 +752,7 @@ type CodexReasoningOption struct {
 
 type Transaction struct {
 	ID             string                `json:"id"`
+	RootID         string                `json:"rootId,omitempty"`
 	Type           string                `json:"type"`
 	Status         string                `json:"status"`
 	Targets        []string              `json:"targets"`
@@ -652,6 +767,8 @@ type Transaction struct {
 
 type Dashboard struct {
 	Skills          []Skill        `json:"skills"`
+	Roots           []SkillRoot    `json:"roots"`
+	DefaultRootID   string         `json:"defaultRootId"`
 	Groups          []Group        `json:"groups"`
 	SourceGroups    []Group        `json:"sourceGroups"`
 	Relations       []Relation     `json:"relations"`

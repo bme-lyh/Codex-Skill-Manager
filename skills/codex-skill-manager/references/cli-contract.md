@@ -6,6 +6,10 @@ Invoke:
 csm --config <absolute-path> --json <command>
 ```
 
+For every root-scoped operation, pass `--root codex-default` or `--root agents`.
+Omission defaults to Codex for compatibility, but a sealed plan cannot be
+retargeted during apply.
+
 Safe inspection:
 
 ```powershell
@@ -30,7 +34,7 @@ retried once. Local rules are sent only as a compact count overview.
 Layered GitHub installation:
 
 ```powershell
-csm --json install --url https://github.com/OWNER/REPO
+csm --json install --root agents --url https://github.com/OWNER/REPO
 csm --json install --plan-id PLAN_ID --assess
 csm --json install --plan-id PLAN_ID --apply --skill SKILL_NAME
 ```
@@ -70,7 +74,7 @@ source plan remains valid for the standard Skill-only apply workflow.
 Two-phase management of existing unmanaged Skills:
 
 ```powershell
-csm --json manage --skill SKILL_A --skill SKILL_B
+csm --json manage --root agents --skill SKILL_A --skill SKILL_B
 csm --json manage --plan-id MANAGE_PLAN --apply --skill SKILL_A --skill SKILL_B
 ```
 
@@ -103,8 +107,8 @@ decisions at any known severity.
 Reversible lifecycle:
 
 ```powershell
-csm --json remove SKILL_A SKILL_B
-csm --json restore --skill SKILL_A --transaction TRANSACTION_ID
+csm --json remove --root agents SKILL_A SKILL_B
+csm --json restore --root agents --skill SKILL_A --transaction TRANSACTION_ID
 csm --json rollback --transaction TRANSACTION_ID
 ```
 

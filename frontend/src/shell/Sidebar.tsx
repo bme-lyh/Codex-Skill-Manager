@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import {
   getNavigationGroup,
   NAVIGATION_GROUPS
@@ -12,6 +13,8 @@ export type SidebarProps = {
   activeGroupId?: string | null;
   badges?: Partial<Record<NavigationBadgeKey, number>>;
   className?: string;
+  collapsed?: boolean;
+  onToggle?: () => void;
   onSelect: (groupId: NavigationGroupId) => void;
 };
 
@@ -19,16 +22,23 @@ export function Sidebar({
   activeGroupId,
   badges = {},
   className,
+  collapsed = false,
+  onToggle,
   onSelect
 }: SidebarProps) {
   const { t } = useI18n();
   const activeGroup = getNavigationGroup(activeGroupId);
-  const sidebarClassName = ["sidebar", className].filter(Boolean).join(" ");
+  const sidebarClassName = ["sidebar", collapsed ? "collapsed" : "", className].filter(Boolean).join(" ");
 
   return (
     <aside className={sidebarClassName}>
       <div className="brand" title="Codex Skill Manager">
         <div className="brand-copy"><span>CODEX</span><strong>Skill Manager</strong></div>
+        {onToggle && <button className="sidebar-toggle" type="button" onClick={onToggle}
+          aria-label={collapsed ? t("展开侧栏", "Expand sidebar") : t("折叠侧栏", "Collapse sidebar")}
+          title={collapsed ? t("展开侧栏", "Expand sidebar") : t("折叠侧栏", "Collapse sidebar")}>
+          {collapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}
+        </button>}
       </div>
       <nav aria-label={t("主导航", "Primary navigation")}>
         {NAVIGATION_GROUPS.map(group => {
@@ -44,7 +54,7 @@ export function Sidebar({
               type="button"
             >
               <Icon aria-hidden="true" focusable="false" size={18} />
-              <span>{t(group.label.zhCN, group.label.enUS)}</span>
+              <span className="sidebar-label">{t(group.label.zhCN, group.label.enUS)}</span>
               {typeof badge === "number" && badge > 0 ? (
                 <em aria-label={t(`${badge} 个待处理风险`, `${badge} security risk${badge === 1 ? "" : "s"}`)}>
                   {badge > 99 ? "99+" : badge}

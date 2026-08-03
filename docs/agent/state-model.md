@@ -1,5 +1,12 @@
 # State model
 
+## Root-qualified records
+
+Schema 2 includes `rootId` in every mutable Skill identity. The source lock
+uses `rootId + NUL + packageId`; SQLite security and group tables use composite
+root keys. Version 1 records migrate to `codex-default` because older releases
+managed only the Codex root. Migration does not move or rewrite Skill files.
+
 `config.yaml` defines all absolute locations, including independent log and
 report roots. `sources.lock.json` maps one
 source package to one or more installed skills and records the requested ref,

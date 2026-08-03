@@ -5,7 +5,7 @@
 Codex Skill Manager 是一款 Windows 本地工具，用于理解、检查、安装、更新、整理和
 恢复 Codex Skills。每次写入都会明确授权、记录事务，并保留恢复路径。
 
-[下载 v0.10.2](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.10.2) ·
+[下载 v0.11.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.11.0) ·
 [快速开始](docs/user/getting-started.md) ·
 [使用指南](docs/user/gui-guide.md) ·
 [安全策略](SECURITY.md) ·
@@ -44,8 +44,9 @@ Codex 是可选的语义检查提供器，不是独立
 安装模式。扫描阶段只读、关闭 Shell，并且其结论或计划仍需本地验证和明确授权。
 **切换标准安装**同样位于 **更多选项**，不是另一条入口流程。
 
-默认 Skills 根目录为 `%USERPROFILE%\.codex\skills`；`.system` 始终只读。没有 Codex
-Skill 的普通项目不会被复制到全局目录。不支持自动化的工作会保留为人工步骤，需要配置
+应用同时管理 `%USERPROFILE%\.codex\skills` 与 `%USERPROFILE%\.agents\skills`；
+新安装默认写入 Codex 目录。两个目录分别维护身份和状态，各自的 `.system` 都始终只读。
+没有 Codex Skill 的普通项目不会被复制到全局目录。不支持自动化的工作会保留为人工步骤，需要配置
 MCP 时必须由用户明确选择项目目录。
 
 ## 主要能力
@@ -70,10 +71,10 @@ MCP 时必须由用户明确选择项目目录。
 SmartScreen 可能提示警告。请只从本仓库下载，并核对 SHA-256：
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.10.2-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.11.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-将结果与 `CodexSkillManager-0.10.2-SHA256SUMS.txt` 中的对应行比较。
+将结果与 `CodexSkillManager-0.11.0-SHA256SUMS.txt` 中的对应行比较。
 
 ### 添加随包提供的 Codex Skill
 
@@ -113,4 +114,4 @@ pnpm --dir frontend install --frozen-lockfile
 统一界面是一次 UI 重构；旧 Page 路由和 Wails/API 兼容边界仍然保留，以支持已有
 集成。面向用户的说明统一使用当前界面术语。
 
-Codex Skill Manager 0.10.2 支持 Windows 10/11，使用 [MIT License](LICENSE)。
+Codex Skill Manager 0.11.0 支持 Windows 10/11，使用 [MIT License](LICENSE)。

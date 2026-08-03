@@ -108,24 +108,25 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	case "audit":
 		fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 		skill := fs.String("skill", "", "skill name")
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 		if parseErr := parseFlags(fs, args[1:]); parseErr != nil {
 			err = parseErr
 		} else if *skill != "" {
-			data, err = m.AuditSkills([]string{*skill})
+			data, err = m.AuditSkills([]string{*skill}, *rootID)
 		} else {
 			var dashboard model.Dashboard
 			dashboard, err = m.Dashboard()
 			if err == nil {
 				names := make([]string, 0, len(dashboard.Skills))
 				for _, discovered := range dashboard.Skills {
-					if !discovered.System {
+					if !discovered.System && discovered.RootID == *rootID {
 						names = append(names, discovered.Name)
 					}
 				}
 				if len(names) == 0 {
-					data, err = m.Audit("")
+					data, err = m.Audit("", *rootID)
 				} else {
-					data, err = m.AuditSkills(names)
+					data, err = m.AuditSkills(names, *rootID)
 				}
 			}
 		}
@@ -148,33 +149,45 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	case "update":
 		fs := flag.NewFlagSet("update", flag.ContinueOnError)
 		groupID := fs.String("group", "", "explicit GitHub source group ID")
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 		if parseErr := parseFlags(fs, args[1:]); parseErr != nil {
 			err = parseErr
 		} else if strings.TrimSpace(*groupID) == "" {
 			err = usagef("update requires --group")
 		} else {
-			data, err = m.PrepareUpdate(ctx, *groupID)
+			data, err = m.PrepareUpdate(ctx, *groupID, *rootID)
 		}
 	case "install":
 		data, err = install(ctx, m, args[1:])
 	case "remove":
-		if len(args) < 2 {
-			err = usagef("remove requires one or more explicit skill names")
-		} else if invalid := invalidSkillTarget(args[1:]); invalid != "" {
-			err = usagef("remove requires explicit skill names; invalid target: %s", invalid)
+		fs := flag.NewFlagSet("remove", flag.ContinueOnError)
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
+		var skills stringList
+		fs.Var(&skills, "skill", "explicit skill name; repeatable")
+		fs.SetOutput(io.Discard)
+		if parseErr := fs.Parse(args[1:]); parseErr != nil {
+			err = &usageError{err: parseErr}
 		} else {
-			data, err = m.Quarantine(args[1:])
+			skills = append(skills, fs.Args()...)
+			if len(skills) == 0 {
+				err = usagef("remove requires one or more explicit skill names")
+			} else if invalid := invalidSkillTarget(skills); invalid != "" {
+				err = usagef("remove requires explicit skill names; invalid target: %s", invalid)
+			} else {
+				data, err = m.Quarantine(skills, *rootID)
+			}
 		}
 	case "restore":
 		fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 		skill := fs.String("skill", "", "skill name")
 		tx := fs.String("transaction", "", "quarantine transaction")
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 		if parseErr := parseFlags(fs, args[1:]); parseErr != nil {
 			err = parseErr
 		} else if strings.TrimSpace(*skill) == "" || strings.TrimSpace(*tx) == "" {
 			err = usagef("restore requires --skill and --transaction")
 		} else {
-			data, err = m.Restore(*skill, *tx)
+			data, err = m.Restore(*skill, *tx, *rootID)
 		}
 	case "rollback":
 		fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
@@ -229,6 +242,7 @@ func manage(m *manager.Manager, args []string) (any, error) {
 	fs := flag.NewFlagSet("manage", flag.ContinueOnError)
 	apply := fs.Bool("apply", false, "apply the management plan")
 	planID := fs.String("plan-id", "", "existing management plan ID")
+	rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 	var selected stringList
 	fs.Var(&selected, "skill", "unmanaged skill name; repeatable")
 	if err := parseFlags(fs, args); err != nil {
@@ -241,12 +255,12 @@ func manage(m *manager.Manager, args []string) (any, error) {
 		if len(selected) == 0 {
 			return nil, usagef("applying a management plan requires at least one --skill")
 		}
-		return m.ApplyAdoption(*planID, selected)
+		return m.ApplyAdoption(*planID, selected, *rootID)
 	}
 	if *apply {
 		return nil, usagef("--apply requires --plan-id")
 	}
-	return m.PrepareAdoption(selected)
+	return m.PrepareAdoption(selected, *rootID)
 }
 
 func group(m *manager.Manager, args []string) (any, error) {
@@ -257,27 +271,30 @@ func group(m *manager.Manager, args []string) (any, error) {
 	case "create":
 		fs := flag.NewFlagSet("group create", flag.ContinueOnError)
 		name := fs.String("name", "", "new group name")
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 		if err := parseFlags(fs, args[1:]); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(*name) == "" {
 			return nil, usagef("group create requires --name")
 		}
-		return m.CreateGroup(*name)
+		return m.CreateGroup(*name, *rootID)
 	case "rename":
 		fs := flag.NewFlagSet("group rename", flag.ContinueOnError)
 		id := fs.String("id", "", "group ID")
 		name := fs.String("name", "", "new group name")
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 		if err := parseFlags(fs, args[1:]); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(*id) == "" || strings.TrimSpace(*name) == "" {
 			return nil, usagef("group rename requires --id and --name")
 		}
-		return m.RenameGroup(*id, *name)
+		return m.RenameGroup(*id, *name, *rootID)
 	case "reorder":
 		fs := flag.NewFlagSet("group reorder", flag.ContinueOnError)
 		var ids stringList
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 		fs.Var(&ids, "id", "group ID in desired order; repeatable")
 		if err := parseFlags(fs, args[1:]); err != nil {
 			return nil, err
@@ -285,10 +302,11 @@ func group(m *manager.Manager, args []string) (any, error) {
 		if len(ids) == 0 {
 			return nil, usagef("group reorder requires at least one --id")
 		}
-		return m.ReorderGroups(ids)
+		return m.ReorderGroups(ids, *rootID)
 	case "move":
 		fs := flag.NewFlagSet("group move", flag.ContinueOnError)
 		id := fs.String("group", "", "target group ID")
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
 		var skills stringList
 		fs.Var(&skills, "skill", "skill name; repeatable")
 		if err := parseFlags(fs, args[1:]); err != nil {
@@ -297,7 +315,7 @@ func group(m *manager.Manager, args []string) (any, error) {
 		if strings.TrimSpace(*id) == "" || len(skills) == 0 {
 			return nil, usagef("group move requires --group and at least one --skill")
 		}
-		return m.MoveSkillsToGroup(skills, *id)
+		return m.MoveSkillsToGroup(skills, *id, *rootID)
 	default:
 		return nil, usagef("unknown group action: %s", args[0])
 	}
@@ -436,6 +454,7 @@ func codexCommand(m *manager.Manager, args []string) (any, error) {
 
 func install(ctx context.Context, m *manager.Manager, args []string) (any, error) {
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	rootID := fs.String("root", model.RootIDCodexDefault, "registered installation target root ID")
 	rawURL := fs.String("url", "", "GitHub URL")
 	local := fs.String("local", "", "local directory")
 	ref := fs.String("ref", "", "branch, tag, or commit")
@@ -492,7 +511,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			if len(selected) == 0 {
 				return nil, usagef("applying an assisted plan requires --all or at least one --skill")
 			}
-			return m.ApplyAssistedInstall(ctx, *planID, selected, grants, *projectRoot, nil)
+			return m.ApplyAssistedInstallForRoot(ctx, *planID, selected, grants, *projectRoot, *rootID, nil)
 		}
 		if *all {
 			return nil, usagef("--all is supported only when applying an assisted plan")
@@ -500,7 +519,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 		if len(selected) == 0 {
 			return nil, usagef("applying an install plan requires at least one --skill")
 		}
-		return m.ApplyInstall(*planID, selected, *acceptHigh)
+		return m.ApplyInstall(*planID, selected, *acceptHigh, *rootID)
 	}
 	if *assess {
 		return nil, usagef("--assess requires --plan-id")
@@ -518,7 +537,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	}
 	var preview any
 	if *rawURL != "" {
-		value, err := m.PrepareGitHub(ctx, *rawURL, *ref)
+		value, err := m.PrepareGitHub(ctx, *rawURL, *ref, *rootID)
 		if err != nil {
 			return nil, err
 		}
@@ -531,11 +550,11 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			}
 		}
 		if *apply {
-			return m.ApplyInstall(value.ID, selected, *acceptHigh)
+			return m.ApplyInstall(value.ID, selected, *acceptHigh, *rootID)
 		}
 		preview = value
 	} else {
-		value, err := m.PrepareLocal(*local)
+		value, err := m.PrepareLocal(*local, *rootID)
 		if err != nil {
 			return nil, err
 		}
@@ -548,7 +567,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			}
 		}
 		if *apply {
-			return m.ApplyInstall(value.ID, selected, *acceptHigh)
+			return m.ApplyInstall(value.ID, selected, *acceptHigh, *rootID)
 		}
 		preview = value
 	}
@@ -681,17 +700,17 @@ func printHelp(w io.Writer) {
 命令:
   discover              发现已安装 Skills
   bootstrap             管理当前已知的历史 Skills
-  manage                分析并管理一个或多个现有 Skill
-  group                 新建、改名、排序分组或移动 Skills
-  audit [--skill NAME]  本地安全扫描
+  manage                分析并管理一个或多个现有 Skill；使用 --root 指定根目录
+  group                 新建、改名、排序分组或移动 Skills；使用 --root 指定根目录
+  audit [--skill NAME]  本地安全扫描；使用 --root 指定根目录
   check                 检查 GitHub 更新；支持 --group 与 --force
   github-auth           验证 GitHub 凭据并显示 API 限额
   codex status          检查 Codex CLI 与登录状态
   codex review          对指定 --report 运行可选语义复核；支持重复 --skill
-  update --group ID     为一个来源创建安全更新计划
-  install               从 GitHub URL 或本地目录创建计划；--assist 使用计划安装
-  remove NAME [...]     移动一个或多个 Skill 到隔离区
-  restore               从隔离区恢复
+  update --group ID     为一个来源创建安全更新计划；使用 --root 指定根目录
+  install               从 GitHub URL 或本地目录创建计划；--root 默认为 codex-default
+  remove NAME [...]     移动到 --root 的隔离区；也可重复使用 --skill
+  restore               从 --root 的隔离区恢复
   rollback              回滚事务
   history               查看事务历史
   reports               查看扫描报告

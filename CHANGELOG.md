@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.11.0
+
+### English
+
+- Added first-class management for both `.codex/skills` and `.agents/skills`,
+  with Codex as the default installation target and root-qualified state,
+  updates, groups, scans, quarantine, restore, and rollback.
+- Reworked the desktop shell around a compact, collapsible sidebar, system
+  appearance, system accent color, clearer feedback, and keyboard-visible focus.
+- Consolidated Codex review execution behind one bounded runner shared by
+  project scans, installation analysis, security review, and update workflows.
+- Added local development and verified deployment scripts. Every release build
+  refreshes `build/bin`; deployment outside the project remains an explicit step.
+- Hardened plan integrity, root-path validation, read-only system boundaries,
+  v1 state migration, and cross-root recovery behavior.
+
+### 中文
+
+- 将 `.codex/skills` 与 `.agents/skills` 一并纳入管理；新安装默认选择 Codex 目录，
+  状态、更新、分组、扫描、隔离、恢复和回滚均按根目录区分。
+- 重做桌面外壳：侧栏可收起，跟随系统明暗与强调色，反馈更直接，键盘焦点更清楚。
+- 将 Codex 审核统一为一个有超时、输出上限和结构校验的执行模块，并复用于项目扫描、
+  安装分析、安全复核与更新流程。
+- 新增本地开发和校验部署脚本；每次发布构建都会刷新 `build/bin`，项目外安装仍需明确执行。
+- 加强计划完整性、目录边界、只读系统目录、旧状态迁移和跨根恢复。
+
 ## 0.10.2
 
 ### English

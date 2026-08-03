@@ -11,6 +11,7 @@ import {
   ShieldCheck
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { uiCopy } from "../i18n";
 
 export type LocalizedLabel = Readonly<{
   zhCN: string;
@@ -53,38 +54,38 @@ export const DEFAULT_NAVIGATION_GROUP_ID: NavigationGroupId = "home";
 export const NAVIGATION_GROUPS: readonly NavigationGroup[] = [
   {
     id: "home",
-    label: { zhCN: "首页", enUS: "Home" },
+    label: { zhCN: uiCopy.home[0], enUS: uiCopy.home[1] },
     icon: LayoutDashboard
   },
   {
     id: "assets",
-    label: { zhCN: "资产", enUS: "Assets" },
+    label: { zhCN: uiCopy.assets[0], enUS: uiCopy.assets[1] },
     icon: Boxes,
     tabs: [
-      { id: "skills", label: { zhCN: "Skills", enUS: "Skills" }, icon: Boxes },
-      { id: "groups", label: { zhCN: "分组", enUS: "Groups" }, icon: GitBranch }
+      { id: "skills", label: { zhCN: uiCopy.skills[0], enUS: uiCopy.skills[1] }, icon: Boxes },
+      { id: "groups", label: { zhCN: uiCopy.groups[0], enUS: uiCopy.groups[1] }, icon: GitBranch }
     ]
   },
   {
     id: "security",
-    label: { zhCN: "安全", enUS: "Security" },
+    label: { zhCN: uiCopy.security[0], enUS: uiCopy.security[1] },
     icon: ShieldCheck,
     badgeKey: "securityRiskCount"
   },
   {
     id: "activity",
-    label: { zhCN: "活动", enUS: "Activity" },
+    label: { zhCN: uiCopy.activity[0], enUS: uiCopy.activity[1] },
     icon: Activity,
     tabs: [
-      { id: "updates", label: { zhCN: "更新", enUS: "Updates" }, icon: RefreshCw },
-      { id: "history", label: { zhCN: "历史与回滚", enUS: "History & Rollback" }, icon: History },
-      { id: "quarantine", label: { zhCN: "隔离区", enUS: "Quarantine" }, icon: ArchiveRestore },
-      { id: "reports", label: { zhCN: "报告", enUS: "Reports" }, icon: FileClock }
+      { id: "updates", label: { zhCN: uiCopy.updates[0], enUS: uiCopy.updates[1] }, icon: RefreshCw },
+      { id: "history", label: { zhCN: uiCopy.history[0], enUS: uiCopy.history[1] }, icon: History },
+      { id: "quarantine", label: { zhCN: uiCopy.quarantine[0], enUS: uiCopy.quarantine[1] }, icon: ArchiveRestore },
+      { id: "reports", label: { zhCN: uiCopy.reports[0], enUS: uiCopy.reports[1] }, icon: FileClock }
     ]
   },
   {
     id: "settings",
-    label: { zhCN: "设置", enUS: "Settings" },
+    label: { zhCN: uiCopy.settings[0], enUS: uiCopy.settings[1] },
     icon: Settings
   }
 ];

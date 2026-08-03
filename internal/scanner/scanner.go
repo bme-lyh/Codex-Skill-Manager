@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,17 +64,84 @@ var dangerousExt = map[string]bool{
 }
 
 func Scan(root string, maxFiles int, maxFileBytes int64) (model.ScanReport, error) {
-	return scan(root, maxFiles, maxFileBytes, false)
+	return scanWithSystemDir(root, maxFiles, maxFileBytes, false, ".system")
+}
+
+// ScanRoot is the root-aware scanner entry point. It skips manager-reserved
+// .system content and records RootID in the report; an auto-enabled root that
+// has not been created yet yields a clean empty report.
+func ScanRoot(rootID, root string, maxFiles int, maxFileBytes int64) (model.ScanReport, error) {
+	if strings.TrimSpace(rootID) == "" {
+		rootID = model.RootIDCodexDefault
+	}
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		now := time.Now().UTC()
+		return model.ScanReport{ID: fmt.Sprintf("scan-%s", now.Format("20060102T150405.000000000")), Target: root, RootID: rootID, StartedAt: now, CompletedAt: now, HighestSeverity: model.RiskInfo, ActiveHighestSeverity: model.RiskInfo, Findings: []model.Finding{}, Skills: []model.ScanSkillSummary{}, ScannerVersion: Version, Status: "passed"}, nil
+	}
+	report, err := scanWithSystemDir(root, maxFiles, maxFileBytes, true, ".system")
+	report.RootID = rootID
+	for i := range report.Findings {
+		report.Findings[i].RootID = rootID
+	}
+	for i := range report.Skills {
+		report.Skills[i].RootID = rootID
+	}
+	return report, err
+}
+
+// ScanSkillRoot applies the explicit root system-directory policy.
+func ScanSkillRoot(root model.SkillRoot, maxFiles int, maxFileBytes int64) (model.ScanReport, error) {
+	rootID := root.ID
+	if strings.TrimSpace(rootID) == "" {
+		rootID = model.RootIDCodexDefault
+	}
+	if _, err := os.Stat(root.Path); errors.Is(err, os.ErrNotExist) {
+		return ScanRoot(rootID, root.Path, maxFiles, maxFileBytes)
+	}
+	report, err := scanWithSystemDir(root.Path, maxFiles, maxFileBytes, true, model.RootSystemDir(root))
+	report.RootID = rootID
+	for i := range report.Findings {
+		report.Findings[i].RootID = rootID
+	}
+	for i := range report.Skills {
+		report.Skills[i].RootID = rootID
+	}
+	return report, err
+}
+
+// ScanRoots scans every enabled root independently. Independent reports keep
+// per-root audit history and avoid conflating equal Skill names.
+func ScanRoots(roots []model.SkillRoot, maxFiles int, maxFileBytes int64) ([]model.ScanReport, error) {
+	reports := make([]model.ScanReport, 0, len(roots))
+	for _, root := range roots {
+		if !root.Enabled {
+			continue
+		}
+		report, err := ScanSkillRoot(root, maxFiles, maxFileBytes)
+		if err != nil {
+			return nil, err
+		}
+		reports = append(reports, report)
+	}
+	return reports, nil
+}
+
+func ScanConfigured(roots []model.SkillRoot, maxFiles int, maxFileBytes int64) ([]model.ScanReport, error) {
+	return ScanRoots(roots, maxFiles, maxFileBytes)
 }
 
 // ScanSkillsRoot excludes only the manager-owned directories directly beneath
 // the configured Skills root. Candidate Skill scans must use Scan so a
 // repository cannot hide untrusted content inside a reserved-looking folder.
 func ScanSkillsRoot(root string, maxFiles int, maxFileBytes int64) (model.ScanReport, error) {
-	return scan(root, maxFiles, maxFileBytes, true)
+	return scanWithSystemDir(root, maxFiles, maxFileBytes, true, ".system")
 }
 
 func scan(root string, maxFiles int, maxFileBytes int64, skipRootInternals bool) (model.ScanReport, error) {
+	return scanWithSystemDir(root, maxFiles, maxFileBytes, skipRootInternals, ".system")
+}
+
+func scanWithSystemDir(root string, maxFiles int, maxFileBytes int64, skipRootInternals bool, systemDir string) (model.ScanReport, error) {
 	now := time.Now().UTC()
 	report := model.ScanReport{
 		ID:     fmt.Sprintf("scan-%s", now.Format("20060102T150405.000000000")),
@@ -87,7 +155,7 @@ func scan(root string, maxFiles int, maxFileBytes int64, skipRootInternals bool)
 		}
 		if d.IsDir() {
 			if skipRootInternals && path != root && filepath.Clean(filepath.Dir(path)) == filepath.Clean(root) {
-				if d.Name() == ".system" || d.Name() == ".csm-backups" || d.Name() == ".csm-quarantine" {
+				if strings.EqualFold(d.Name(), systemDir) || d.Name() == ".csm-backups" || d.Name() == ".csm-quarantine" {
 					return filepath.SkipDir
 				}
 			}

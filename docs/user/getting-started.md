@@ -5,7 +5,7 @@
 1. 下载并解压 Windows 发布包。
 2. 将 `CodexSkillManager.exe` 和 `csm.exe` 保存在同一目录。
 3. 双击运行 `CodexSkillManager.exe`。
-4. 默认 Skills 根目录为 `%USERPROFILE%\.codex\skills`。
+4. 应用会列出 Codex 与 Agents 两个 Skills 目录；新安装默认选择 Codex。
 
 便携版包含 `portable.marker`，配置和运行状态保存在发布目录；标准版把应用状态
 保存在 `%USERPROFILE%\.codex\skill-manager`。数据、日志、报告、备份、隔离区和
@@ -41,7 +41,9 @@
 没有 Codex Skill 的普通项目不会被复制到全局 Skills 目录；MCP 所需的项目目录必须
 由用户明确选择。
 
-默认 Skills 根目录为 `%USERPROFILE%\.codex\skills`。安装完成后，窗口会刷新 Skills
+应用同时读取 `%USERPROFILE%\.codex\skills` 与 `%USERPROFILE%\.agents\skills`。
+添加项目前可以选择目标目录，默认是 Codex；计划生成后目标会锁定，不能在执行时改到
+另一目录。两个目录中的同名 Skill 各自独立，`.system` 都不可修改。安装完成后，窗口会刷新 Skills
 列表和操作状态；如果刷新失败，已完成结果仍会保留，应重试刷新而不是重复安装。请在
 **历史与回滚** 中查看事务和回滚入口，在 **隔离区** 中恢复已移除的 Skills。
 

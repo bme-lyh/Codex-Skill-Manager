@@ -1,11 +1,98 @@
 package state
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/bme-lyh/Codex-Skill-Manager/internal/model"
 )
+
+func TestSecurityStatesAreRootQualified(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveSkillSecurityStates([]model.SkillSecurityState{
+		{RootID: model.RootIDCodexDefault, SkillName: "same", ContentHash: "a", ReportID: "r1", CheckedAt: now},
+		{RootID: model.RootIDAgents, SkillName: "same", ContentHash: "b", ReportID: "r2", CheckedAt: now},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	states, err := store.SkillSecurityStates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if states[model.QualifiedSkillIdentity(model.RootIDCodexDefault, "same")].ContentHash != "a" || states[model.QualifiedSkillIdentity(model.RootIDAgents, "same")].ContentHash != "b" {
+		t.Fatalf("root-qualified states were conflated: %#v", states)
+	}
+}
+
+func TestV1SourcesLockMigrationInfersRootWithoutTouchingFiles(t *testing.T) {
+	base := t.TempDir()
+	codex := filepath.Join(base, "codex")
+	agents := filepath.Join(base, "agents")
+	local := filepath.Join(agents, "same")
+	if err := os.MkdirAll(local, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := model.SourcesLock{SchemaVersion: 1, Packages: map[string]model.PackageLock{
+		"pkg": {Provider: "github", Skills: map[string]model.SkillLock{"same": {LocalPath: local}}},
+	}}
+	data, err := json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(base, "sources.lock.json")
+	if err := os.WriteFile(lockPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenWithRoots(filepath.Join(base, "data"), []model.SkillRoot{{ID: model.RootIDCodexDefault, Path: codex}, {ID: model.RootIDAgents, Path: agents}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	// Store keeps the lock beside dataRoot.
+	if err := os.WriteFile(filepath.Join(base, "data", "sources.lock.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := model.QualifiedPackageID(model.RootIDAgents, "pkg")
+	if migrated.SchemaVersion != 2 || migrated.Packages[key].RootID != model.RootIDAgents {
+		t.Fatalf("unexpected migrated lock: %#v", migrated)
+	}
+	if _, err := os.Stat(local); err != nil {
+		t.Fatalf("migration touched local skill path: %v", err)
+	}
+}
+
+func TestV1SourcesLockMigrationFailsClosedOnAmbiguousPath(t *testing.T) {
+	base := t.TempDir()
+	path := filepath.Join(base, "same")
+	lock := model.SourcesLock{SchemaVersion: 1, Packages: map[string]model.PackageLock{"pkg": {Provider: "local", Skills: map[string]model.SkillLock{"same": {LocalPath: path}}}}}
+	store, err := OpenWithRoots(filepath.Join(base, "data"), []model.SkillRoot{{ID: model.RootIDCodexDefault, Path: path}, {ID: model.RootIDAgents, Path: path}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	data, err := json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "data", "sources.lock.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.LoadLock(); err == nil {
+		t.Fatal("ambiguous v1 root migration unexpectedly succeeded")
+	}
+}
 
 func TestSkillSecurityStatesRoundTrip(t *testing.T) {
 	store, err := Open(t.TempDir())

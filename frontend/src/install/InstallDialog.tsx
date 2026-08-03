@@ -10,7 +10,6 @@ import {
   CircleDashed,
   Clock3,
   Download,
-  FileCode2,
   FolderGit2,
   KeyRound,
   LoaderCircle,
@@ -61,6 +60,10 @@ import {
 import type { ActiveInstallReference } from "./state";
 import { AssessmentView } from "./components/AssessmentView";
 import { WorkflowStepper } from "./components/WorkflowStepper";
+import { UnifiedSourceStep } from "./components/UnifiedSourceStep";
+import type { SourceMethod } from "./components/UnifiedSourceStep";
+import { RootSelector } from "../shell/RootSelector";
+import type { RootContract } from "../roots";
 import type { InstallWorkflowStage } from "./components/WorkflowStepper";
 import "./install.css";
 
@@ -68,7 +71,6 @@ const ACTIVE_PLAN_KEY = "csm.assisted-install.active-plan";
 const INSTALL_DRAFT_KEY = "csm.install.draft";
 
 type InstallMethod = "standard" | "assisted";
-type SourceMethod = "github" | "local";
 type BusyTask = "" | "restore" | "source" | "codex" | "standard" | "risk" | "assisted" | "cancel" | "rollback" | "refresh";
 type RetryTask = "" | "restore" | "source" | "codex" | "standard" | "assisted" | "rollback" | "refresh";
 
@@ -91,21 +93,25 @@ interface InstallDraft {
   sourceMethod: SourceMethod;
   source: string;
   requestedRef: string;
+  rootId?: string;
 }
 
 interface InstallDialogProps {
   close: () => void;
   refresh: () => Promise<void>;
   openSettings?: () => void;
+  roots?: RootContract[];
+  defaultRootId?: string;
 }
 
-export function InstallDialog({ close, refresh, openSettings }: InstallDialogProps) {
+export function InstallDialog({ close, refresh, openSettings, roots = [], defaultRootId = "" }: InstallDialogProps) {
   const { t } = useI18n();
   const initialDraft = useRef(readInstallDraft()).current;
   const [installMethod, setInstallMethod] = useState<InstallMethod>("standard");
   const [sourceMethod, setSourceMethod] = useState<SourceMethod>(initialDraft?.sourceMethod ?? "github");
   const [source, setSource] = useState(initialDraft?.source ?? "");
   const [requestedRef, setRequestedRef] = useState(initialDraft?.requestedRef ?? "");
+  const [rootId, setRootId] = useState(initialDraft?.rootId ?? defaultRootId ?? roots[0]?.rootId ?? "");
   const [preview, setPreview] = useState<InstallPreview | null>(null);
   const [assessment, setAssessment] = useState<ProjectAssessment | null>(null);
   const [projectScan, setProjectScan] = useState<CodexProjectScanResult | null>(null);
@@ -210,6 +216,7 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       restored.permissions.filter(permission => permission.approved).map(permission => permission.id)
     );
     setProjectRoot(restored.projectRoot ?? "");
+    if (restored.targetRootId) setRootId(restored.targetRootId);
     if (restored.sourcePlanId) {
       void api.getAssessment(restored.sourcePlanId).then(setAssessment).catch(error => {
         setAssessment(null);
@@ -223,8 +230,12 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
   }, []);
 
   useEffect(() => {
-    saveInstallDraft({ installMethod, sourceMethod, source, requestedRef });
-  }, [installMethod, requestedRef, source, sourceMethod]);
+    saveInstallDraft({ installMethod, sourceMethod, source, requestedRef, rootId });
+  }, [installMethod, requestedRef, rootId, source, sourceMethod]);
+
+  useEffect(() => {
+    if (!rootId && (defaultRootId || roots[0]?.rootId)) setRootId(defaultRootId || roots[0].rootId);
+  }, [defaultRootId, rootId, roots]);
 
   useEffect(() => {
     planIdRef.current = plan?.id ?? "";
@@ -752,9 +763,10 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     setSelectedPermissions([]);
     try {
       const analyzed = effectiveSourceMethod === "github"
-        ? await api.prepareGitHub(trimmed, (requestedRefOverride ?? requestedRef).trim())
-        : await api.prepareLocal(trimmed);
+        ? await api.prepareGitHub(trimmed, (requestedRefOverride ?? requestedRef).trim(), rootId || "codex-default")
+        : await api.prepareLocal(trimmed, rootId || "codex-default");
       setPreview(analyzed);
+      if (analyzed.targetRootId) setRootId(analyzed.targetRootId);
       setSelectedSkills(analyzed.skills.map(skill => skill.name));
       setFeedback({ tone: "info", title: t("正在执行必选检查", "Running required checks"),
         message: t("正在确认项目类型、覆盖范围、安装目标和恢复能力。", "Confirming project type, coverage, install targets, and recovery.") });
@@ -816,7 +828,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
     setRetryTask("");
     try {
 		const transaction = await api.apply(preview.id, selectedSkills,
-			(preview.scan.clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored));
+			(preview.scan.clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored),
+			preview.targetRootId || rootId);
       setStandardResult(transaction);
       if (!await refreshWithinDialog()) return;
       setFeedback({
@@ -985,7 +998,8 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         plan.id,
         selectedSkills,
         selectedPermissions,
-        projectRoot.trim()
+        projectRoot.trim(),
+        plan.targetRootId || preview?.targetRootId || rootId
       );
       setResult(completed);
       setExecutionStarted(true);
@@ -1290,6 +1304,9 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         source={source}
         requestedRef={requestedRef}
         busy={busy !== ""}
+        roots={roots}
+        rootId={rootId}
+        setRootId={setRootId}
         setSourceMethod={setSourceMethod}
         setSource={setSource}
         setRequestedRef={setRequestedRef}
@@ -1309,6 +1326,9 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
         riskBusy={busy === "risk"}
         onIgnore={ignoreClusters}
         completed={!!standardResult}
+        roots={roots}
+        rootId={rootId}
+        setRootId={setRootId}
       /></>;
     }
     if (projectScan && !plan) {
@@ -1343,6 +1363,9 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
       scan={scan}
       riskBusy={busy === "risk"}
       onIgnore={ignoreClusters}
+      roots={roots}
+      rootId={rootId}
+      setRootId={setRootId}
     /></>;
   };
 
@@ -1480,11 +1503,11 @@ export function InstallDialog({ close, refresh, openSettings }: InstallDialogPro
 
   return <div className="modal-backdrop install-backdrop">
     <div className="modal install-dialog" ref={dialogRef} role="dialog" aria-modal="true"
-      aria-labelledby="install-dialog-title" tabIndex={-1}>
+      aria-labelledby="install-dialog-title" aria-describedby="install-dialog-description" tabIndex={-1}>
       <div className="modal-head install-dialog-head">
         <div>
           <h2 id="install-dialog-title">{t("添加项目", "Add project")}</h2>
-          <span>{t("输入来源后，系统会理解项目并制定检查计划", "Enter a source and the app will understand the project and build a check plan")}</span>
+          <span id="install-dialog-description">{t("输入来源后，系统会理解项目并制定检查计划", "Enter a source and the app will understand the project and build a check plan")}</span>
         </div>
         <button type="button" onClick={canHideInBackground ? close : dismiss}
           disabled={cannotClose && !canHideInBackground}
@@ -1560,46 +1583,7 @@ function fallbackIncompleteAssessment(preview: InstallPreview): ProjectAssessmen
   };
 }
 
-function UnifiedSourceStep({ sourceMethod, source, requestedRef, busy, setSourceMethod, setSource, setRequestedRef }: {
-  sourceMethod: SourceMethod;
-  source: string;
-  requestedRef: string;
-  busy: boolean;
-  setSourceMethod: (value: SourceMethod) => void;
-  setSource: (value: string) => void;
-  setRequestedRef: (value: string) => void;
-}) {
-  const { t } = useI18n();
-  return <div className="install-source-step unified-source-step">
-    <div className="source-intro"><ShieldCheck size={24} /><div>
-      <span className="eyebrow">{t("统一安全流程", "Unified security workflow")}</span>
-      <h3>{t("添加需要检查的项目", "Add a project to assess")}</h3>
-      <p>{t("应用先读取项目并运行本地必选检查，再显示安装目标和可选检查。",
-        "The app first reads the project and runs required local checks, then shows install targets and optional checks.")}</p>
-    </div></div>
-    <div className="install-source-tabs" aria-label={t("来源类型", "Source type")}>
-      <button type="button" aria-pressed={sourceMethod === "github"}
-        className={sourceMethod === "github" ? "active" : ""} disabled={busy}
-        onClick={() => setSourceMethod("github")}><FolderGit2 size={17} />{t("GitHub 链接", "GitHub link")}</button>
-      <button type="button" aria-pressed={sourceMethod === "local"}
-        className={sourceMethod === "local" ? "active" : ""} disabled={busy}
-        onClick={() => setSourceMethod("local")}><FileCode2 size={17} />{t("本地目录", "Local directory")}</button>
-    </div>
-    <label className="install-field"><span>{sourceMethod === "github"
-      ? t("GitHub 仓库、目录或 SKILL.md 链接", "GitHub repository, directory, or SKILL.md link")
-      : t("包含一个或多个 Skills 的绝对路径", "Absolute path containing one or more Skills")}</span>
-      <input autoFocus value={source} disabled={busy} onChange={event => setSource(event.target.value)}
-        placeholder={sourceMethod === "github" ? "https://github.com/owner/repository" : "D:\\skills\\my-package"} /></label>
-    {sourceMethod === "github" && <label className="install-field"><span>{t("分支、标签或 Commit（可选）", "Branch, tag, or commit (optional)")}</span>
-      <input value={requestedRef} disabled={busy} onChange={event => setRequestedRef(event.target.value)}
-        placeholder={t("留空时使用链接版本或默认分支", "Leave blank to use the linked version or default branch")} /></label>}
-    <div className="install-safety-note"><ShieldCheck size={21} /><div><strong>{t("本地检查优先", "Local checks first")}</strong>
-      <p>{t("这一步只固定来源、创建受管快照并运行本地检查；不会调用 Codex、下载依赖或执行仓库脚本。",
-        "This step only pins the source, creates a managed snapshot, and runs local checks. It does not call Codex, download dependencies, or execute repository scripts.")}</p></div></div>
-  </div>;
-}
-
-function StandardReview({ preview, candidates, selected, setSelected, scan, riskBusy, onIgnore, completed }: {
+function StandardReview({ preview, candidates, selected, setSelected, scan, riskBusy, onIgnore, completed, roots, rootId, setRootId }: {
   preview: InstallPreview | null;
   candidates: Candidate[];
   selected: string[];
@@ -1608,9 +1592,13 @@ function StandardReview({ preview, candidates, selected, setSelected, scan, risk
   riskBusy: boolean;
   onIgnore: (clusters: RiskCluster[]) => Promise<void>;
   completed: boolean;
+  roots: RootContract[];
+  rootId: string;
+  setRootId: (value: string) => void;
 }) {
   return <div className="install-review">
     <RepositorySummary preview={preview} />
+    {roots.length > 0 && <RootSelector roots={roots} value={rootId} onChange={setRootId} disabled={!!preview} />}
     <SkillSelection candidates={candidates} selected={selected} setSelected={setSelected} disabled={completed} />
     {scan && <CompactRiskReview report={scan} busy={riskBusy} onIgnore={onIgnore} />}
   </div>;
@@ -1684,7 +1672,7 @@ function ProjectScanView({ scan }: { scan: CodexProjectScanResult }) {
 }
 
 function AssistedPlanView({ plan, candidates, selectedSkills, setSelectedSkills, selectedPermissions, setSelectedPermissions,
-  permissionDependencyIssue, projectRoot, projectRootRequired, setProjectRoot, scan, riskBusy, onIgnore }: {
+  permissionDependencyIssue, projectRoot, projectRootRequired, setProjectRoot, scan, riskBusy, onIgnore, roots, rootId, setRootId }: {
   plan: AssistedInstallPlan;
   candidates: Candidate[];
   selectedSkills: string[];
@@ -1698,6 +1686,9 @@ function AssistedPlanView({ plan, candidates, selectedSkills, setSelectedSkills,
   scan?: ScanReport;
   riskBusy: boolean;
   onIgnore: (clusters: RiskCluster[]) => Promise<void>;
+  roots: RootContract[];
+  rootId: string;
+  setRootId: (value: string) => void;
 }) {
   const { t, formatDate } = useI18n();
   return <div className="assisted-plan">
@@ -1716,6 +1707,8 @@ function AssistedPlanView({ plan, candidates, selectedSkills, setSelectedSkills,
         {plan.expiresAt && <span><b>{t("计划有效期", "Plan expires")}</b>{formatDate(plan.expiresAt)}</span>}
       </div>
     </div>
+
+    {roots.length > 0 && <RootSelector roots={roots} value={rootId} onChange={setRootId} disabled={!!plan} />}
 
     {plan.status === "manual-required" && <div className="plan-warnings" role="status">
       <AlertTriangle size={20} /><div>
@@ -2572,7 +2565,8 @@ function readInstallDraft(): InstallDraft | null {
       installMethod: value.installMethod,
       sourceMethod: value.sourceMethod,
       source: value.source.slice(0, 4096),
-      requestedRef: value.requestedRef.slice(0, 512)
+      requestedRef: value.requestedRef.slice(0, 512),
+      ...(typeof value.rootId === "string" ? { rootId: value.rootId.slice(0, 128) } : {})
     };
   } catch {
     return null;

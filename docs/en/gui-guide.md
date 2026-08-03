@@ -10,6 +10,11 @@ confirmation and a non-empty reason.
 
 ## Navigation
 
+Use the root selector at the top of the sidebar to switch between **Codex
+Skills** and **Agents Skills**. Lists, groups, security, updates, history, and
+quarantine follow the selected root. The sidebar collapses, while appearance,
+accent color, and high contrast follow Windows settings.
+
 - **Home** shows managed, unmanaged, and system Skill counts, open reports,
   source groups, and recent operations.
 - **Assets** contains **Skills** and **Groups**.
@@ -55,7 +60,8 @@ journaled and reversible; they do not change the Skill's source content.
 The dialog has four visible steps:
 
 1. **Source** accepts a GitHub repository, directory, or direct `SKILL.md` link,
-   or an absolute local directory containing one or more Skills. GitHub input is
+   or an absolute local directory containing one or more Skills, and asks which
+   Skills root should receive the result. GitHub input is
    resolved to a full commit. A local directory is copied to a bounded,
    manager-owned snapshot before review.
 2. **Understand & plan** reads project documentation and installation markers,
@@ -72,6 +78,10 @@ The dialog has four visible steps:
    steps, shows progress and activity, records a transaction, and refreshes the
    latest Skills and operation status after the change. The result keeps the
    transaction ID, completed targets, manual work, and recovery state visible.
+
+The target root is part of the plan. Once review begins, applying to another
+root is rejected; return to Source and analyze again. Same-name Skills may live
+in both roots, but bulk actions never cross roots.
 
 Adding a project starts one unified flow. For a complex repository, **More options** contains **Run enhanced
 project scan**. This is an explicit, optional semantic scan provided by Codex,
