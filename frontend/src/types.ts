@@ -151,6 +151,10 @@ export interface CodexReviewProgress {
   activeSkills: string[];
   activeBatches: Array<{ index: number; groupId?: string; groupName?: string; skillNames: string[] }>;
   activityCount: number;
+  contextChunkIndex?: number;
+  contextChunkCount?: number;
+  contextChunkAttempt?: number;
+  contextChunkFiles?: number;
   startedAt: string;
   updatedAt: string;
 }

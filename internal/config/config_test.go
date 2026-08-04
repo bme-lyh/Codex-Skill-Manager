@@ -65,6 +65,29 @@ func TestValidateRejectsUnsupportedLocale(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsCatalogReasoningTiers(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, effort := range []string{"xhigh", "max", "ultra"} {
+		cfg.CodexReview.ReasoningEffort = effort
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("catalog tier %q should validate: %v", effort, err)
+		}
+	}
+}
+
+func TestDefaultUsesLunaExtraHighReview(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Theme != "system" || cfg.CodexReview.Model != "gpt-5.6-luna" || cfg.CodexReview.ReasoningEffort != "xhigh" {
+		t.Fatalf("unexpected appearance or Codex defaults: %#v", cfg)
+	}
+}
+
 func TestDefaultHasTwoRootsWithoutCreatingSkillDirectories(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {

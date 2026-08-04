@@ -1,45 +1,94 @@
 {
   "frames": [
     {
-      "file": "overview.png",
+      "file": "overview-1.png",
       "label": {
         "zh-CN": "首页",
         "en-US": "Home"
       }
     },
     {
-      "file": "assets.png",
+      "file": "assets-1.png",
       "label": {
-        "zh-CN": "资产",
-        "en-US": "Assets"
+        "zh-CN": "资产 · 1/2",
+        "en-US": "Assets · 1/2"
       }
     },
     {
-      "file": "security.png",
+      "file": "assets-2.png",
       "label": {
-        "zh-CN": "安全",
-        "en-US": "Security"
+        "zh-CN": "资产 · 2/2",
+        "en-US": "Assets · 2/2"
       }
     },
     {
-      "file": "install-project.png",
+      "file": "security-1.png",
+      "label": {
+        "zh-CN": "安全 · 1/2",
+        "en-US": "Security · 1/2"
+      }
+    },
+    {
+      "file": "security-2.png",
+      "label": {
+        "zh-CN": "安全 · 2/2",
+        "en-US": "Security · 2/2"
+      }
+    },
+    {
+      "file": "install-project-1.png",
       "label": {
         "zh-CN": "添加项目",
         "en-US": "Add project"
       }
     },
     {
-      "file": "activity.png",
+      "file": "activity-1.png",
       "label": {
         "zh-CN": "活动",
         "en-US": "Activity"
       }
     },
     {
-      "file": "settings.png",
+      "file": "reports-1.png",
       "label": {
-        "zh-CN": "设置",
-        "en-US": "Settings"
+        "zh-CN": "报告列表",
+        "en-US": "Report list"
+      }
+    },
+    {
+      "file": "reports-2.png",
+      "label": {
+        "zh-CN": "报告详情 · 1/2",
+        "en-US": "Report details · 1/2"
+      }
+    },
+    {
+      "file": "reports-3.png",
+      "label": {
+        "zh-CN": "报告详情 · 2/2",
+        "en-US": "Report details · 2/2"
+      }
+    },
+    {
+      "file": "settings-1.png",
+      "label": {
+        "zh-CN": "设置 · 1/3",
+        "en-US": "Settings · 1/3"
+      }
+    },
+    {
+      "file": "settings-2.png",
+      "label": {
+        "zh-CN": "设置 · 2/3",
+        "en-US": "Settings · 2/3"
+      }
+    },
+    {
+      "file": "settings-3.png",
+      "label": {
+        "zh-CN": "设置 · 3/3",
+        "en-US": "Settings · 3/3"
       }
     }
   ]

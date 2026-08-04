@@ -20,7 +20,7 @@ resolved commit, source path and installed file hashes.
 - stable finding fingerprints, ignore decisions, reasons and timestamps.
 - group labels/order in `skill_groups` and the layout-only Skill assignments in
   `skill_group_assignments`.
-- latest structured update state per source group in `update_statuses`.
+  - latest structured update state per root and source group in `update_statuses`.
 - per-Skill security check hashes, report IDs and check times in
   `skill_security_states`.
 - assisted-install parent transactions, including typed step snapshots, child

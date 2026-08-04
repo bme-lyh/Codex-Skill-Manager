@@ -194,6 +194,12 @@ func TestValidateContextChunkSummaryRejectsMissingChunkAndSpoofedPath(t *testing
 	if _, err := validateContextChunkSummary(chunk, valid); err != nil {
 		t.Fatalf("valid bounded summary was rejected: %v", err)
 	}
+	mismatch := valid
+	mismatch.ReviewedFileCount = 0
+	corrected, err := validateContextChunkSummary(chunk, mismatch)
+	if err != nil || !corrected.CoverageMismatch || corrected.ReviewedFileCount != len(chunk.Files) {
+		t.Fatalf("model count mismatch should become an explicit coverage warning: %#v, %v", corrected, err)
+	}
 
 	missing := valid
 	missing.ChunkIndex = 2

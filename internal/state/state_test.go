@@ -94,6 +94,29 @@ func TestV1SourcesLockMigrationFailsClosedOnAmbiguousPath(t *testing.T) {
 	}
 }
 
+func TestUpdateStatusesAreScopedByRoot(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	checked := time.Now().UTC().Truncate(time.Second)
+	statuses := []model.UpdateStatus{
+		{RootID: model.RootIDCodexDefault, GroupID: "github:owner/repo", GroupName: "Codex", Status: "up-to-date", CheckedAt: checked, OutdatedSkills: []string{}},
+		{RootID: model.RootIDAgents, GroupID: "github:owner/repo", GroupName: "Agents", Status: "update-available", CheckedAt: checked.Add(time.Second), OutdatedSkills: []string{"demo"}},
+	}
+	if err := store.SaveUpdateStatuses(statuses); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.LatestUpdateStatuses()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].RootID != model.RootIDAgents || got[1].RootID != model.RootIDCodexDefault {
+		t.Fatalf("root-scoped update statuses were collapsed: %#v", got)
+	}
+}
+
 func TestSkillSecurityStatesRoundTrip(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

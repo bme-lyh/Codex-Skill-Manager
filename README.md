@@ -6,14 +6,14 @@ Codex Skill Manager is a Windows app for understanding, checking, installing,
 updating, organizing, and recovering Codex Skills. Changes are explicit,
 logged, and reversible.
 
-[Download v0.11.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.11.0) ·
+[Download v0.12.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.12.0) ·
 [Get started](docs/en/getting-started.md) ·
 [User guide](docs/en/gui-guide.md) ·
 [Security](SECURITY_EN.md) ·
 [中文](README_ZH.md)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb)
-![Version](https://img.shields.io/badge/version-0.11.0-187a69)
+![Version](https://img.shields.io/badge/version-0.12.0-187a69)
 ![Go](https://img.shields.io/badge/Go-1.26-00add8)
 ![Wails](https://img.shields.io/badge/Wails-v2-cc1f45)
 ![License](https://img.shields.io/badge/license-MIT-334155)
@@ -24,7 +24,8 @@ logged, and reversible.
 [![Codex Skill Manager interface preview](docs/images/ui-carousel.en-US.gif)](docs/images/ui-carousel.en-US.gif)
 
 The preview uses fictional Skills, groups, and paths. It contains no real
-account or personal data.
+account or personal data. Every frame is 1440×900; longer screens are shown as
+separate scroll-positioned frames so the UI remains readable.
 
 ## Current interface
 
@@ -38,7 +39,12 @@ The desktop shell has five top-level areas:
 - **Activity** has **Updates**, **History & Rollback**, **Quarantine**, and
   **Reports** tabs.
 - **Settings** contains language, storage, GitHub, scheduled checks, Codex
-  review, and diagnostics.
+  review, appearance, and diagnostics.
+
+The **Settings** page can follow Windows or use an explicit Light or Dark mode.
+Reports open in place with their full findings and Codex conclusions. Update
+checks remain root-aware, so the Codex and Agents Skills directories never
+overwrite one another's status.
 
 ## Add a project in four steps
 
@@ -97,10 +103,10 @@ so SmartScreen may show a warning. Download only from this repository and
 verify the archive against the included checksum file:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.11.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.12.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-Compare the result with `CodexSkillManager-0.11.0-SHA256SUMS.txt`.
+Compare the result with `CodexSkillManager-0.12.0-SHA256SUMS.txt`.
 
 ### Add the bundled Codex Skill
 
@@ -149,5 +155,5 @@ The unified shell is a UI refactor. Legacy Page routes and the Wails/API
 compatibility boundary remain available for existing integrations; the visible
 workflow is documented with the current labels above.
 
-Codex Skill Manager 0.11.0 supports Windows 10/11 and is licensed under the
+Codex Skill Manager 0.12.0 supports Windows 10/11 and is licensed under the
 [MIT License](LICENSE).

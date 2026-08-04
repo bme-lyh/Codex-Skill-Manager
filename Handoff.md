@@ -3,7 +3,7 @@
 ## Project snapshot
 
 - Product: Windows desktop and CLI manager for Codex-compatible Skills.
-- Release line: `0.11.0`.
+- Release line: `0.12.0`.
 - Desktop: Wails v2 with a React/Vite/TypeScript frontend.
 - CLI: `cmd/csm`, with stable JSON envelopes for automation.
 - Default data directory: `%USERPROFILE%\.codex\skill-manager`.
@@ -73,8 +73,10 @@ paths, permissions, package locks, and actions are revalidated locally.
 
 ## Desktop UI
 
-The shell uses a collapsible sidebar, a root selector, system appearance,
-Windows accent color, visible focus, and reduced-motion/high-contrast support.
+The shell uses a collapsible sidebar, a root selector, system or explicit light/dark appearance,
+Windows accent color, visible focus, and reduced-motion/high-contrast support. Semantic status,
+review, and assisted-install surfaces must remain theme-aware; do not add a hard-coded white
+panel without a corresponding token.
 Primary sections are Home, Assets, Security, Activity, and Settings. English and
 Chinese strings live in `frontend/src/i18n.tsx`; keep wording short, literal,
 and task-focused. Avoid promotional copy, vague assurances, and invented jargon.
@@ -94,6 +96,7 @@ cross-root bulk actions must stop and ask for a single root.
 - `internal/state/state.go`: SQLite schemas and v1 migrations.
 - `frontend/src/App.tsx`: application state and page composition.
 - `frontend/src/api.ts`: Wails/demo API adapter.
+- `frontend/src/theme.ts`: persisted appearance normalization and DOM theme application.
 - `scripts/build.ps1`: verified production build into `build/bin`.
 - `scripts/dev.ps1`: local Wails development launcher.
 - `scripts/deploy-local.ps1`: dry-run-first, manifest-verified local deployment.
@@ -131,7 +134,9 @@ at the real user Skill roots.
    `wails.json`, and the first `CHANGELOG.md` entry.
 2. Update README download links, user/agent docs, and this handoff when contracts
    or architecture change.
-3. Refresh English and Chinese screenshots/carousels from fictional demo data.
+3. Refresh English and Chinese screenshots/carousels from fictional demo data. Keep every
+   screen at 1440×900; split long screens into scroll-positioned frames and update
+   `scripts/screenshot-frames.json`.
 4. Run `gofmt`, frontend tests/build, `go test ./...`, `go vet ./...`, validator,
    and `git diff --check`.
 5. Run `scripts/build.ps1`; verify `build/bin/build-manifest.json` and launch the
@@ -160,3 +165,9 @@ at the real user Skill roots.
   of silently upgraded.
 - Release binaries are currently unsigned; users should verify published
   SHA-256 checksums.
+- Update status storage is keyed by `(root_id, group_id)`; do not reintroduce a
+  global group-only key. Root-level candidates use `SourcePath: "."` and must
+  remain explicitly contained within their staging root.
+- Codex chunk summaries treat the local manifest as authoritative. A
+  `coverageMismatch` is a lower-confidence warning, never evidence of complete
+  semantic coverage.

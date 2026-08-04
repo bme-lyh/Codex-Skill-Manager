@@ -165,6 +165,25 @@
   .assessment-targets > div { grid-template-columns: 1fr; }
 }
 
+/* Keep the install workflow aligned with the shell's explicit appearance. */
+.install-dialog, .install-dialog-body, .install-dialog-head, .modal-actions.install-dialog-actions,
+.install-repository, .candidate-list, .permission-list, .plan-step, .execution-timeline li,
+.source-intro, .install-safety-note, .plan-warnings, .approach, .assessment-view,
+.assisted-overview, .plan-section, .execution-view { color: var(--ink); border-color: var(--line); }
+.install-dialog, .install-dialog-body, .install-dialog-head, .modal-actions.install-dialog-actions { background: var(--panel); }
+.install-repository, .candidate-list, .permission-list, .plan-step, .execution-timeline li,
+.source-intro, .install-safety-note, .plan-warnings, .approach { background: var(--panel-soft); }
+.install-field input, .install-field select, .permission-list input { background: var(--control-surface); color: var(--ink); border-color: var(--line); }
+.install-source-tabs button, .install-skill-list label, .compact-risk, .risk-details,
+.assessment-outcome, .assessment-metrics, .assessment-groups, .assessment-check,
+.assessment-targets, .install-repository, .install-safety-note, .plan-step,
+.plan-step-list, .requirement-list, .execution-summary, .execution-error,
+.execution-time, .analysis-progress-head, .analysis-progress-track,
+.execution-progress-track { color: var(--ink); border-color: var(--line); }
+.install-source-tabs button, .install-skill-list label, .risk-details,
+.assessment-check, .assessment-targets, .plan-step, .execution-summary,
+.execution-error, .execution-time { background: var(--subtle-surface); }
+
 .modal.install-dialog {
   width: min(1040px, calc(100vw - 32px));
   height: min(880px, calc(100vh - 32px));
@@ -1715,6 +1734,53 @@
 .execution-progress-track i, .analysis-progress-track i, .codex-progress-track i { background: var(--accent); background-image: none; }
 .execution-summary, .analysis-progress-head, .codex-progress-card { box-shadow: none; background-image: none; }
 .modal-actions.install-dialog-actions { gap: 8px; }
+
+/* Keep the assisted-install surfaces on the same theme tokens as the shell;
+   explicit dark mode must not depend on the operating-system preference. */
+.install-dialog,
+.install-dialog-body,
+.install-dialog-head,
+.modal-actions.install-dialog-actions { background: var(--panel); color: var(--ink); border-color: var(--line); }
+.modal-head.install-dialog-head { background: var(--panel); }
+.modal-head.install-dialog-head > button { background: var(--panel-soft) !important; color: var(--ink) !important; border-color: var(--line) !important; }
+.install-dialog .source-intro,
+.install-dialog .install-safety-note,
+.install-dialog .plan-warnings,
+.install-dialog .approach,
+.install-dialog .assessment-view,
+.install-dialog .assisted-overview,
+.install-dialog .plan-section,
+.install-dialog .execution-view,
+.install-dialog .install-repository,
+.install-dialog .candidate-list,
+.install-dialog .permission-list,
+.install-dialog .plan-step,
+.install-dialog .execution-timeline li,
+.install-dialog .result-grid > div { background: var(--panel-soft); color: var(--ink); border-color: var(--line); }
+.install-dialog .install-source-tabs { background: var(--panel-soft); border-color: var(--line); }
+.install-dialog .install-source-tabs button { color: var(--muted); background: transparent; border-color: transparent; }
+.install-dialog .install-source-tabs button.active { background: var(--panel); color: var(--system-blue); border-color: var(--line); box-shadow: none; }
+.install-dialog .install-field input,
+.install-dialog .install-field select,
+.install-dialog .permission-list input,
+.install-dialog .project-root-field input { background: var(--control-surface); color: var(--ink); border-color: var(--line); }
+.install-dialog .assessment-check-dot { background: var(--muted); }
+.install-dialog .assessment-check.satisfied .assessment-check-dot,
+.install-dialog .assessment-view.ready .assessment-check-dot { background: var(--success-ink); }
+.install-dialog .assessment-check.pending .assessment-check-dot { background: var(--warning-ink); }
+.install-dialog .assessment-check.blocked .assessment-check-dot { background: var(--danger-ink); }
+.install-dialog .execution-error { background: var(--danger-surface); color: var(--danger-ink); border-color: var(--danger-line); }
+.install-dialog .result-grid strong { color: var(--ink); }
+.install-dialog .result-grid p,
+.install-dialog .execution-time,
+.install-dialog .install-centered-state p { color: var(--muted); }
+.install-dialog .install-centered-state h3 { color: var(--ink); }
+.install-dialog .permission-risk.warning,
+.install-dialog .permission-dependency-warning { background: var(--warning-surface); color: var(--warning-ink); border-color: var(--warning-line); }
+.install-dialog .permission-risk.critical,
+.install-dialog .step-error { background: var(--danger-surface); color: var(--danger-ink); border-color: var(--danger-line); }
+.install-dialog .permission-risk.success,
+.install-dialog .install-feedback.success { background: var(--success-surface); color: var(--success-ink); border-color: var(--success-line); }
 
 @media (prefers-color-scheme: dark) {
   .install-dialog, .install-dialog-body { background: var(--panel); color: var(--ink); }
