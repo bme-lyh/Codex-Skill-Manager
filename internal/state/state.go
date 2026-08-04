@@ -979,21 +979,6 @@ func (s *Store) RecentSourceAnalyses(limit int) ([]model.SourceAnalysis, error) 
 	return out, rows.Err()
 }
 
-func (s *Store) LatestSourceAnalysis(rootID, groupID string) (model.SourceAnalysis, error) {
-	var raw string
-	if err := s.db.QueryRow(
-		`SELECT payload_json FROM source_analyses WHERE root_id=? AND group_id=? ORDER BY created_at DESC,id DESC LIMIT 1`,
-		rootID, groupID,
-	).Scan(&raw); err != nil {
-		return model.SourceAnalysis{}, err
-	}
-	var value model.SourceAnalysis
-	if err := json.Unmarshal([]byte(raw), &value); err != nil {
-		return model.SourceAnalysis{}, err
-	}
-	return value, nil
-}
-
 func (s *Store) SaveGroupSecurityReport(value model.GroupSecurityReport) error {
 	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.GroupID) == "" {
 		return errors.New("group security report ID and group ID are required")
@@ -1086,21 +1071,6 @@ func (s *Store) RecentGroupOperations(limit int) ([]model.GroupOperation, error)
 	return out, rows.Err()
 }
 
-func (s *Store) LatestGroupOperation(rootID, groupID string) (model.GroupOperation, error) {
-	var raw string
-	if err := s.db.QueryRow(
-		`SELECT payload_json FROM group_operations WHERE root_id=? AND group_id=? ORDER BY started_at DESC,id DESC LIMIT 1`,
-		rootID, groupID,
-	).Scan(&raw); err != nil {
-		return model.GroupOperation{}, err
-	}
-	var value model.GroupOperation
-	if err := json.Unmarshal([]byte(raw), &value); err != nil {
-		return model.GroupOperation{}, err
-	}
-	return value, nil
-}
-
 func (s *Store) RecentTransactions(limit int) ([]model.Transaction, error) {
 	rows, err := s.db.Query(`SELECT payload_json FROM transactions ORDER BY started_at DESC LIMIT ?`, limit)
 	if err != nil {
@@ -1150,38 +1120,6 @@ ORDER BY started_at DESC`)
 		// A legacy assisted-install record may still be "running" with no
 		// recovery status after an application exit. Return it so the manager
 		// can reconcile the orphaned plan and transaction for rollback.
-		if status == "running" || (recovery != "" && recovery != "completed") {
-			out = append(out, tx)
-		}
-	}
-	return out, rows.Err()
-}
-
-// RecoverableGroupTransactions returns every source-group parent transaction
-// that still looks active or has an unfinished automatic recovery path. These
-// records must not disappear from the dashboard after a restart.
-func (s *Store) RecoverableGroupTransactions() ([]model.Transaction, error) {
-	rows, err := s.db.Query(`
-SELECT payload_json
-FROM transactions
-WHERE type IN ('group-install','group-update')
-ORDER BY started_at DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]model.Transaction, 0)
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		var tx model.Transaction
-		if err := json.Unmarshal([]byte(raw), &tx); err != nil {
-			continue
-		}
-		recovery := strings.ToLower(strings.TrimSpace(tx.RecoveryStatus))
-		status := strings.ToLower(strings.TrimSpace(tx.Status))
 		if status == "running" || (recovery != "" && recovery != "completed") {
 			out = append(out, tx)
 		}

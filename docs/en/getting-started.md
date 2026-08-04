@@ -115,7 +115,7 @@ see the [CLI reference](cli-reference.md#codex-assisted-installation).
 
 ## Check for updates
 
-Updates are source-group operations in 0.15.0. A GitHub repository is one
+Updates are source-group operations in 0.14.0. A GitHub repository is one
 group; the preview always includes every valid member and the apply action
 cannot submit a subset. Internal Skill failures continue independently and the
 parent group transaction records completed, partial, failed, and recovery

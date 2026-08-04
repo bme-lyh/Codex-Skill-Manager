@@ -14,7 +14,6 @@ export interface SourceTrustPolicy {
   provider: string;
   trusted: boolean;
   reason?: string;
-  policyVersion?: string;
   setAt?: string;
   updatedAt: string;
   revokedAt?: string;
@@ -50,7 +49,6 @@ export interface GroupSecurityReport {
   provider?: string;
   repository?: string;
   commitSha?: string;
-  policyVersion?: string;
   status: string;
   highestSeverity: Severity;
   activeHighestSeverity: Severity;
@@ -72,7 +70,6 @@ export interface SourceAnalysis {
   provider?: string;
   repository?: string;
   commitSha?: string;
-  policyVersion?: string;
   status: string;
   summary: LocalizedText;
   skills: string[];
@@ -483,46 +480,17 @@ export interface InstallPreview {
 
 export interface GroupOperation {
   id?: string;
-  parentTransactionId?: string;
   rootId?: string;
   groupId?: string;
   groupName?: string;
-  kind?: string;
-  status?: string;
-  targetSkills?: string[];
-  validSkills?: string[];
-  steps?: Array<{
-    id: string;
-    skillName: string;
-    status: string;
-    transactionId?: string;
-    error?: string;
-    recoveryStatus?: string;
-    backupPaths?: string[];
-    startedAt?: string;
-    completedAt?: string;
-  }>;
-  analysisId?: string;
-  securityReportId?: string;
-  planId?: string;
-  error?: string;
-  startedAt?: string;
-  completedAt?: string;
-  recoveryStatus?: string;
-  /** Compatibility fields used by older renderers. */
+  sourceGroupId?: string;
+  sourceGroupName?: string;
   skillNames?: string[];
+  status?: string;
   manualWork?: string[];
   errors?: string[];
   diagnostics?: UpdateSkillDiagnostic[];
   localizedGroupName?: LocalizedText;
-}
-
-export interface GroupMetadata {
-  group: Group;
-  analysis?: SourceAnalysis;
-  securityReport?: GroupSecurityReport;
-  latestOperation?: GroupOperation;
-  updateStatus?: UpdateStatus;
 }
 
 export type AssessmentGate = "ready" | "attention" | "blocked" | "incomplete";

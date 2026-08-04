@@ -57,13 +57,6 @@ bounded, and failed or incomplete group output is retried once serially. Static
 findings are reduced to count-only rule overviews and remain leads rather than
 conclusions.
 
-Reusable group approvals are bound to the exact report plus root, group,
-repository, commit, and policy version; a newer report or changed plan can
-never reuse an older decision. Source-group parent transactions left running
-by an application exit are reconciled on the next dashboard read into
-`recovery-required` state, while completed child journals keep their own
-recovery authority through the parent rollback entry.
-
 SQLite `skill_security_states` stores the content hash, report ID and check time
 for each successfully scanned Skill. Dashboard inventory hashes are compared with
 that state so unchanged Skills can be skipped by default without hiding changed or
