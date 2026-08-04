@@ -106,6 +106,14 @@ func (m *Manager) verifyAssessmentAgainstPreview(assessment model.ProjectAssessm
 // It refreshes ignored-finding decoration so an old UI result cannot grant a
 // stale authorization.
 func (m *Manager) enforceProjectAssessmentGate(preview model.InstallPreview) (model.ProjectAssessment, error) {
+	return m.enforceProjectAssessmentGateWithRisk(preview, false)
+}
+
+// enforceProjectAssessmentGateWithRisk is used only by a source-group apply
+// after a persisted human risk decision.  It still verifies the complete
+// assessment and all technical target/digest checks; the explicit allowance
+// only changes the risk gate from a hard stop to a reviewable decision.
+func (m *Manager) enforceProjectAssessmentGateWithRisk(preview model.InstallPreview, allowBlockingRisk bool) (model.ProjectAssessment, error) {
 	assessment, err := m.assessInstallPreview(preview, true)
 	if err != nil {
 		return model.ProjectAssessment{}, err
@@ -114,6 +122,9 @@ func (m *Manager) enforceProjectAssessmentGate(preview model.InstallPreview) (mo
 	case model.AssessmentGateReady, model.AssessmentGateAttention:
 		return assessment, nil
 	case model.AssessmentGateBlocked:
+		if allowBlockingRisk && (assessment.HighestRisk == model.RiskHigh || assessment.HighestRisk == model.RiskCritical) {
+			return assessment, nil
+		}
 		return model.ProjectAssessment{}, errors.New("project assessment blocked installation")
 	case model.AssessmentGateIncomplete:
 		return model.ProjectAssessment{}, errors.New("project assessment is incomplete")

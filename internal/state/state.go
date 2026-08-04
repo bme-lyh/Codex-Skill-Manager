@@ -85,6 +85,28 @@ CREATE TABLE IF NOT EXISTS skill_security_states (
   report_id TEXT NOT NULL, checked_at TEXT NOT NULL
   ,PRIMARY KEY(root_id,skill_name)
 );
+CREATE TABLE IF NOT EXISTS source_trust_policies (
+  repository TEXT PRIMARY KEY, provider TEXT NOT NULL, trusted INTEGER NOT NULL,
+  reason TEXT, set_at TEXT, updated_at TEXT NOT NULL, revoked_at TEXT,
+  payload_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS source_trust_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, repository TEXT NOT NULL, action TEXT NOT NULL,
+  trusted INTEGER NOT NULL, reason TEXT, transaction_id TEXT, actor TEXT,
+  created_at TEXT NOT NULL, payload_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS source_analyses (
+  id TEXT PRIMARY KEY, root_id TEXT NOT NULL DEFAULT '', group_id TEXT NOT NULL,
+  created_at TEXT NOT NULL, payload_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS group_security_reports (
+  id TEXT PRIMARY KEY, root_id TEXT NOT NULL DEFAULT '', group_id TEXT NOT NULL,
+  created_at TEXT NOT NULL, payload_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS group_operations (
+  id TEXT PRIMARY KEY, root_id TEXT NOT NULL DEFAULT '', group_id TEXT NOT NULL,
+  status TEXT NOT NULL, started_at TEXT NOT NULL, payload_json TEXT NOT NULL
+);
 `)
 	if err != nil {
 		return err
@@ -727,6 +749,328 @@ ON CONFLICT(id) DO UPDATE SET status=excluded.status,completed_at=excluded.compl
 	return err
 }
 
+// SetSourceTrust persists a repository-wide trust decision and its audit row
+// atomically.  The repository key is expected to be canonicalized by the
+// manager, but the store repeats the check so callers cannot accidentally
+// create aliases that bypass revocation.
+func (s *Store) SetSourceTrust(policy model.SourceTrustPolicy, audit model.SourceTrustAudit) error {
+	repository, err := model.CanonicalGitHubRepository(policy.Repository)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(policy.Provider), "github") {
+		return errors.New("source trust policy provider must be github")
+	}
+	policy.Repository = repository
+	policy.Provider = "github"
+	now := time.Now().UTC()
+	if policy.UpdatedAt.IsZero() {
+		policy.UpdatedAt = now
+	}
+	if policy.SetAt.IsZero() {
+		policy.SetAt = policy.UpdatedAt
+	}
+	if !policy.Trusted && policy.RevokedAt == nil {
+		value := policy.UpdatedAt
+		policy.RevokedAt = &value
+	}
+	if policy.Trusted {
+		policy.RevokedAt = nil
+	}
+	if audit.CreatedAt.IsZero() {
+		audit.CreatedAt = policy.UpdatedAt
+	}
+	audit.Repository = repository
+	audit.Trusted = policy.Trusted
+	if strings.TrimSpace(audit.Action) == "" {
+		if policy.Trusted {
+			audit.Action = "set"
+		} else {
+			audit.Action = "revoke"
+		}
+	}
+	data, err := json.Marshal(policy)
+	if err != nil {
+		return err
+	}
+	auditData, err := json.Marshal(audit)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	rollback := func(cause error) error {
+		_ = tx.Rollback()
+		return cause
+	}
+	var revoked any
+	if policy.RevokedAt != nil {
+		revoked = policy.RevokedAt.Format(time.RFC3339Nano)
+	}
+	if _, err = tx.Exec(`
+INSERT INTO source_trust_policies(repository,provider,trusted,reason,set_at,updated_at,revoked_at,payload_json)
+VALUES(?,?,?,?,?,?,?,?)
+ON CONFLICT(repository) DO UPDATE SET provider=excluded.provider,trusted=excluded.trusted,
+reason=excluded.reason,set_at=excluded.set_at,updated_at=excluded.updated_at,
+revoked_at=excluded.revoked_at,payload_json=excluded.payload_json`,
+		policy.Repository, policy.Provider, boolInt(policy.Trusted), policy.Reason,
+		policy.SetAt.Format(time.RFC3339Nano), policy.UpdatedAt.Format(time.RFC3339Nano), revoked, string(data)); err != nil {
+		return rollback(err)
+	}
+	result, err := tx.Exec(`INSERT INTO source_trust_audit(repository,action,trusted,reason,transaction_id,actor,created_at,payload_json) VALUES(?,?,?,?,?,?,?,?)`,
+		audit.Repository, audit.Action, boolInt(audit.Trusted), audit.Reason, audit.TransactionID, audit.Actor,
+		audit.CreatedAt.Format(time.RFC3339Nano), string(auditData))
+	if err != nil {
+		return rollback(err)
+	}
+	if audit.ID, err = result.LastInsertId(); err != nil {
+		return rollback(err)
+	}
+	auditData, err = json.Marshal(audit)
+	if err != nil {
+		return rollback(err)
+	}
+	if _, err = tx.Exec(`UPDATE source_trust_audit SET payload_json=? WHERE id=?`, string(auditData), audit.ID); err != nil {
+		return rollback(err)
+	}
+	return tx.Commit()
+}
+
+// SaveSourceTrustPolicy is a compatibility wrapper for callers that persist
+// policy and audit separately.  New callers should use SetSourceTrust.
+func (s *Store) SaveSourceTrustPolicy(policy model.SourceTrustPolicy) error {
+	action := "revoke"
+	if policy.Trusted {
+		action = "set"
+	}
+	return s.SetSourceTrust(policy, model.SourceTrustAudit{Action: action, Reason: policy.Reason})
+}
+
+func (s *Store) SourceTrustPolicy(repository string) (model.SourceTrustPolicy, error) {
+	repository, err := model.CanonicalGitHubRepository(repository)
+	if err != nil {
+		return model.SourceTrustPolicy{}, err
+	}
+	var raw string
+	if err := s.db.QueryRow(`SELECT payload_json FROM source_trust_policies WHERE repository=?`, repository).Scan(&raw); err != nil {
+		return model.SourceTrustPolicy{}, err
+	}
+	var policy model.SourceTrustPolicy
+	if err := json.Unmarshal([]byte(raw), &policy); err != nil {
+		return model.SourceTrustPolicy{}, err
+	}
+	return policy, nil
+}
+
+func (s *Store) LoadSourceTrustPolicy(repository string) (model.SourceTrustPolicy, error) {
+	return s.SourceTrustPolicy(repository)
+}
+
+func (s *Store) SourceTrustPolicies() ([]model.SourceTrustPolicy, error) {
+	rows, err := s.db.Query(`SELECT payload_json FROM source_trust_policies ORDER BY repository`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.SourceTrustPolicy, 0)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var policy model.SourceTrustPolicy
+		if err := json.Unmarshal([]byte(raw), &policy); err != nil {
+			return nil, err
+		}
+		out = append(out, policy)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SourceTrustAudit(repository string, limit int) ([]model.SourceTrustAudit, error) {
+	repository = strings.TrimSpace(repository)
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `SELECT payload_json FROM source_trust_audit ORDER BY created_at DESC,id DESC LIMIT ?`
+	args := []any{limit}
+	if repository != "" {
+		canonical, err := model.CanonicalGitHubRepository(repository)
+		if err != nil {
+			return nil, err
+		}
+		query = `SELECT payload_json FROM source_trust_audit WHERE repository=? ORDER BY created_at DESC,id DESC LIMIT ?`
+		args = []any{canonical, limit}
+	}
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.SourceTrustAudit, 0)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var audit model.SourceTrustAudit
+		if err := json.Unmarshal([]byte(raw), &audit); err != nil {
+			return nil, err
+		}
+		out = append(out, audit)
+	}
+	return out, rows.Err()
+}
+
+// SaveSourceAnalysis and the group-report/operation methods intentionally
+// store the complete typed payload.  This keeps migrations additive while
+// allowing readers to ignore fields introduced by later releases.
+func (s *Store) SaveSourceAnalysis(value model.SourceAnalysis) error {
+	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.GroupID) == "" {
+		return errors.New("source analysis ID and group ID are required")
+	}
+	if value.CreatedAt.IsZero() {
+		value.CreatedAt = time.Now().UTC()
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO source_analyses(id,root_id,group_id,created_at,payload_json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET root_id=excluded.root_id,group_id=excluded.group_id,created_at=excluded.created_at,payload_json=excluded.payload_json`,
+		value.ID, value.RootID, value.GroupID, value.CreatedAt.Format(time.RFC3339Nano), string(data))
+	return err
+}
+
+func (s *Store) SourceAnalysis(id string) (model.SourceAnalysis, error) {
+	var raw string
+	if err := s.db.QueryRow(`SELECT payload_json FROM source_analyses WHERE id=?`, strings.TrimSpace(id)).Scan(&raw); err != nil {
+		return model.SourceAnalysis{}, err
+	}
+	var value model.SourceAnalysis
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return model.SourceAnalysis{}, err
+	}
+	return value, nil
+}
+
+func (s *Store) RecentSourceAnalyses(limit int) ([]model.SourceAnalysis, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.Query(`SELECT payload_json FROM source_analyses ORDER BY created_at DESC,id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.SourceAnalysis, 0)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var value model.SourceAnalysis
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			return nil, err
+		}
+		out = append(out, value)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SaveGroupSecurityReport(value model.GroupSecurityReport) error {
+	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.GroupID) == "" {
+		return errors.New("group security report ID and group ID are required")
+	}
+	if value.CreatedAt.IsZero() {
+		value.CreatedAt = time.Now().UTC()
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO group_security_reports(id,root_id,group_id,created_at,payload_json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET root_id=excluded.root_id,group_id=excluded.group_id,created_at=excluded.created_at,payload_json=excluded.payload_json`,
+		value.ID, value.RootID, value.GroupID, value.CreatedAt.Format(time.RFC3339Nano), string(data))
+	return err
+}
+
+func (s *Store) GroupSecurityReport(id string) (model.GroupSecurityReport, error) {
+	var raw string
+	if err := s.db.QueryRow(`SELECT payload_json FROM group_security_reports WHERE id=?`, strings.TrimSpace(id)).Scan(&raw); err != nil {
+		return model.GroupSecurityReport{}, err
+	}
+	var value model.GroupSecurityReport
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return model.GroupSecurityReport{}, err
+	}
+	return value, nil
+}
+
+func (s *Store) LatestGroupSecurityReport(rootID, groupID string) (model.GroupSecurityReport, error) {
+	var raw string
+	if err := s.db.QueryRow(`SELECT payload_json FROM group_security_reports WHERE root_id=? AND group_id=? ORDER BY created_at DESC,id DESC LIMIT 1`, rootID, groupID).Scan(&raw); err != nil {
+		return model.GroupSecurityReport{}, err
+	}
+	var value model.GroupSecurityReport
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return model.GroupSecurityReport{}, err
+	}
+	return value, nil
+}
+
+func (s *Store) SaveGroupOperation(value model.GroupOperation) error {
+	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.GroupID) == "" {
+		return errors.New("group operation ID and group ID are required")
+	}
+	if value.StartedAt.IsZero() {
+		value.StartedAt = time.Now().UTC()
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO group_operations(id,root_id,group_id,status,started_at,payload_json) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET root_id=excluded.root_id,group_id=excluded.group_id,status=excluded.status,started_at=excluded.started_at,payload_json=excluded.payload_json`,
+		value.ID, value.RootID, value.GroupID, value.Status, value.StartedAt.Format(time.RFC3339Nano), string(data))
+	return err
+}
+
+func (s *Store) GroupOperation(id string) (model.GroupOperation, error) {
+	var raw string
+	if err := s.db.QueryRow(`SELECT payload_json FROM group_operations WHERE id=?`, strings.TrimSpace(id)).Scan(&raw); err != nil {
+		return model.GroupOperation{}, err
+	}
+	var value model.GroupOperation
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return model.GroupOperation{}, err
+	}
+	return value, nil
+}
+
+func (s *Store) RecentGroupOperations(limit int) ([]model.GroupOperation, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.Query(`SELECT payload_json FROM group_operations ORDER BY started_at DESC,id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.GroupOperation, 0)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var value model.GroupOperation
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			return nil, err
+		}
+		out = append(out, value)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) RecentTransactions(limit int) ([]model.Transaction, error) {
 	rows, err := s.db.Query(`SELECT payload_json FROM transactions ORDER BY started_at DESC LIMIT ?`, limit)
 	if err != nil {
@@ -941,9 +1285,31 @@ func (s *Store) Approve(planID, decision, reason string) error {
 	return err
 }
 
+// HasApproval reports whether a plan has an explicit persisted decision.  It
+// intentionally does not interpret the reason or risk level; callers still
+// revalidate the current plan, hashes and technical gates before mutation.
+func (s *Store) HasApproval(planID, decision string) (bool, error) {
+	planID, decision = strings.TrimSpace(planID), strings.TrimSpace(decision)
+	if planID == "" || decision == "" {
+		return false, errors.New("plan and decision are required")
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM approvals WHERE plan_id=? AND decision=?`, planID, decision).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func nullTime(t time.Time) any {
 	if t.IsZero() {
 		return nil
 	}
 	return t.Format(time.RFC3339Nano)
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }

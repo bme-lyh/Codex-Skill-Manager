@@ -242,7 +242,8 @@ func (m *Manager) analyzeInstallWithCodex(
 	if err != nil {
 		return model.AssistedInstallPlan{}, err
 	}
-	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
+	groupRiskApproved := m.sourceGroupRiskApproved(preview)
+	if _, err := m.enforceProjectAssessmentGateWithRisk(preview, groupRiskApproved); err != nil {
 		return model.AssistedInstallPlan{}, fmt.Errorf("project assessment does not permit plan generation: %w", err)
 	}
 	if time.Now().UTC().After(preview.ExpiresAt) {
@@ -960,7 +961,8 @@ func (m *Manager) preflightAssistedInstall(
 			"assisted-install plan target root does not match its source plan",
 		)
 	}
-	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
+	groupRiskApproved := m.sourceGroupRiskApproved(preview)
+	if _, err := m.enforceProjectAssessmentGateWithRisk(preview, groupRiskApproved); err != nil {
 		return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, err
 	}
 	if time.Now().UTC().After(preview.ExpiresAt) {
@@ -1016,6 +1018,9 @@ func (m *Manager) preflightAssistedInstall(
 	for _, cluster := range scan.Clusters {
 		if !cluster.Ignored &&
 			(cluster.Severity == model.RiskCritical || cluster.Severity == model.RiskHigh) {
+			if groupRiskApproved {
+				continue
+			}
 			return model.AssistedInstallPlan{}, model.InstallPreview{}, nil, nil, errors.New(
 				"high or critical local warnings remain; review and ignore them explicitly before installation",
 			)

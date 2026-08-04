@@ -57,3 +57,28 @@ func TestNewSourceFieldsDoNotBreakLegacyJSON(t *testing.T) {
 		t.Fatalf("legacy immutable commit was not preserved: %#v", roundTrip)
 	}
 }
+
+func TestCanonicalGitHubRepositoryNormalizesTrustKeys(t *testing.T) {
+	for _, value := range []string{
+		"Owner/Repo", "https://github.com/Owner/Repo.git", "git@github.com:Owner/Repo.git",
+	} {
+		got, err := CanonicalGitHubRepository(value)
+		if err != nil || got != "owner/repo" {
+			t.Fatalf("repository %q was not canonicalized: %q, %v", value, got, err)
+		}
+	}
+	for _, value := range []string{"", "owner", "owner/repo/extra", "owner/repo?x=1", "owner/../repo"} {
+		if _, err := CanonicalGitHubRepository(value); err == nil {
+			t.Fatalf("unsafe repository %q was accepted", value)
+		}
+	}
+}
+
+func TestValidGroupStatusSet(t *testing.T) {
+	if !ValidGroupStatus(GroupStatusAwaitingApproval) || !ValidGroupStatus(GroupStatusPartial) {
+		t.Fatal("expected declared group statuses to be valid")
+	}
+	if ValidGroupStatus("skill-only-state") {
+		t.Fatal("Skill-only state must not become a group status")
+	}
+}
