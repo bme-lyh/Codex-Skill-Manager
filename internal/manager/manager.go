@@ -250,6 +250,28 @@ func (m *Manager) Reports(limit int) ([]model.ScanReport, error) {
 	return reports, nil
 }
 
+// Report returns one persisted report with the same ignored-finding decoration
+// used by the dashboard. The optional root guard prevents a report from one
+// managed root being opened through another root's view.
+func (m *Manager) Report(id string, rootID string) (model.ScanReport, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return model.ScanReport{}, errors.New("report ID is required")
+	}
+	report, err := m.store.Scan(id)
+	if err != nil {
+		return model.ScanReport{}, err
+	}
+	if rootID != "" && report.RootID != "" && report.RootID != rootID {
+		return model.ScanReport{}, errors.New("report does not belong to the requested root")
+	}
+	ignored, err := m.store.IgnoredFindings()
+	if err != nil {
+		return model.ScanReport{}, err
+	}
+	return m.decorateScan(report, ignored), nil
+}
+
 func (m *Manager) Dashboard() (model.Dashboard, error) {
 	lock, err := m.store.LoadLock()
 	if err != nil {
@@ -343,9 +365,19 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 		Roots: append([]model.SkillRoot(nil), m.configuredRoots()...), DefaultRootID: m.Config.DefaultRootID,
 	}
 	statusByGroup := map[string]model.UpdateStatus{}
+	ambiguousStatusGroups := map[string]bool{}
 	for _, status := range updateStatuses {
-		statusByGroup[status.GroupID] = status
-		statusByGroup[status.RootID+"\x00"+status.GroupID] = status
+		if status.RootID == "" {
+			statusByGroup[status.GroupID] = status
+		} else {
+			statusByGroup[model.QualifiedPackageID(status.RootID, status.GroupID)] = status
+			if _, exists := statusByGroup[status.GroupID]; exists {
+				ambiguousStatusGroups[status.GroupID] = true
+				delete(statusByGroup, status.GroupID)
+			} else if !ambiguousStatusGroups[status.GroupID] {
+				statusByGroup[status.GroupID] = status
+			}
+		}
 		if d.LastUpdateCheck == nil || status.CheckedAt.After(*d.LastUpdateCheck) {
 			checkedAt := status.CheckedAt
 			d.LastUpdateCheck = &checkedAt
@@ -356,9 +388,9 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 		}
 	}
 	for i := range d.Skills {
-		status, ok := statusByGroup[d.Skills[i].SourceGroupID]
+		status, ok := statusByGroup[model.QualifiedPackageID(d.Skills[i].RootID, d.Skills[i].SourceGroupID)]
 		if !ok {
-			status, ok = statusByGroup[d.Skills[i].RootID+"\x00"+d.Skills[i].SourceGroupID]
+			status, ok = statusByGroup[d.Skills[i].SourceGroupID]
 		}
 		if !ok {
 			continue
@@ -1708,7 +1740,10 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 		if !validMutableSkillName(c.Name) {
 			return m.failInstall(tx, root, touched, backups, fmt.Errorf("invalid skill name: %s", c.Name))
 		}
-		source := filepath.Join(preview.StagingPath, filepath.FromSlash(c.SourcePath))
+		_, source, sourceErr := candidateSourceTarget(preview.StagingPath, c.SourcePath)
+		if sourceErr != nil {
+			return m.failInstall(tx, root, touched, backups, fmt.Errorf("invalid Skill source path: %s", c.SourcePath))
+		}
 		recoveryTracked := false
 		if _, err := os.Stat(target); err == nil {
 			existing, managed := findManagedInRoot(lock, root.ID, c.Name)
@@ -1795,7 +1830,10 @@ func (m *Manager) verifyInstallPreview(preview model.InstallPreview, chosen []mo
 		}
 	}
 	for _, candidate := range chosen {
-		source := filepath.Join(preview.StagingPath, filepath.FromSlash(candidate.SourcePath))
+		_, source, sourceErr := candidateSourceTarget(preview.StagingPath, candidate.SourcePath)
+		if sourceErr != nil {
+			return fmt.Errorf("invalid source path for %s: %w", candidate.Name, sourceErr)
+		}
 		if err := ensureResolvedWithinOrEqual(preview.StagingPath, source); err != nil {
 			return fmt.Errorf("invalid source path for %s: %w", candidate.Name, err)
 		}
@@ -1875,21 +1913,27 @@ func (m *Manager) CheckUpdatesSelected(ctx context.Context, groupIDs []string, f
 	previousStatuses, _ := m.store.LatestUpdateStatuses()
 	previous := map[string]model.UpdateStatus{}
 	for _, status := range previousStatuses {
-		previous[status.GroupID] = status
+		previous[model.QualifiedPackageID(status.RootID, status.GroupID)] = status
+		if status.RootID == "" {
+			previous[status.GroupID] = status
+		}
 	}
 	selected := map[string]bool{}
 	for _, id := range groupIDs {
 		selected[strings.TrimSpace(id)] = true
 	}
 	for id, pkg := range lock.Packages {
-		if len(selected) > 0 && !selected[id] {
-			if status, ok := previous[id]; ok {
+		rootID, groupID := updatePackageIdentity(id, pkg)
+		qualifiedID := model.QualifiedPackageID(rootID, groupID)
+		selectedMatch := len(selected) == 0 || selected[id] || selected[qualifiedID] || selected[groupID]
+		if len(selected) > 0 && !selectedMatch {
+			if status, ok := previous[qualifiedID]; ok {
 				result.Statuses = append(result.Statuses, status)
 			}
 			continue
 		}
 		status := model.UpdateStatus{
-			GroupID: id, RootID: pkg.RootID, GroupName: pkg.GroupName, Provider: pkg.Provider,
+			GroupID: groupID, RootID: rootID, GroupName: pkg.GroupName, Provider: pkg.Provider,
 			Repository: pkg.Repository, Status: "unsupported", CheckedAt: checkedAt,
 			CurrentCommits: map[string]string{}, OutdatedSkills: []string{},
 		}
@@ -1910,7 +1954,7 @@ func (m *Manager) CheckUpdatesSelected(ctx context.Context, groupIDs []string, f
 		repo, meta, err := m.github.ResolveCached(ctx, pkg.SourceURL, pkg.RequestedRef, force)
 		if err != nil {
 			status.Status, status.Error = "error", err.Error()
-			if old, ok := previous[id]; ok {
+			if old, ok := previous[qualifiedID]; ok {
 				if old.Status == "up-to-date" || old.Status == "update-available" {
 					status.LastSuccessStatus = old.Status
 					value := old.CheckedAt
@@ -1962,6 +2006,24 @@ func (m *Manager) CheckUpdatesSelected(ctx context.Context, groupIDs []string, f
 		return model.UpdateCheckResult{}, err
 	}
 	return result, nil
+}
+
+func updatePackageIdentity(key string, pkg model.PackageLock) (string, string) {
+	rootID := strings.TrimSpace(pkg.RootID)
+	groupID := strings.TrimSpace(key)
+	if index := strings.IndexByte(groupID, '\x00'); index >= 0 {
+		if rootID == "" {
+			rootID = groupID[:index]
+		}
+		groupID = groupID[index+1:]
+	}
+	if rootID != "" {
+		prefix := rootID + "\x00"
+		if strings.HasPrefix(strings.TrimSpace(key), prefix) {
+			groupID = strings.TrimPrefix(strings.TrimSpace(key), prefix)
+		}
+	}
+	return rootID, groupID
 }
 
 func (m *Manager) PrepareUpdate(ctx context.Context, groupID string, targetRootID ...string) (model.InstallPreview, error) {
@@ -2045,10 +2107,8 @@ func scanCandidateSkills(root string, candidates []model.CandidateSkill, maxFile
 	}
 	remaining := maxFiles
 	for _, candidate := range candidates {
-		sourcePath := filepath.Clean(filepath.FromSlash(candidate.SourcePath))
-		target := filepath.Join(root, sourcePath)
-		rel, err := filepath.Rel(root, target)
-		if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		sourcePath, target, err := candidateSourceTarget(root, candidate.SourcePath)
+		if err != nil {
 			finishCandidateScan(&report)
 			return report, fmt.Errorf("invalid Skill source path: %s", candidate.SourcePath)
 		}
@@ -2070,6 +2130,26 @@ func scanCandidateSkills(root string, candidates []model.CandidateSkill, maxFile
 	}
 	finishCandidateScan(&report)
 	return report, nil
+}
+
+// candidateSourceTarget accepts a repository-root Skill explicitly. A root
+// SKILL.md is a valid candidate, but every other candidate must remain a
+// normalized descendant of the staged repository.
+func candidateSourceTarget(root, sourcePath string) (string, string, error) {
+	normalized := strings.TrimSpace(filepath.ToSlash(sourcePath))
+	if normalized == "" {
+		normalized = "."
+	}
+	clean := filepath.Clean(filepath.FromSlash(normalized))
+	target := filepath.Join(root, clean)
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", "", errors.New("candidate source path escapes the repository root")
+	}
+	if rel == "." {
+		return ".", root, nil
+	}
+	return filepath.ToSlash(rel), target, nil
 }
 
 func finishCandidateScan(report *model.ScanReport) {

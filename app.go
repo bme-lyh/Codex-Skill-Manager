@@ -271,6 +271,13 @@ func (a *App) AuditSkill(name, rootID string) (model.ScanReport, error) {
 	return a.mgr.AuditSkills([]string{name}, rootID)
 }
 
+func (a *App) GetScanReport(id, rootID string) (model.ScanReport, error) {
+	if err := a.ready(); err != nil {
+		return model.ScanReport{}, err
+	}
+	return a.mgr.Report(id, rootID)
+}
+
 func (a *App) AuditSkills(names []string, rootID string) (model.ScanReport, error) {
 	if err := a.ready(); err != nil {
 		return model.ScanReport{}, err

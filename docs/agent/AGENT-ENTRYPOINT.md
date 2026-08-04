@@ -10,7 +10,7 @@ preview-and-apply workflow:
 2. apply it only after the user has approved the exact skills and any accepted
    high-risk findings.
 
-Version 0.11.0 manages both `.codex/skills` and `.agents/skills`. Every Skill,
+Version 0.12.0 manages both `.codex/skills` and `.agents/skills`. Every Skill,
 group, scan, update, and transaction is identified by `rootId`; omitted install
 targets default to `codex-default` only for compatibility. New integrations
 must send the root explicitly. Both `.system` directories are read-only.

@@ -1062,6 +1062,9 @@ func TestDashboardRestoresPersistedUpdateStatusAndLastCheckedTime(t *testing.T) 
 		!dashboard.LastUpdateCheck.Equal(checkedAt) || len(dashboard.UpdateStatuses) != 1 {
 		t.Fatalf("persisted update status missing from dashboard: %#v", dashboard)
 	}
+	if len(dashboard.Skills) == 0 || dashboard.Skills[0].LastChecked == nil || dashboard.Skills[0].UpdateStatus != "update-available" {
+		t.Fatalf("persisted update status did not map back to the Skill: %#v", dashboard.Skills)
+	}
 }
 
 func githubPreviewFixture(t *testing.T, m *Manager, id, commit string, names []string) model.InstallPreview {
@@ -1175,6 +1178,30 @@ func TestScanCandidateSkillsIgnoresRepositoryFilesOutsideInstallTargets(t *testi
 	}
 	if report.HighestSeverity == model.RiskCritical {
 		t.Fatalf("repository-level README must not block an unrelated Skill update: %#v", report.Findings)
+	}
+}
+
+func TestScanCandidateSkillsAcceptsRepositoryRootSkill(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("---\nname: root-skill\ndescription: root\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := scanCandidateSkills(root, []model.CandidateSkill{{
+		Name: "root-skill", SourcePath: ".",
+	}}, 100, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FilesScanned != 1 {
+		t.Fatalf("expected root Skill to be scanned, got %d files", report.FilesScanned)
+	}
+}
+
+func TestScanCandidateSkillsRejectsRepositoryParent(t *testing.T) {
+	root := t.TempDir()
+	_, err := scanCandidateSkills(root, []model.CandidateSkill{{Name: "escape", SourcePath: ".."}}, 100, 1<<20)
+	if err == nil || !strings.Contains(err.Error(), "invalid Skill source path") {
+		t.Fatalf("expected repository-parent source path to be rejected, got %v", err)
 	}
 }
 

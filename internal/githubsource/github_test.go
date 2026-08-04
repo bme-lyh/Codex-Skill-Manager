@@ -623,3 +623,15 @@ func writeDiscoverySkill(t *testing.T, dir, name, body string) {
 		t.Fatal(err)
 	}
 }
+
+func TestDiscoverAcceptsRepositoryRootSkill(t *testing.T) {
+	root := t.TempDir()
+	writeDiscoverySkill(t, root, "book-to-skill", "# root Skill")
+	candidates, err := Discover(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].SourcePath != "." || candidates[0].Name != "book-to-skill" {
+		t.Fatalf("unexpected root candidate: %#v", candidates)
+	}
+}

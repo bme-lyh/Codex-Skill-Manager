@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS skill_group_assignments (
   ,PRIMARY KEY(root_id,skill_name)
 );
 CREATE TABLE IF NOT EXISTS update_statuses (
-  group_id TEXT PRIMARY KEY, checked_at TEXT NOT NULL, payload_json TEXT NOT NULL
+  root_id TEXT NOT NULL DEFAULT '', group_id TEXT NOT NULL, checked_at TEXT NOT NULL, payload_json TEXT NOT NULL,
+  PRIMARY KEY(root_id,group_id)
 );
 CREATE TABLE IF NOT EXISTS skill_security_states (
   root_id TEXT NOT NULL DEFAULT '', skill_name TEXT NOT NULL, content_hash TEXT NOT NULL,
@@ -95,6 +96,9 @@ CREATE TABLE IF NOT EXISTS skill_security_states (
 // security/layout tables used skill_name as a global key. The copy is purely
 // database state; no Skill files are moved or rewritten.
 func (s *Store) migrateRootNamespaceTables() error {
+	if err := s.upgradeUpdateStatusesTable(); err != nil {
+		return err
+	}
 	if err := s.upgradeSecurityStatesTable(); err != nil {
 		return err
 	}
@@ -102,6 +106,98 @@ func (s *Store) migrateRootNamespaceTables() error {
 		return err
 	}
 	return nil
+}
+
+// upgradeUpdateStatusesTable namespaces persisted update results by root. v0.11
+// stored the root-qualified package key in group_id, which made the dashboard
+// unable to join it with the inventory's human-readable group ID. The migration
+// keeps the payload and normalizes that key into root_id + group_id.
+func (s *Store) upgradeUpdateStatusesTable() error {
+	rows, err := s.db.Query(`PRAGMA table_info(update_statuses)`)
+	if err != nil {
+		return err
+	}
+	hasRoot := false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var def any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &def, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "root_id" {
+			hasRoot = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if hasRoot {
+		return nil
+	}
+	type legacyUpdateStatus struct {
+		groupID   string
+		checkedAt string
+		payload   string
+	}
+	legacyRows, err := s.db.Query(`SELECT group_id,checked_at,payload_json FROM update_statuses`)
+	if err != nil {
+		return err
+	}
+	legacy := []legacyUpdateStatus{}
+	for legacyRows.Next() {
+		var item legacyUpdateStatus
+		if err := legacyRows.Scan(&item.groupID, &item.checkedAt, &item.payload); err != nil {
+			legacyRows.Close()
+			return err
+		}
+		legacy = append(legacy, item)
+	}
+	if err := legacyRows.Close(); err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`CREATE TABLE update_statuses_v2 (
+root_id TEXT NOT NULL DEFAULT '', group_id TEXT NOT NULL, checked_at TEXT NOT NULL,
+payload_json TEXT NOT NULL, PRIMARY KEY(root_id,group_id))`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	for _, item := range legacy {
+		rootID, groupID := "", item.groupID
+		var status model.UpdateStatus
+		if json.Unmarshal([]byte(item.payload), &status) == nil {
+			rootID = strings.TrimSpace(status.RootID)
+			groupID = strings.TrimSpace(status.GroupID)
+		}
+		if index := strings.IndexByte(groupID, '\x00'); index > 0 {
+			if rootID == "" {
+				rootID = groupID[:index]
+			}
+			groupID = groupID[index+1:]
+		}
+		if groupID == "" {
+			groupID = item.groupID
+		}
+		if _, err = tx.Exec(`INSERT INTO update_statuses_v2(root_id,group_id,checked_at,payload_json) VALUES(?,?,?,?)`,
+			rootID, groupID, item.checkedAt, item.payload); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	if _, err = tx.Exec(`DROP TABLE update_statuses`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(`ALTER TABLE update_statuses_v2 RENAME TO update_statuses`); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) upgradeSecurityStatesTable() error {
@@ -312,9 +408,9 @@ func (s *Store) SaveUpdateStatuses(statuses []model.UpdateStatus) error {
 			return marshalErr
 		}
 		if _, err = tx.Exec(`
-INSERT INTO update_statuses(group_id,checked_at,payload_json) VALUES(?,?,?)
-ON CONFLICT(group_id) DO UPDATE SET checked_at=excluded.checked_at,payload_json=excluded.payload_json`,
-			status.GroupID, status.CheckedAt.Format(time.RFC3339Nano), string(data)); err != nil {
+INSERT INTO update_statuses(root_id,group_id,checked_at,payload_json) VALUES(?,?,?,?)
+ON CONFLICT(root_id,group_id) DO UPDATE SET checked_at=excluded.checked_at,payload_json=excluded.payload_json`,
+			status.RootID, status.GroupID, status.CheckedAt.Format(time.RFC3339Nano), string(data)); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -323,19 +419,31 @@ ON CONFLICT(group_id) DO UPDATE SET checked_at=excluded.checked_at,payload_json=
 }
 
 func (s *Store) LatestUpdateStatuses() ([]model.UpdateStatus, error) {
-	rows, err := s.db.Query(`SELECT payload_json FROM update_statuses ORDER BY checked_at DESC,group_id`)
+	rows, err := s.db.Query(`SELECT root_id,group_id,payload_json FROM update_statuses ORDER BY checked_at DESC,root_id,group_id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	statuses := []model.UpdateStatus{}
 	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		var rootID, groupID, raw string
+		if err := rows.Scan(&rootID, &groupID, &raw); err != nil {
 			return nil, err
 		}
 		var status model.UpdateStatus
 		if json.Unmarshal([]byte(raw), &status) == nil {
+			if status.RootID == "" {
+				status.RootID = rootID
+			}
+			if index := strings.IndexByte(status.GroupID, '\x00'); index >= 0 {
+				if status.RootID == "" {
+					status.RootID = status.GroupID[:index]
+				}
+				status.GroupID = status.GroupID[index+1:]
+			}
+			if status.GroupID == "" {
+				status.GroupID = groupID
+			}
 			if status.OutdatedSkills == nil {
 				status.OutdatedSkills = []string{}
 			}

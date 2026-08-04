@@ -5,7 +5,7 @@
 Codex Skill Manager 是一款 Windows 本地工具，用于理解、检查、安装、更新、整理和
 恢复 Codex Skills。每次写入都会明确授权、记录事务，并保留恢复路径。
 
-[下载 v0.11.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.11.0) ·
+[下载 v0.12.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.12.0) ·
 [快速开始](docs/user/getting-started.md) ·
 [使用指南](docs/user/gui-guide.md) ·
 [安全策略](SECURITY.md) ·
@@ -15,7 +15,8 @@ Codex Skill Manager 是一款 Windows 本地工具，用于理解、检查、安
 
 [![Codex Skill Manager 界面预览](docs/images/ui-carousel.zh-CN.gif)](docs/images/ui-carousel.zh-CN.gif)
 
-图片使用虚构的 Skill、分组和路径，不包含真实账号或个人数据。
+图片使用虚构的 Skill、分组和路径，不包含真实账号或个人数据。所有画面统一为
+1440×900；较长页面按滚动位置拆分展示，避免缩成一张长图。
 
 桌面端一级导航固定为五项：
 
@@ -23,7 +24,10 @@ Codex Skill Manager 是一款 Windows 本地工具，用于理解、检查、安
 - **资产**：包含 **Skills** 和 **分组** 二级标签页。
 - **安全**：在本地检查选中的 Skills，查看风险命中，也可进行可选语义复核。
 - **活动**：包含 **更新**、**历史与回滚**、**隔离区** 和 **报告** 二级标签页。
-- **设置**：配置语言、存储位置、GitHub、定时检查、Codex 复核和诊断。
+- **设置**：配置语言、外观、存储位置、GitHub、定时检查、Codex 复核和诊断。
+
+“设置”支持跟随 Windows、浅色和深色三种模式。扫描报告可以点击查看完整风险详情和
+Codex 结论；更新状态按根目录区分，不会混淆 `.codex/skills` 与 `.agents/skills`。
 
 ## 四步添加项目
 
@@ -71,10 +75,10 @@ MCP 时必须由用户明确选择项目目录。
 SmartScreen 可能提示警告。请只从本仓库下载，并核对 SHA-256：
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.11.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.12.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-将结果与 `CodexSkillManager-0.11.0-SHA256SUMS.txt` 中的对应行比较。
+将结果与 `CodexSkillManager-0.12.0-SHA256SUMS.txt` 中的对应行比较。
 
 ### 添加随包提供的 Codex Skill
 
@@ -114,4 +118,4 @@ pnpm --dir frontend install --frozen-lockfile
 统一界面是一次 UI 重构；旧 Page 路由和 Wails/API 兼容边界仍然保留，以支持已有
 集成。面向用户的说明统一使用当前界面术语。
 
-Codex Skill Manager 0.11.0 支持 Windows 10/11，使用 [MIT License](LICENSE)。
+Codex Skill Manager 0.12.0 支持 Windows 10/11，使用 [MIT License](LICENSE)。

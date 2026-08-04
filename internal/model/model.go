@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const Version = "0.11.0"
+const Version = "0.12.0"
 const SourcesLockSchemaVersion = 2
 
 // Skill root identifiers are part of the persisted identity of a Skill.  A
@@ -105,6 +105,7 @@ type Config struct {
 	DefaultRootID string            `json:"defaultRootId" yaml:"defaultRootId"`
 	Schedule      Schedule          `json:"schedule" yaml:"schedule"`
 	Locale        string            `json:"locale" yaml:"locale"`
+	Theme         string            `json:"theme" yaml:"theme"`
 	GitHubHost    string            `json:"githubHost" yaml:"githubHost"`
 	AllowOwners   []string          `json:"allowOwners,omitempty" yaml:"allowOwners,omitempty"`
 	MaxFileBytes  int64             `json:"maxFileBytes" yaml:"maxFileBytes"`
@@ -291,20 +292,24 @@ type CodexReviewBatch struct {
 }
 
 type CodexReviewProgress struct {
-	ReviewID        string             `json:"reviewId"`
-	ReportID        string             `json:"reportId"`
-	Sequence        uint64             `json:"sequence"`
-	Phase           string             `json:"phase"`
-	Message         string             `json:"message"`
-	BatchCount      int                `json:"batchCount"`
-	CompletedBatch  int                `json:"completedBatch"`
-	TotalSkills     int                `json:"totalSkills"`
-	CompletedSkills int                `json:"completedSkills"`
-	ActiveSkills    []string           `json:"activeSkills"`
-	ActiveBatches   []CodexActiveBatch `json:"activeBatches"`
-	ActivityCount   int                `json:"activityCount"`
-	StartedAt       time.Time          `json:"startedAt"`
-	UpdatedAt       time.Time          `json:"updatedAt"`
+	ReviewID            string             `json:"reviewId"`
+	ReportID            string             `json:"reportId"`
+	Sequence            uint64             `json:"sequence"`
+	Phase               string             `json:"phase"`
+	Message             string             `json:"message"`
+	BatchCount          int                `json:"batchCount"`
+	CompletedBatch      int                `json:"completedBatch"`
+	TotalSkills         int                `json:"totalSkills"`
+	CompletedSkills     int                `json:"completedSkills"`
+	ActiveSkills        []string           `json:"activeSkills"`
+	ActiveBatches       []CodexActiveBatch `json:"activeBatches"`
+	ActivityCount       int                `json:"activityCount"`
+	ContextChunkIndex   int                `json:"contextChunkIndex,omitempty"`
+	ContextChunkCount   int                `json:"contextChunkCount,omitempty"`
+	ContextChunkAttempt int                `json:"contextChunkAttempt,omitempty"`
+	ContextChunkFiles   int                `json:"contextChunkFiles,omitempty"`
+	StartedAt           time.Time          `json:"startedAt"`
+	UpdatedAt           time.Time          `json:"updatedAt"`
 }
 
 type CodexActiveBatch struct {

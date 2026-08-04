@@ -38,11 +38,12 @@ func Default() (model.Config, error) {
 		DefaultRootID: model.DefaultRootID,
 		Schedule:      model.Schedule{Enabled: false, Frequency: "weekly", Time: "09:00"},
 		Locale:        "zh-CN",
+		Theme:         "system",
 		GitHubHost:    "github.com",
 		MaxFileBytes:  20 << 20,
 		MaxFiles:      2000,
 		CodexReview: model.CodexReviewConfig{
-			Enabled: false, Model: "default", ReasoningEffort: "medium",
+			Enabled: false, Model: "gpt-5.6-luna", ReasoningEffort: "xhigh",
 			TimeoutSeconds: 300, MaxSamplePerRisk: 8,
 			MaxParallelBatches: 1,
 		},
@@ -122,6 +123,11 @@ func Validate(cfg model.Config) error {
 	default:
 		return errors.New("locale must be zh-CN or en-US")
 	}
+	switch cfg.Theme {
+	case "system", "light", "dark":
+	default:
+		return errors.New("theme must be system, light or dark")
+	}
 	for label, p := range map[string]string{
 		"skillsRoot": cfg.Paths.SkillsRoot, "dataRoot": cfg.Paths.DataRoot,
 		"logsRoot":    cfg.Paths.LogsRoot,
@@ -148,9 +154,9 @@ func Validate(cfg model.Config) error {
 		return errors.New("v1 supports github.com only")
 	}
 	switch cfg.CodexReview.ReasoningEffort {
-	case "minimal", "low", "medium", "high", "xhigh":
+	case "minimal", "low", "medium", "high", "xhigh", "max", "ultra":
 	default:
-		return errors.New("codexReview.reasoningEffort must be minimal, low, medium, high or xhigh")
+		return errors.New("codexReview.reasoningEffort must be minimal, low, medium, high, xhigh, max or ultra")
 	}
 	if cfg.CodexReview.TimeoutSeconds < 30 || cfg.CodexReview.TimeoutSeconds > 1800 {
 		return errors.New("codexReview.timeoutSeconds must be between 30 and 1800")
@@ -168,11 +174,14 @@ func normalize(cfg *model.Config) {
 	if strings.TrimSpace(cfg.Locale) == "" {
 		cfg.Locale = "zh-CN"
 	}
+	if strings.TrimSpace(cfg.Theme) == "" {
+		cfg.Theme = "system"
+	}
 	if strings.TrimSpace(cfg.CodexReview.Model) == "" {
-		cfg.CodexReview.Model = "default"
+		cfg.CodexReview.Model = "gpt-5.6-luna"
 	}
 	if strings.TrimSpace(cfg.CodexReview.ReasoningEffort) == "" {
-		cfg.CodexReview.ReasoningEffort = "medium"
+		cfg.CodexReview.ReasoningEffort = "xhigh"
 	}
 	if cfg.CodexReview.TimeoutSeconds == 0 {
 		cfg.CodexReview.TimeoutSeconds = 300
