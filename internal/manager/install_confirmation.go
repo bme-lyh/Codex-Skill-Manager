@@ -194,11 +194,12 @@ func (m *Manager) ConfirmCodexInstall(
 	if err != nil {
 		return InstallConfirmation{}, err
 	}
+	groupRiskApproved := m.sourceGroupRiskApproved(preview)
 	assessment, err := m.GetProjectAssessment(plan.SourcePlanID)
 	if err != nil {
 		return InstallConfirmation{}, err
 	}
-	if assessment.Gate != model.AssessmentGateReady && assessment.Gate != model.AssessmentGateAttention {
+	if assessment.Gate != model.AssessmentGateReady && assessment.Gate != model.AssessmentGateAttention && !(groupRiskApproved && assessment.Gate == model.AssessmentGateBlocked) {
 		return InstallConfirmation{}, fmt.Errorf("project assessment does not permit confirmation: %s", assessment.Gate)
 	}
 	scan, err := m.GetProjectScan(plan.ProjectScanID)
@@ -245,10 +246,10 @@ func (m *Manager) ConfirmCodexInstall(
 			hasHigh = true
 		}
 	}
-	if hasCritical {
+	if hasCritical && !groupRiskApproved {
 		return InstallConfirmation{}, errors.New("Critical local risk remains; confirmation cannot bypass the safety boundary")
 	}
-	if hasHigh && !acceptHighRisk {
+	if hasHigh && !acceptHighRisk && !groupRiskApproved {
 		return InstallConfirmation{}, errors.New("High local risk requires explicit confirmation")
 	}
 	now := time.Now().UTC()

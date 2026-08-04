@@ -44,13 +44,14 @@ lock updates and reports are tied together by transaction IDs.
 Scanner findings remain immutable evidence. The manager decorates them into
 stable clusters by effective group, Skill, rule, category and file class. A human cluster decision
 expands to every member fingerprint. Multi-cluster decisions use one SQLite
-transaction and one journal entry. Critical clusters cannot be ignored. High
-clusters require an explicit confirmation and a non-empty reason; lower severities
-use the ordinary human decision path. The backend resolves persisted findings and
+transaction and one journal entry. Group operations persist one human approval
+for Critical, High, Medium, and Low findings without a typed reason. Immutable
+refs, paths, hashes, snapshot completeness, expiry, and recovery checks remain
+non-bypassable. The backend resolves persisted findings and
 severity instead of trusting client-supplied risk metadata. Model output is always
 advisory. Codex review packages the complete selected group into the model input,
 disables the shell tool, and runs from a manager-owned output directory. One
-application group is one review task; all selected Skills in that group remain
+application group is one review task; all Skills in that group remain
 together. Groups are serial by default, configurable concurrency is
 bounded, and failed or incomplete group output is retried once serially. Static
 findings are reduced to count-only rule overviews and remain leads rather than

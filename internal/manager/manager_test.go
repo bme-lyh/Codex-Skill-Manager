@@ -1276,3 +1276,74 @@ func TestTransactionContentPathFallsBackBesideSkillsAcrossVolumes(t *testing.T) 
 		t.Fatalf("transaction backup lookup = %s, want %s", got, path)
 	}
 }
+func TestValidateCompleteGroupSelectionRejectsSubset(t *testing.T) {
+	preview := model.InstallPreview{Skills: []model.CandidateSkill{{Name: "alpha"}, {Name: "beta"}}}
+	if _, err := validateCompleteGroupSelection(preview, []string{"alpha"}); err == nil {
+		t.Fatal("subset selection must be rejected")
+	}
+}
+
+func TestValidateCompleteGroupSelectionAcceptsWholeGroup(t *testing.T) {
+	preview := model.InstallPreview{Skills: []model.CandidateSkill{{Name: "beta"}, {Name: "alpha"}}}
+	got, err := validateCompleteGroupSelection(preview, []string{"alpha", "beta"})
+	if err != nil {
+		t.Fatalf("whole group selection rejected: %v", err)
+	}
+	if strings.Join(got, ",") != "alpha,beta" {
+		t.Fatalf("selection was not canonicalized: %#v", got)
+	}
+}
+
+func TestManagerSourceTrustRoundTrip(t *testing.T) {
+	m := newTestManager(t)
+	if _, err := m.SetSourceTrust("https://github.com/Owner/Repo.git", ""); err != nil {
+		t.Fatalf("set source trust: %v", err)
+	}
+	policy, err := m.SourceTrustPolicy("owner/repo")
+	if err != nil || !policy.Trusted || policy.Repository != "owner/repo" {
+		t.Fatalf("unexpected trusted policy: %#v (%v)", policy, err)
+	}
+	if _, err := m.RevokeSourceTrust("owner/repo", ""); err != nil {
+		t.Fatalf("revoke source trust: %v", err)
+	}
+	policy, err = m.SourceTrustPolicy("owner/repo")
+	if err != nil || policy.Trusted {
+		t.Fatalf("unexpected revoked policy: %#v (%v)", policy, err)
+	}
+}
+
+func TestApplyGroupInstallRejectsIncompleteTargetBeforeMutation(t *testing.T) {
+	m := newTestManager(t)
+	preview := githubPreviewFixture(t, m, "plan-group-subset", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"alpha", "beta"})
+	m.previews[preview.ID] = preview
+	if _, err := m.ApplyGroupInstall(preview.ID, []string{"alpha"}, false); err == nil || !strings.Contains(err.Error(), "requires all 2 valid Skills") {
+		t.Fatalf("expected incomplete group target to be rejected, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Config.Paths.SkillsRoot, "alpha")); !os.IsNotExist(err) {
+		t.Fatalf("incomplete group target must not mutate the root: %v", err)
+	}
+}
+
+func TestApplyGroupInstallPersistsParentAndChildResults(t *testing.T) {
+	m := newTestManager(t)
+	preview := githubPreviewFixture(t, m, "plan-group-complete", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", []string{"alpha", "beta"})
+	m.previews[preview.ID] = preview
+	tx, err := m.ApplyGroupInstall(preview.ID, []string{"beta", "alpha"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.Type != "group-install" || tx.Status != "completed" || len(tx.ItemResults) != 2 {
+		t.Fatalf("unexpected group parent transaction: %#v", tx)
+	}
+	operations, err := m.GroupOperations(10)
+	if err != nil || len(operations) == 0 || operations[0].Status != model.GroupStatusCompleted || len(operations[0].Steps) != 2 {
+		t.Fatalf("group operation was not persisted as completed: %#v (%v)", operations, err)
+	}
+	dashboard, err := m.Dashboard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dashboard.SourceGroups) != 1 || len(dashboard.SourceGroups[0].SkillNames) != 2 {
+		t.Fatalf("complete group install did not create one source group: %#v", dashboard.SourceGroups)
+	}
+}

@@ -1,13 +1,14 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-const Version = "0.13.0"
+const Version = "0.14.0"
 const SourcesLockSchemaVersion = 2
 
 // Skill root identifiers are part of the persisted identity of a Skill.  A
@@ -142,6 +143,46 @@ func CanonicalCommitSHA(value string) (string, error) {
 		return "", fmt.Errorf("commit is not a full immutable SHA")
 	}
 	return strings.ToLower(value), nil
+}
+
+// CanonicalGitHubRepository normalizes an owner/repository identity for
+// repository-wide trust policy.  It accepts the common HTTPS/SSH URL forms
+// but persists only the lower-case owner/repository key; query, fragment,
+// nested paths and empty components are rejected.
+func CanonicalGitHubRepository(value string) (string, error) {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return "", errors.New("GitHub repository is required")
+	}
+	if strings.HasPrefix(strings.ToLower(raw), "git@github.com:") {
+		raw = raw[len("git@github.com:"):]
+	} else if strings.HasPrefix(strings.ToLower(raw), "ssh://git@github.com/") {
+		raw = raw[len("ssh://git@github.com/"):]
+	} else if strings.HasPrefix(strings.ToLower(raw), "https://github.com/") {
+		raw = raw[len("https://github.com/"):]
+	} else if strings.HasPrefix(strings.ToLower(raw), "http://github.com/") {
+		raw = raw[len("http://github.com/"):]
+	}
+	raw = strings.TrimSuffix(raw, ".git")
+	if strings.ContainsAny(raw, "?#\\") {
+		return "", errors.New("GitHub repository must not include query, fragment, or backslash")
+	}
+	parts := strings.Split(strings.Trim(raw, "/"), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", errors.New("GitHub repository must use owner/repository form")
+	}
+	for _, part := range parts {
+		for _, r := range part {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+				continue
+			}
+			return "", errors.New("GitHub repository contains an invalid character")
+		}
+		if part == "." || part == ".." {
+			return "", errors.New("GitHub repository contains an invalid component")
+		}
+	}
+	return strings.ToLower(parts[0] + "/" + parts[1]), nil
 }
 
 // ValidateImmutableRef applies the remote-provider lock rule.  Local sources
@@ -279,6 +320,39 @@ type Group struct {
 	Position   int      `json:"position"`
 	SkillNames []string `json:"skillNames"`
 	Status     string   `json:"status"`
+}
+
+// Source-group status values are intentionally shared by install, update, and
+// security views. Skill-level diagnostics must not introduce another primary
+// state machine.
+const (
+	GroupStatusUnknown          = "unknown"
+	GroupStatusPreparing        = "preparing"
+	GroupStatusAnalyzing        = "analyzing"
+	GroupStatusSecurityChecking = "security-checking"
+	GroupStatusAwaitingApproval = "awaiting-approval"
+	GroupStatusInstalling       = "installing"
+	GroupStatusChecking         = "checking"
+	GroupStatusCompleted        = "completed"
+	GroupStatusPartial          = "partial"
+	GroupStatusFailed           = "failed"
+	GroupStatusRecoveryRequired = "recovery-required"
+	GroupStatusUpdateAvailable  = "update-available"
+	GroupStatusUpToDate         = "up-to-date"
+	GroupStatusRateLimited      = "rate-limited"
+	GroupStatusUnsupported      = "unsupported"
+)
+
+func ValidGroupStatus(value string) bool {
+	switch strings.TrimSpace(value) {
+	case GroupStatusUnknown, GroupStatusPreparing, GroupStatusAnalyzing, GroupStatusSecurityChecking,
+		GroupStatusAwaitingApproval, GroupStatusInstalling, GroupStatusChecking, GroupStatusCompleted,
+		GroupStatusPartial, GroupStatusFailed, GroupStatusRecoveryRequired, GroupStatusUpdateAvailable,
+		GroupStatusUpToDate, GroupStatusRateLimited, GroupStatusUnsupported:
+		return true
+	default:
+		return false
+	}
 }
 
 type DetectedSource struct {
@@ -625,15 +699,181 @@ type CandidateSkill struct {
 }
 
 type InstallPreview struct {
-	ID            string           `json:"id"`
-	TargetRootID  string           `json:"targetRootId,omitempty"`
-	Repository    Repository       `json:"repository"`
-	Skills        []CandidateSkill `json:"skills"`
-	Scan          ScanReport       `json:"scan"`
-	StagingPath   string           `json:"stagingPath"`
-	PreviewDigest string           `json:"previewDigest"`
-	CreatedAt     time.Time        `json:"createdAt"`
-	ExpiresAt     time.Time        `json:"expiresAt"`
+	ID           string `json:"id"`
+	TargetRootID string `json:"targetRootId,omitempty"`
+	// SourceGroupID and SourceGroupName identify the update/security authority
+	// represented by this preview.  They are additive fields: older previews
+	// remain valid and callers may derive the values from Repository.
+	SourceGroupID   string           `json:"sourceGroupId,omitempty"`
+	SourceGroupName string           `json:"sourceGroupName,omitempty"`
+	Repository      Repository       `json:"repository"`
+	Skills          []CandidateSkill `json:"skills"`
+	Scan            ScanReport       `json:"scan"`
+	StagingPath     string           `json:"stagingPath"`
+	PreviewDigest   string           `json:"previewDigest"`
+	CreatedAt       time.Time        `json:"createdAt"`
+	ExpiresAt       time.Time        `json:"expiresAt"`
+}
+
+// LocalizedText keeps reusable group records consumable by both the English
+// and Chinese clients without forcing a locale into persisted state.  Empty
+// values are allowed so a provider can supply only one language; readers
+// should fall back to the populated value.
+type LocalizedText struct {
+	En string `json:"en,omitempty"`
+	Zh string `json:"zh,omitempty"`
+}
+
+func (t LocalizedText) Empty() bool {
+	return strings.TrimSpace(t.En) == "" && strings.TrimSpace(t.Zh) == ""
+}
+
+// Text returns the requested locale with a deterministic fallback.  Locale
+// matching is intentionally prefix based so values such as zh-CN and en-US
+// work with the compact persisted representation.
+func (t LocalizedText) Text(locale string) string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "zh") {
+		if strings.TrimSpace(t.Zh) != "" {
+			return t.Zh
+		}
+		return t.En
+	}
+	if strings.TrimSpace(t.En) != "" {
+		return t.En
+	}
+	return t.Zh
+}
+
+// SourceTrustPolicy is repository-wide policy keyed by canonical GitHub
+// owner/repository (for example, "openai/codex-skills").  Trust is an
+// explicit human policy signal and never replaces local hash, path, scanner,
+// or immutable-ref checks.
+type SourceTrustPolicy struct {
+	Repository string     `json:"repository"`
+	Provider   string     `json:"provider"`
+	Trusted    bool       `json:"trusted"`
+	Reason     string     `json:"reason,omitempty"`
+	SetAt      time.Time  `json:"setAt,omitempty"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+	RevokedAt  *time.Time `json:"revokedAt,omitempty"`
+}
+
+// SourceTrustAudit is append-only evidence for every trust set/revoke action.
+// TransactionID links the policy decision to the normal journal when a
+// manager mutation is used, while Actor remains optional for compatibility
+// with older callers that do not identify a principal.
+type SourceTrustAudit struct {
+	ID            int64     `json:"id,omitempty"`
+	Repository    string    `json:"repository"`
+	Action        string    `json:"action"`
+	Trusted       bool      `json:"trusted"`
+	Reason        string    `json:"reason,omitempty"`
+	TransactionID string    `json:"transactionId,omitempty"`
+	Actor         string    `json:"actor,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
+// GroupSkillSecurity is the stable per-Skill projection embedded in a group
+// security record.  Findings and clusters remain available through the
+// existing ScanReport fields; this summary lets consumers render a group
+// without reconstructing ownership from paths.
+type GroupSkillSecurity struct {
+	SkillName          string       `json:"skillName"`
+	RootID             string       `json:"rootId,omitempty"`
+	Status             string       `json:"status"`
+	HighestSeverity    RiskSeverity `json:"highestSeverity"`
+	ActiveFindingCount int          `json:"activeFindingCount"`
+	FindingCount       int          `json:"findingCount"`
+	ReportID           string       `json:"reportId,omitempty"`
+	Error              string       `json:"error,omitempty"`
+}
+
+// GroupSecurityReport is a reusable, source-group authoritative security
+// result.  It is deliberately compatible with ScanReport rather than
+// replacing it: ScanReport remains the detailed scanner contract and this
+// record captures the group-level status and bilingual summary.
+type GroupSecurityReport struct {
+	ID                    string               `json:"id"`
+	RootID                string               `json:"rootId,omitempty"`
+	GroupID               string               `json:"groupId"`
+	GroupName             string               `json:"groupName"`
+	Provider              string               `json:"provider,omitempty"`
+	Repository            string               `json:"repository,omitempty"`
+	CommitSHA             string               `json:"commitSha,omitempty"`
+	Status                string               `json:"status"`
+	HighestSeverity       RiskSeverity         `json:"highestSeverity"`
+	ActiveHighestSeverity RiskSeverity         `json:"activeHighestSeverity"`
+	Summary               LocalizedText        `json:"summary"`
+	Skills                []GroupSkillSecurity `json:"skills"`
+	Findings              []Finding            `json:"findings"`
+	Clusters              []RiskCluster        `json:"clusters"`
+	ScanReportID          string               `json:"scanReportId,omitempty"`
+	CreatedAt             time.Time            `json:"createdAt"`
+	CompletedAt           time.Time            `json:"completedAt,omitempty"`
+	Error                 string               `json:"error,omitempty"`
+}
+
+// SourceAnalysis is the persisted read-only analysis envelope for one source
+// group.  PlanID is optional because analysis may be generated before an
+// installation/update plan exists.
+type SourceAnalysis struct {
+	ID             string              `json:"id"`
+	RootID         string              `json:"rootId,omitempty"`
+	GroupID        string              `json:"groupId"`
+	GroupName      string              `json:"groupName"`
+	Provider       string              `json:"provider,omitempty"`
+	Repository     string              `json:"repository,omitempty"`
+	CommitSHA      string              `json:"commitSha,omitempty"`
+	Status         string              `json:"status"`
+	Summary        LocalizedText       `json:"summary"`
+	Skills         []string            `json:"skills"`
+	Security       GroupSecurityReport `json:"security"`
+	ScanReportID   string              `json:"scanReportId,omitempty"`
+	PlanID         string              `json:"planId,omitempty"`
+	ContextDigest  string              `json:"contextDigest,omitempty"`
+	AnalysisDigest string              `json:"analysisDigest,omitempty"`
+	CreatedAt      time.Time           `json:"createdAt"`
+	CompletedAt    time.Time           `json:"completedAt,omitempty"`
+	ExpiresAt      time.Time           `json:"expiresAt,omitempty"`
+	Error          string              `json:"error,omitempty"`
+}
+
+// GroupOperationStep is internal per-Skill diagnostics/recovery metadata.
+// The parent GroupOperation/Transaction remains the authoritative status.
+type GroupOperationStep struct {
+	ID             string    `json:"id"`
+	SkillName      string    `json:"skillName"`
+	Status         string    `json:"status"`
+	TransactionID  string    `json:"transactionId,omitempty"`
+	Error          string    `json:"error,omitempty"`
+	RecoveryStatus string    `json:"recoveryStatus,omitempty"`
+	BackupPaths    []string  `json:"backupPaths,omitempty"`
+	StartedAt      time.Time `json:"startedAt,omitempty"`
+	CompletedAt    time.Time `json:"completedAt,omitempty"`
+}
+
+// GroupOperation is a reusable plan/result envelope for source-group
+// install/update/security actions.  TargetSkills and ValidSkills are both
+// persisted so applying a group operation can prove that no partial target
+// set was submitted.
+type GroupOperation struct {
+	ID                  string               `json:"id"`
+	ParentTransactionID string               `json:"parentTransactionId,omitempty"`
+	RootID              string               `json:"rootId,omitempty"`
+	GroupID             string               `json:"groupId"`
+	GroupName           string               `json:"groupName"`
+	Kind                string               `json:"kind"`
+	Status              string               `json:"status"`
+	TargetSkills        []string             `json:"targetSkills"`
+	ValidSkills         []string             `json:"validSkills"`
+	Steps               []GroupOperationStep `json:"steps"`
+	AnalysisID          string               `json:"analysisId,omitempty"`
+	SecurityReportID    string               `json:"securityReportId,omitempty"`
+	PlanID              string               `json:"planId,omitempty"`
+	Error               string               `json:"error,omitempty"`
+	StartedAt           time.Time            `json:"startedAt"`
+	CompletedAt         time.Time            `json:"completedAt,omitempty"`
+	RecoveryStatus      string               `json:"recoveryStatus,omitempty"`
 }
 
 // CodexProjectSecurity is the read-only security portion of a project scan.
@@ -901,6 +1141,9 @@ type Transaction struct {
 	Type           string                `json:"type"`
 	Status         string                `json:"status"`
 	Targets        []string              `json:"targets"`
+	GroupID        string                `json:"groupId,omitempty"`
+	GroupName      string                `json:"groupName,omitempty"`
+	OperationID    string                `json:"operationId,omitempty"`
 	StartedAt      time.Time             `json:"startedAt"`
 	CompletedAt    time.Time             `json:"completedAt,omitempty"`
 	BackupPaths    []string              `json:"backupPaths,omitempty"`

@@ -27,9 +27,10 @@ restores that database layout and never changes `sources.lock.json` or Skill
 files.
 
 Interactive updates reuse the install plan and transaction model. The preview
-is bound to an immutable GitHub Commit and includes a scan. Applying a selected
-subset backs up only those explicit Skills and stores the new Commit on each
-selected `SkillLock`; unselected Skills retain their previous Commit.
+is bound to an immutable GitHub Commit and includes a scan. Group installation
+and update require the complete source-group member set, create one parent
+transaction, and record each Skill only as a child step for progress, backup,
+failure, and recovery details.
 
 Warning ignore and restore decisions are journaled as `ignore-warning` and
 `restore-warning` transactions. Their recovery path is the inverse warning
@@ -39,7 +40,7 @@ action; generic transaction rollback supports `install`, legacy `adopt`,
 ## Planned installation
 
 Assisted execution creates an `assisted-install` parent transaction before any
-step runs. Apply revalidates the source-bound plan, selected Skills, plan
+step runs. Apply revalidates the source-bound plan, complete source-group Skills, plan
 and configuration digests, expiry, explicit permission IDs, and optional
 project root. Each typed step moves through queued/running/completed/failed or
 skipped states in the transaction payload:
@@ -68,7 +69,7 @@ is approved, those steps run transactionally and the parent plan, transaction,
 and terminal progress use `partial` with `recoveryStatus: "available"`.
 `manual-pending` counts as processed for progress but never as automatically
 completed. A partial run may be rolled back but cannot be automatically retried.
-The approval journal and plan persist the exact selected Skill subset and
+The approval journal and plan persist the exact source-group member set and
 canonical project root before the first mutation.
 
 If a supported step fails or the user cancels at a safe point, the manager

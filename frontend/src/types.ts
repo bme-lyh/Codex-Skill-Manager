@@ -1,6 +1,89 @@
 export type Severity = "informational" | "low" | "medium" | "high" | "critical";
 export type Root = import("./roots").RootContract;
 
+/** Optional persisted display copy returned by newer desktop builds. Older
+ * builds continue to send only the canonical `name`/`title` fields. */
+export interface LocalizedText {
+  zhCN?: string;
+  enUS?: string;
+  [key: string]: string | undefined;
+}
+
+export interface SourceTrustPolicy {
+  repository: string;
+  provider: string;
+  trusted: boolean;
+  reason?: string;
+  setAt?: string;
+  updatedAt: string;
+  revokedAt?: string;
+}
+
+export interface SourceTrustAudit {
+  id?: number;
+  repository: string;
+  action: string;
+  trusted: boolean;
+  reason?: string;
+  transactionId?: string;
+  actor?: string;
+  createdAt: string;
+}
+
+export interface GroupSkillSecurity {
+  skillName: string;
+  rootId?: string;
+  status: string;
+  highestSeverity: Severity;
+  activeFindingCount: number;
+  findingCount: number;
+  reportId?: string;
+  error?: string;
+}
+
+export interface GroupSecurityReport {
+  id: string;
+  rootId?: string;
+  groupId: string;
+  groupName: string;
+  provider?: string;
+  repository?: string;
+  commitSha?: string;
+  status: string;
+  highestSeverity: Severity;
+  activeHighestSeverity: Severity;
+  summary: LocalizedText;
+  skills: GroupSkillSecurity[];
+  findings: Finding[];
+  clusters: RiskCluster[];
+  scanReportId?: string;
+  createdAt: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface SourceAnalysis {
+  id: string;
+  rootId?: string;
+  groupId: string;
+  groupName: string;
+  provider?: string;
+  repository?: string;
+  commitSha?: string;
+  status: string;
+  summary: LocalizedText;
+  skills: string[];
+  security: GroupSecurityReport;
+  scanReportId?: string;
+  planId?: string;
+  contextDigest?: string;
+  analysisDigest?: string;
+  createdAt: string;
+  completedAt?: string;
+  expiresAt?: string;
+  error?: string;
+}
+
 export interface Relation {
   from: string;
   to: string;
@@ -20,8 +103,16 @@ export interface Skill {
   path: string;
   groupId: string;
   groupName: string;
+  groupNameZhCN?: string;
+  groupNameEnUS?: string;
   sourceGroupId: string;
   sourceGroupName: string;
+  sourceGroupNameZhCN?: string;
+  sourceGroupNameEnUS?: string;
+  localizedName?: LocalizedText;
+  localizedDescription?: LocalizedText;
+  localizedGroupName?: LocalizedText;
+  localizedSourceGroupName?: LocalizedText;
   sourceProvider: string;
   sourceConfidence: number;
   sourceEvidence?: string;
@@ -42,6 +133,9 @@ export interface Group {
   id: string;
   rootId?: string;
   name: string;
+  nameZhCN?: string;
+  nameEnUS?: string;
+  localizedName?: LocalizedText;
   provider: string;
   repository?: string;
   readOnly: boolean;
@@ -49,6 +143,16 @@ export interface Group {
   position: number;
   skillNames: string[];
   status: string;
+  /** New group-operation metadata is optional for compatibility with 0.13. */
+  operationUnit?: "source-group" | "group" | string;
+  sourceGroupId?: string;
+  sourceGroupName?: string;
+  sourceGroupNameZhCN?: string;
+  sourceGroupNameEnUS?: string;
+  riskCount?: number;
+  activeRiskCount?: number;
+  manualWorkCount?: number;
+  errorCount?: number;
 }
 
 export interface Finding {
@@ -72,6 +176,9 @@ export interface Finding {
   rootId?: string;
   groupId?: string;
   groupName?: string;
+  localizedTitle?: LocalizedText;
+  localizedExplanation?: LocalizedText;
+  localizedRecommendedAction?: LocalizedText;
 }
 
 export interface RiskCluster {
@@ -92,6 +199,8 @@ export interface RiskCluster {
   rootId?: string;
   groupId?: string;
   groupName?: string;
+  localizedTitle?: LocalizedText;
+  localizedGroupName?: LocalizedText;
 }
 
 export interface CodexClusterReview {
@@ -229,6 +338,12 @@ export interface ScanSkillSummary {
   highestSeverity: Severity;
   activeFindingCount: number;
   ignoredFindingCount: number;
+  groupNameZhCN?: string;
+  groupNameEnUS?: string;
+  localizedGroupName?: LocalizedText;
+  manualWork?: boolean;
+  status?: string;
+  diagnostics?: string[];
 }
 
 export interface Transaction {
@@ -272,6 +387,24 @@ export interface UpdateStatus {
   rateLimitRemaining?: number;
   rateLimitLimit?: number;
   fromCache: boolean;
+  groupNameZhCN?: string;
+  groupNameEnUS?: string;
+  localizedGroupName?: LocalizedText;
+  /** Optional per-Skill diagnostics; shown only for errors/manual work. */
+  skillDiagnostics?: UpdateSkillDiagnostic[];
+  diagnostics?: UpdateSkillDiagnostic[];
+  manualWork?: string[];
+  errorSkills?: string[];
+}
+
+export interface UpdateSkillDiagnostic {
+  skillName: string;
+  status?: string;
+  message?: string;
+  error?: string;
+  manualWork?: boolean;
+  requiredManualWork?: boolean;
+  localizedMessage?: LocalizedText;
 }
 
 export interface UpdateCheckResult {
@@ -302,6 +435,20 @@ export interface Candidate {
   name: string;
   description: string;
   sourcePath: string;
+  groupId?: string;
+  groupName?: string;
+  groupNameZhCN?: string;
+  groupNameEnUS?: string;
+  sourceGroupId?: string;
+  sourceGroupName?: string;
+  sourceGroupNameZhCN?: string;
+  sourceGroupNameEnUS?: string;
+  localizedName?: LocalizedText;
+  localizedDescription?: LocalizedText;
+  localizedGroupName?: LocalizedText;
+  localizedSourceGroupName?: LocalizedText;
+  /** Backend may provide a complete source-group summary alongside Skills. */
+  operationUnit?: "source-group" | "group" | string;
 }
 
 export interface InstallPreview {
@@ -321,6 +468,29 @@ export interface InstallPreview {
   previewDigest?: string;
   createdAt: string;
   expiresAt: string;
+  sourceGroupId?: string;
+  sourceGroupName?: string;
+  sourceGroupNameZhCN?: string;
+  sourceGroupNameEnUS?: string;
+  localizedSourceGroupName?: LocalizedText;
+  sourceGroups?: Group[];
+  group?: Group;
+  groupOperation?: GroupOperation;
+}
+
+export interface GroupOperation {
+  id?: string;
+  rootId?: string;
+  groupId?: string;
+  groupName?: string;
+  sourceGroupId?: string;
+  sourceGroupName?: string;
+  skillNames?: string[];
+  status?: string;
+  manualWork?: string[];
+  errors?: string[];
+  diagnostics?: UpdateSkillDiagnostic[];
+  localizedGroupName?: LocalizedText;
 }
 
 export type AssessmentGate = "ready" | "attention" | "blocked" | "incomplete";
@@ -527,6 +697,14 @@ export interface AssistedInstallPlan {
   selectedSkills?: string[];
   skills?: Candidate[];
   scan?: ScanReport;
+  sourceGroupId?: string;
+  sourceGroupName?: string;
+  sourceGroupNameZhCN?: string;
+  sourceGroupNameEnUS?: string;
+  localizedSourceGroupName?: LocalizedText;
+  sourceGroups?: Group[];
+  group?: Group;
+  groupOperation?: GroupOperation;
 }
 
 export interface AssistedInstallProgressStep {

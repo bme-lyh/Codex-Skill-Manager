@@ -161,6 +161,41 @@ func (a *App) PrepareLocal(path, rootID string) (model.InstallPreview, error) {
 	return a.mgr.PrepareLocal(path, rootID)
 }
 
+func (a *App) SetSourceTrust(repository, reason string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.SetSourceTrust(repository, reason)
+}
+
+func (a *App) RevokeSourceTrust(repository, reason string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.RevokeSourceTrust(repository, reason)
+}
+
+func (a *App) GetSourceTrustPolicy(repository string) (model.SourceTrustPolicy, error) {
+	if err := a.ready(); err != nil {
+		return model.SourceTrustPolicy{}, err
+	}
+	return a.mgr.SourceTrustPolicy(repository)
+}
+
+func (a *App) GetSourceTrustPolicies() ([]model.SourceTrustPolicy, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.mgr.SourceTrustPolicies()
+}
+
+func (a *App) GetSourceTrustAudit(repository string, limit int) ([]model.SourceTrustAudit, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.mgr.SourceTrustAudit(repository, limit)
+}
+
 // LinkLocalSource records an explicit, hash-verified GitHub association for an
 // existing local Skill without replacing its files.
 func (a *App) LinkLocalSource(skillName, rawURL, ref, rootID string) (model.DetectedSource, error) {
@@ -211,6 +246,53 @@ func (a *App) ApplyInstallBestEffort(planID string, skills []string, acceptHighR
 		return model.Transaction{}, err
 	}
 	return a.mgr.ApplyInstallBestEffort(planID, skills, acceptHighRisk, rootID)
+}
+
+func (a *App) ApproveGroupRisk(planID, reason string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApproveGroupRisk(planID, reason)
+}
+
+func (a *App) ApproveGroupSecurity(groupID, rootID, reason string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApproveGroupSecurity(groupID, rootID, reason)
+}
+
+func (a *App) ApplyGroupInstall(planID string, skills []string, acceptRisk bool, rootID string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApplyGroupInstall(planID, skills, acceptRisk, rootID)
+}
+
+func (a *App) ApplySourceGroupInstall(planID string, acceptRisk bool, rootID string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApplySourceGroupInstall(planID, acceptRisk, rootID)
+}
+
+func (a *App) ApplyGroupUpdate(planID string, skills []string, acceptRisk bool, rootID string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApplyGroupUpdate(planID, skills, acceptRisk, rootID)
 }
 
 // ScanProjectWithCodex is the read-only first phase for planned installation.
@@ -370,6 +452,51 @@ func (a *App) AuditSkills(names []string, rootID string) (model.ScanReport, erro
 	return a.mgr.AuditSkills(names, rootID)
 }
 
+func (a *App) RunGroupSecurityCheck(groupID, rootID string) (model.GroupSecurityReport, error) {
+	if err := a.ready(); err != nil {
+		return model.GroupSecurityReport{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.GroupSecurityReport{}, err
+	}
+	return a.mgr.AuditGroup(groupID, rootID)
+}
+
+func (a *App) GetGroupSecurityReport(id string) (model.GroupSecurityReport, error) {
+	if err := a.ready(); err != nil {
+		return model.GroupSecurityReport{}, err
+	}
+	return a.mgr.GetGroupSecurityReport(id)
+}
+
+func (a *App) GetSourceAnalysis(id string) (model.SourceAnalysis, error) {
+	if err := a.ready(); err != nil {
+		return model.SourceAnalysis{}, err
+	}
+	return a.mgr.GetSourceAnalysis(id)
+}
+
+func (a *App) GetOrCreateSourceGroupAnalysis(planID string) (model.SourceAnalysis, error) {
+	if err := a.ready(); err != nil {
+		return model.SourceAnalysis{}, err
+	}
+	return a.mgr.GetOrCreateSourceGroupAnalysis(planID)
+}
+
+func (a *App) GetSourceAnalyses(limit int) ([]model.SourceAnalysis, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.mgr.SourceAnalyses(limit)
+}
+
+func (a *App) GetGroupOperations(limit int) ([]model.GroupOperation, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.mgr.GroupOperations(limit)
+}
+
 func (a *App) SetFindingIgnored(finding model.Finding, ignored bool, reason string) (bool, error) {
 	if err := a.ready(); err != nil {
 		return false, err
@@ -428,6 +555,18 @@ func (a *App) PrepareUpdate(groupID, rootID string) (model.InstallPreview, error
 		return model.InstallPreview{}, err
 	}
 	return a.mgr.PrepareUpdate(ctx, groupID, rootID)
+}
+
+func (a *App) PrepareGroupUpdate(groupID, rootID string) (model.InstallPreview, error) {
+	if err := a.ready(); err != nil {
+		return model.InstallPreview{}, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	defer cancel()
+	if err := requireRootID(rootID); err != nil {
+		return model.InstallPreview{}, err
+	}
+	return a.mgr.PrepareGroupUpdate(ctx, groupID, rootID)
 }
 
 func (a *App) QuarantineSkills(names []string, rootID string) (model.Transaction, error) {

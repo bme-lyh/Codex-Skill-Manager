@@ -2,9 +2,11 @@
 
 Every source first passes a required local assessment. The optional Enhanced
 project scan stays read-only until you approve its plan and permissions.
-Critical findings cannot be ignored. High findings require one explicit human
-confirmation for each cluster; a typed reason is no longer required. Report-wide ignore handles known Medium or lower
-findings only.
+Installation and updates operate on complete source groups. Critical, High,
+Medium, and Low findings can be approved with one human action and no typed
+reason. Approval never bypasses immutable refs, path containment, snapshot
+completeness, hashes, or recovery. Legacy report-wide ignore remains limited to
+known Medium-or-lower findings.
 
 All downloaded Skill content is untrusted. The manager never executes repository scripts and never modifies either root's `.system` directory.
 
@@ -14,8 +16,7 @@ The built-in scanner checks prompt injection, credential access, dynamic executi
 |---|---|
 | Informational / Low | Record |
 | Medium | Display for review |
-| High | Block writes; one explicit per-cluster confirmation may accept it |
-| Critical | Always block writes and cannot be ignored |
+| High / Critical | Group apply waits for one explicit human approval |
 
 Before replacement, the current Skill is backed up and the operation is journaled. Removal moves one explicitly selected Skill at a time to quarantine. Recovery is available from **History** or **Quarantine**.
 
@@ -26,11 +27,11 @@ Identical same-name Skills duplicated across repository packaging paths are de-d
 Large reports are de-duplicated by stable fingerprint and capped in the GUI for responsiveness. The complete raw findings remain available in the local JSON report.
 
 Install, update, management, and security views show a five-level summary.
-Medium and lower clusters use the ordinary ignore flow. High requires explicit
-per-cluster confirmation. Critical cannot be ignored, and batch actions cannot
-accept High or Critical. Every decision is atomic and
-journaled. The backend resolves the persisted finding and severity immediately
-before apply instead of trusting client risk metadata.
+The install/update/security-center action is attached to the complete source
+group; details remain grouped by Skill. One human action can approve every
+severity without a typed reason. Every decision is atomic and journaled. The
+backend resolves the persisted finding, repository, commit, and severity before
+apply instead of trusting client risk metadata.
 
 Static analysis is best-effort and cannot prove that content is safe. Review source ownership, the resolved commit, requested permissions, and every high-impact finding.
 
@@ -64,7 +65,7 @@ the normal commit-pinned GitHub or explicit-local source preview and local scan,
 then packages the complete prepared source for Codex with shell access disabled
 and a manager-owned output directory as the working directory. Codex can
 propose only declarative actions. A local finalizer derives permissions and
-allows automatic execution only for selected Skill installation, an
+allows automatic execution only for complete source-group Skill installation, an
 exact-version verified Python tool from official PyPI, and a manager-owned Codex
 MCP entry. Repository scripts, arbitrary shell commands, environment changes,
 and unsupported package managers remain manual. Managed Python and MCP

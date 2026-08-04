@@ -47,7 +47,7 @@ access to the optional Codex scan or dependency planning.
 - Retry the visible **Codex review** action once, or keep the completed local
   assessment and choose **Standard Skill install**.
 
-Codex is optional. The local assessment and selected Skills remain available
+Codex is optional. The local assessment and complete source group remain available
 when the semantic scan cannot produce a reliable result.
 
 ## Installation completes but the list is stale

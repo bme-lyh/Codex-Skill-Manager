@@ -7,10 +7,13 @@ CSM is deny-by-default at the mutation boundary:
 - file count and file-size limits are enforced;
 - `.system` is excluded and protected;
 - static scanning runs before an installation plan is applyable;
-- active High/Critical findings block writes; findings are clustered by rule and file class;
-- Critical cannot be ignored; High requires individual explicit confirmation
-  and a non-empty reason, plus final acknowledgement for standard apply;
-- report-wide decisions apply only to eligible Medium-or-lower clusters;
+- active High/Critical findings block writes until the source-group decision is
+  persisted; findings are clustered by rule and file class;
+- group operations allow one human approval for Critical, High, Medium, and Low
+  without a typed reason, while immutable refs, paths, hashes, snapshots, and
+  recovery checks remain mandatory;
+- legacy report-wide decisions may still be limited to eligible Medium-or-lower
+  clusters for compatibility;
 - batch decisions are persisted atomically and journal explicit cluster targets;
 - Codex review is advisory and never records a human decision by itself;
 - source commits and installed file hashes are recorded;
@@ -46,7 +49,7 @@ effort, and account usage.
 
 Local code must derive permissions and restrict execution to:
 
-- exact selected Skill installation through the normal manager;
+- exact complete source-group Skill installation through the normal manager;
 - an exact-version, repository-matched Python package whose complete Wheel-only
   dependency closure is resolved from official PyPI before approval;
 - a new manager-owned Codex MCP entry that invokes that managed executable only

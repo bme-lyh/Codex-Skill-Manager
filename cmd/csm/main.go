@@ -330,9 +330,9 @@ func warning(m *manager.Manager, args []string) (any, error) {
 	file := fs.String("file", "", "finding file")
 	fileClass := fs.String("file-class", "", "risk cluster file class")
 	deterministic := fs.Bool("deterministic", false, "cluster is a deterministic local baseline")
-	confirmDeterministic := fs.Bool("confirm-deterministic", false, "explicitly confirm accepting a High-risk cluster; Critical clusters cannot be ignored")
+	confirmDeterministic := fs.Bool("confirm-deterministic", false, "legacy per-cluster confirmation; use --approve-risk for group operations")
 	reportID := fs.String("report", "", "apply the decision to every matching cluster in a scan report")
-	reason := fs.String("reason", "", "audit reason; required when explicitly accepting a High-risk cluster")
+	reason := fs.String("reason", "", "legacy audit reason; group approvals do not require a reason")
 	restore := fs.Bool("restore", false, "restore a previously ignored warning")
 	dryRun := fs.Bool("dry-run", false, "show explicit targets without changing state")
 	if err := parseFlags(fs, args); err != nil {
@@ -463,6 +463,7 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 	assess := fs.Bool("assess", false, "read and persist the mandatory layered assessment for an existing source plan")
 	assist := fs.Bool("assist", false, "use the consent-gated Codex project scan and assisted-install flow")
 	acceptHigh := fs.Bool("accept-high-risk", false, "final apply acknowledgement for previously audited High-risk cluster decisions")
+	approveRisk := fs.Bool("approve-risk", false, "one-click human approval for the complete source-group security report")
 	planID := fs.String("plan-id", "", "existing plan ID")
 	projectScanID := fs.String("project-scan-id", "", "completed Codex project scan ID")
 	createPlan := fs.Bool("create-plan", false, "approve creating an assisted-install plan from --project-scan-id")
@@ -519,7 +520,12 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 		if len(selected) == 0 {
 			return nil, usagef("applying an install plan requires at least one --skill")
 		}
-		return m.ApplyInstall(*planID, selected, *acceptHigh, *rootID)
+		if *approveRisk {
+			if _, err := m.ApproveGroupRisk(*planID, ""); err != nil {
+				return nil, err
+			}
+		}
+		return m.ApplyGroupInstall(*planID, selected, *acceptHigh || *approveRisk, *rootID)
 	}
 	if *assess {
 		return nil, usagef("--assess requires --plan-id")
@@ -550,7 +556,12 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			}
 		}
 		if *apply {
-			return m.ApplyInstall(value.ID, selected, *acceptHigh, *rootID)
+			if *approveRisk {
+				if _, err := m.ApproveGroupRisk(value.ID, ""); err != nil {
+					return nil, err
+				}
+			}
+			return m.ApplyGroupInstall(value.ID, selected, *acceptHigh || *approveRisk, *rootID)
 		}
 		preview = value
 	} else {
@@ -567,7 +578,12 @@ func install(ctx context.Context, m *manager.Manager, args []string) (any, error
 			}
 		}
 		if *apply {
-			return m.ApplyInstall(value.ID, selected, *acceptHigh, *rootID)
+			if *approveRisk {
+				if _, err := m.ApproveGroupRisk(value.ID, ""); err != nil {
+					return nil, err
+				}
+			}
+			return m.ApplyGroupInstall(value.ID, selected, *acceptHigh || *approveRisk, *rootID)
 		}
 		preview = value
 	}

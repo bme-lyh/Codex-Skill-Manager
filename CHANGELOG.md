@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.14.0
+
+### English
+
+- Made a GitHub repository the unit of installation, update, security review,
+  and management. Every valid Skill in a source group is handled together;
+  child results remain available for diagnostics and recovery.
+- Added persisted source-group operations, bilingual source analysis and
+  security reports, repository-wide trust policies, and reusable group APIs.
+- Added one-click human approval for every risk level while retaining immutable
+  commit, path, hash, snapshot, and recovery checks.
+- Continued independent processing after an internal Skill failure and return
+  `completed`, `partial`, or `failed` group transactions with recovery data.
+- Updated the UI, CLI contracts, screenshots, Handoff, and release metadata for
+  version 0.14.0.
+
+### 中文
+
+- 将 GitHub 仓库作为安装、更新、安全检查和管理的分组单位；组内所有有效
+  Skills 一起处理，单个 Skill 仅保留为诊断和恢复详情。
+- 增加持久化分组事务、中英文来源分析与安全报告、仓库级信任策略和可复用
+  的分组接口。
+- 所有风险级别都支持人工一键通过，但不可绕过 Commit、路径、摘要、快照和
+  恢复校验。
+- 分组内部某个 Skill 失败时继续处理其他成员，并返回 completed、partial 或
+  failed 以及完整恢复信息。
+
 ## 0.13.0
 
 ### English

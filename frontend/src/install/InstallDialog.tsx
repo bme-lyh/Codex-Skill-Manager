@@ -43,7 +43,8 @@ import type {
   RiskCluster,
   ScanReport,
   Severity,
-  Transaction
+  Transaction,
+  Group
 } from "../types";
 import {
   assessmentAllowsSelectedTargets,
@@ -64,6 +65,8 @@ import { UnifiedSourceStep } from "./components/UnifiedSourceStep";
 import type { SourceMethod } from "./components/UnifiedSourceStep";
 import { RootSelector } from "../shell/RootSelector";
 import type { RootContract } from "../roots";
+import { allCandidateNames, candidateGroupName, groupCandidates, groupLocalizedName, normalizeGroupSelection } from "../grouping";
+import type { CandidateGroup } from "../grouping";
 import type { InstallWorkflowStage } from "./components/WorkflowStepper";
 import "./install.css";
 
@@ -127,6 +130,8 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
   const [confirmationSelectionKey, setConfirmationSelectionKey] = useState("");
   const [executionStarted, setExecutionStarted] = useState(false);
   const [standardResult, setStandardResult] = useState<Transaction | null>(null);
+  const [groupRiskApproved, setGroupRiskApproved] = useState(false);
+  const [sourceTrusted, setSourceTrusted] = useState(false);
   const [busy, setBusy] = useState<BusyTask>("restore");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [retryTask, setRetryTask] = useState<RetryTask>("");
@@ -156,6 +161,7 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
   const scan = preview?.scan ?? plan?.scan;
   const activeClusters = scan?.clusters?.filter(cluster => !cluster.ignored) ?? [];
   const hasBlockingWarnings = activeClusters.some(cluster => cluster.severity === "critical" || cluster.severity === "high");
+  const riskApproved = groupRiskApproved || sourceTrusted;
   const assessmentAllowsInstall = useMemo(
     () => assessmentAllowsSelectedTargets(assessment, selectedSkills),
     [assessment, selectedSkills]
@@ -199,7 +205,7 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
       retryTask === "rollback" ? rollbackRetryReady :
         retryTask === "codex" ? !!preview || !!projectScan :
           retryTask === "source" ? !!source.trim() :
-            retryTask === "standard" ? !!selectedSkills.length && !hasBlockingWarnings && assessmentAllowsInstall :
+            retryTask === "standard" ? !!selectedSkills.length && (!hasBlockingWarnings || riskApproved) && assessmentAllowsInstall :
               true
   );
 
@@ -595,6 +601,8 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     executionStartedAtRef.current = 0;
     setExecutionStarted(false);
     setStandardResult(null);
+    setGroupRiskApproved(false);
+    setSourceTrusted(false);
     setSelectedSkills([]);
     setSelectedPermissions([]);
     setProjectRoot("");
@@ -787,6 +795,21 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
       setPreview(analyzed);
       if (analyzed.targetRootId) setRootId(analyzed.targetRootId);
       setSelectedSkills(analyzed.skills.map(skill => skill.name));
+      setSourceTrusted(false);
+      if (analyzed.repository.provider === "github" && analyzed.repository.fullName) {
+        try {
+          const policy = await api.sourceTrust(analyzed.repository.fullName);
+          setSourceTrusted(policy.trusted === true);
+        } catch {
+          // Trust is optional; the backend remains the authority for approval.
+        }
+      }
+      try {
+        await api.getOrCreateSourceGroupAnalysis(analyzed.id);
+      } catch {
+        // Older desktop backends do not expose the reusable group envelope;
+        // the immutable preview remains the source of truth for this run.
+      }
       setFeedback({ tone: "info", title: t("正在执行必选检查", "Running required checks"),
         message: t("正在确认项目类型、覆盖范围、安装目标和恢复能力。", "Confirming project type, coverage, install targets, and recovery.") });
       const assessed = await api.assessSource(analyzed.id);
@@ -850,12 +873,12 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     setFeedback({
       tone: "info",
       title: t("正在安装 Skills", "Installing Skills"),
-      message: t("正在写入选中的 Skills，并记录备份、来源和操作日志。", "Writing selected Skills and recording backups, provenance, and the operation journal.")
+      message: t("正在写入整个来源分组，并记录备份、来源和操作日志。", "Writing the complete source group and recording backups, provenance, and the operation journal.")
     });
     setRetryTask("");
     try {
 		const transaction = await api.apply(preview.id, selectedSkills,
-			(preview.scan.clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored),
+			riskApproved || (preview.scan.clusters ?? []).some(cluster => (cluster.severity === "high" || cluster.severity === "critical") && cluster.ignored),
 			preview.targetRootId || rootId);
       setStandardResult(transaction);
       if (!await refreshWithinDialog()) return;
@@ -863,8 +886,8 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
         tone: "success",
         title: t("安装完成", "Installation completed"),
         message: t(
-          `已安装 ${selectedSkills.length} 个 Skills，可在“历史与回滚”中查看记录。`,
-          `Installed ${selectedSkills.length} Skills. The record is available in History & Rollback.`
+          `已安装整个来源分组（${selectedSkills.length} 个 Skills），可在“历史与回滚”中查看记录。`,
+          `Installed the complete source group (${selectedSkills.length} Skills). The record is available in History & Rollback.`
         )
       });
     } catch (error) {
@@ -901,14 +924,14 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     };
   };
 
-  const ignoreClusters = async (clusters: RiskCluster[]) => {
+  /* const ignoreClusters = async (clusters: RiskCluster[]) => {
     if (!clusters.length) return;
 		if (clusters.some(cluster => cluster.severity === "critical")) {
 			setFeedback({
 				tone: "error",
-				title: t("严重风险不可忽略", "Critical risk cannot be ignored"),
-				message: t("Critical 属于强制安全底线。请更换来源或修复风险内容后重新检查。",
-					"Critical findings are a mandatory safety boundary. Fix or replace the source, then reassess."),
+				title: t("请先通过来源分组风险审核", "Approve the source-group risks first"),
+				message: t("请在来源分组行一键通过风险，或修复来源后重新检查。",
+					"Use the source-group one-click approval, or fix the source and reassess."),
 				retryable: false
 			});
 			return;
@@ -962,6 +985,29 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     } finally {
       setBusy("");
     }
+  };
+
+  */
+
+  const ignoreClusters = async (clusters: RiskCluster[]) => {
+    if (!clusters.length) return;
+    setBusy("risk");
+    setFeedback({ tone: "warning", title: t("正在记录人工决定", "Recording manual decision"), message: t("正在处理当前分组的风险。", "Handling risks for this source group.") });
+    try {
+      const blocking = clusters.some(cluster => cluster.severity === "high" || cluster.severity === "critical");
+      if (blocking && preview) {
+        await api.approveGroupRisk(preview.id, "");
+        setGroupRiskApproved(true);
+      }
+      const eligible = clusters.filter(cluster => cluster.severity !== "high" && cluster.severity !== "critical");
+      if (eligible.length) await api.setRiskClustersIgnored(eligible, true, "");
+      const reason = t("人工一键通过", "Approved by one-click human review");
+      setPreview(current => current ? { ...current, scan: updateIgnoredClusters(current.scan, clusters, reason) } : current);
+      setPlan(current => current?.scan ? { ...current, scan: updateIgnoredClusters(current.scan, clusters, reason) } : current);
+      setFeedback({ tone: "success", title: t("风险已通过", "Risks approved"), message: t("当前来源分组已记录人工决定，可以继续整组安装。", "The source group is approved and ready for a complete-group install.") });
+    } catch (error) {
+      setFeedback(issueFrom(error, t));
+    } finally { setBusy(""); }
   };
 
   const executeAssisted = async () => {
@@ -1025,12 +1071,12 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
         ? confirmationId
         : "";
       if (!activeConfirmation) {
-        const activeRisk = (scan?.clusters ?? []).filter(cluster => !cluster.ignored &&
+        const activeRisk = riskApproved ? [] : (scan?.clusters ?? []).filter(cluster => !cluster.ignored &&
           (cluster.severity === "high" || cluster.severity === "critical"));
         if (activeRisk.some(cluster => cluster.severity === "critical")) {
           setFeedback({
             tone: "error",
-            title: t("Critical 椋庨櫓涓嶅彲璺宠繃", "Critical risk cannot be bypassed"),
+            title: t("Critical 风险尚未通过分组审核", "Critical risk still needs group approval"),
             message: t("璇峰厛淇鎴栨崲鐢ㄦ潵婧愶紝鍐嶉噸鏂板畨鍏ㄦ鏌ャ€?",
               "Fix or replace the source, then rerun the safety checks."),
             retryable: false
@@ -1038,11 +1084,11 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
           setBusy("");
           return;
         }
-        const acceptsHighRisk = activeRisk.some(cluster => cluster.severity === "high") &&
+        const acceptsHighRisk = riskApproved || (activeRisk.some(cluster => cluster.severity === "high") &&
           window.confirm(t(
             "Codex 审核中仍有 High 风险。确认你已阅读并接受这些风险？",
             "The Codex review still has High-risk findings. Confirm that you read and accept them?"
-          ));
+          )));
         if (activeRisk.some(cluster => cluster.severity === "high") && !acceptsHighRisk) {
           setBusy("");
           return;
@@ -1488,7 +1534,7 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
             <Sparkles size={16} />{t("运行增强项目扫描", "Run enhanced project scan")}
           </button>
         </SecondaryActions>
-        <button type="button" className="primary" disabled={busy !== "" || !selectedSkills.length || hasBlockingWarnings || !assessmentAllowsInstall}
+        <button type="button" className="primary" disabled={busy !== "" || !selectedSkills.length || (hasBlockingWarnings && !riskApproved) || !assessmentAllowsInstall}
           onClick={() => void installStandard()}>
           {busy === "standard" ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
           {busy === "standard" ? t("正在安装…", "Installing…") : t(`安装选中的 ${selectedSkills.length} 个`, `Install ${selectedSkills.length} selected`)}
@@ -1570,7 +1616,7 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
       </SecondaryActions>
       <button type="button" className="primary" disabled={busy !== "" || !permissionsReady ||
         !!permissionDependencyIssue || !rootReady ||
-		(candidates.length > 0 && !selectedSkills.length) || hasBlockingWarnings || manualOnly || !assessmentAllowsInstall}
+		(candidates.length > 0 && !selectedSkills.length) || (hasBlockingWarnings && !riskApproved) || manualOnly || !assessmentAllowsInstall}
         onClick={() => void executeAssisted()}>
         <ChevronRight size={17} />{manualOnly
           ? t("没有可自动执行的步骤", "No automatic steps are available")
@@ -1610,7 +1656,10 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
         <WorkflowStepper current={currentWorkflowStage(preview, assessment, projectScan, plan, standardResult, result, displayProgress)} />
         {renderBody()}
       </div>
-      <div className="modal-actions install-dialog-actions">{renderActions()}</div>
+      <div className="modal-actions install-dialog-actions">
+        <InstallRiskFooterAction report={scan} busy={busy === "risk"} onIgnore={ignoreClusters} />
+        <div className="install-footer-actions">{renderActions()}</div>
+      </div>
     </div>
   </div>;
 }
@@ -1679,7 +1728,8 @@ function StandardReview({ preview, candidates, selected, setSelected, scan, risk
   return <div className="install-review">
     <RepositorySummary preview={preview} />
     {roots.length > 0 && <RootSelector roots={roots} value={rootId} onChange={setRootId} disabled={!!preview} />}
-    <SkillSelection candidates={candidates} selected={selected} setSelected={setSelected} disabled={completed} />
+    <GroupSkillSelection candidates={candidates} selected={selected} setSelected={setSelected} disabled={completed}
+      sourceGroups={preview?.sourceGroups} fallbackGroupName={preview?.sourceGroupName} />
     {scan && <CompactRiskReview report={scan} busy={riskBusy} onIgnore={onIgnore} />}
   </div>;
 }
@@ -1800,8 +1850,8 @@ function AssistedPlanView({ plan, candidates, selectedSkills, setSelectedSkills,
       </div>
     </div>}
 
-    {!!candidates.length && <SkillSelection candidates={candidates} selected={selectedSkills}
-      setSelected={setSelectedSkills} />}
+    {!!candidates.length && <GroupSkillSelection candidates={candidates} selected={selectedSkills}
+      setSelected={setSelectedSkills} sourceGroups={plan.sourceGroups} fallbackGroupName={plan.sourceGroupName} />}
 
     <PlanSection title={t("环境要求", "Requirements")} icon={<TerminalSquare size={19} />}
       subtitle={t("执行前需要满足的工具和环境", "Tools and environment needed before execution")}>
@@ -1981,6 +2031,95 @@ function SkillSelection({ candidates, selected, setSelected, disabled = false }:
   </section>;
 }
 
+/* function GroupSkillSelection({ candidates, selected, setSelected, disabled = false, sourceGroups, fallbackGroupName }: {
+  candidates: Candidate[];
+  selected: string[];
+  setSelected: (value: string[]) => void;
+  disabled?: boolean;
+  sourceGroups?: Group[];
+  fallbackGroupName?: string;
+}) {
+  const { t, locale } = useI18n();
+  const groups = useMemo(() => groupCandidates(candidates, sourceGroups, fallbackGroupName || t("鏉ユ簮鍒嗙粍", "Source group")),
+    [candidates, fallbackGroupName, sourceGroups, t]);
+  const selectedComplete = normalizeGroupSelection(selected, groups);
+  const selectedGroups = groups.filter(group => group.candidates.some(candidate => selectedComplete.includes(candidate.name)));
+  const allSelected = groups.length > 0 && selectedGroups.length === groups.length;
+  useEffect(() => {
+    if (selectedComplete.length !== selected.length || selectedComplete.some((name, index) => name !== selected[index])) {
+      setSelected(selectedComplete);
+    }
+  }, [selected, selectedComplete, setSelected]);
+  const invert = () => {
+    const selectedIDs = new Set(selectedGroups.map(group => group.id));
+    setSelected(groups.filter(group => !selectedIDs.has(group.id)).flatMap(group => group.candidates.map(candidate => candidate.name)));
+  };
+  const toggleGroup = (group: CandidateGroup) => {
+    const selectedIDs = new Set(selectedGroups.map(item => item.id));
+    if (selectedIDs.has(group.id)) selectedIDs.delete(group.id); else selectedIDs.add(group.id);
+    setSelected(groups.filter(item => selectedIDs.has(item.id)).flatMap(item => item.candidates.map(candidate => candidate.name)));
+  };
+  return <section className="skill-selection install-group-selection">
+    <div className="section-heading"><div><h3>{t("鎸夋潵婧愬垎缁勯€夋嫨", "Choose source groups")}</h3>
+      <p>{t(`${groups.length} 涓潵婧愬垎缁勩€?${selectedGroups.length} 涓垎缁勶紙${selectedComplete.length} 涓?Skill锛?,
+        `${groups.length} source groups · ${selectedGroups.length} selected (${selectedComplete.length} Skills)`)}</p></div>
+      <div className="selection-tools">
+        <button type="button" disabled={disabled || allSelected} onClick={() => setSelected(allCandidateNames(groups))}>{t("鍏ㄩ€夊垎缁?, "Select all groups")}</button>
+        <button type="button" disabled={disabled} onClick={invert}>{t("鍙嶉€夊垎缁?, "Invert groups")}</button>
+        <button type="button" disabled={disabled || !selectedGroups.length} onClick={() => setSelected([])}>{t("娓呯┖", "Clear")}</button>
+      </div>
+    </div>
+    <div className="install-group-list">{groups.map(group => {
+      const selectedGroup = selectedGroups.some(item => item.id === group.id);
+      const groupName = groupLocalizedName(group.source, locale, group.name || t("鏉ユ簮鍒嗙粍", "Source group"));
+      return <article key={group.id} className={`install-group-row ${selectedGroup ? "selected" : ""}`}>
+        <label className="install-group-toggle">
+          <input type="checkbox" disabled={disabled} checked={selectedGroup} onChange={() => toggleGroup(group)} />
+          <span><strong>{groupName}</strong><small>{t(`${group.candidates.length} 涓?Skill 灏嗕綔涓轰竴涓搷浣滃崟鍏?, `${group.candidates.length} Skills will be handled as one operation`)}</small></span>
+        </label>
+        <details className="install-group-details">
+          <summary>{t("鏌ョ湅缁勫唴 Skills锛堜笉鍙垎锛?, "View group Skills (cannot be split)")}</summary>
+          <div>{group.candidates.map(candidate => <div key={candidate.name}>
+            <strong>{candidate.name}</strong><small>{candidate.description || t("鏆傛棤璇存槑", "No description")}</small>
+            {candidate.sourcePath && <code>{candidate.sourcePath}</code>}
+          </div>)}</div>
+        </details>
+      </article>;
+    })}</div>
+  </section>;
+}
+
+function InstallRiskFooterAction({ report, busy, onIgnore }: {
+  report?: ScanReport;
+  busy: boolean;
+  onIgnore: (clusters: RiskCluster[]) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  if (!report) return null;
+  const active = (report.clusters ?? []).filter(cluster => !cluster.ignored);
+  if (!active.length) return <span className="install-risk-footer-action clean"><ShieldCheck size={15} />{t("风险已处理", "Risks reviewed")}</span>;
+  const critical = active.some(cluster => cluster.severity === "critical");
+  const high = active.some(cluster => cluster.severity === "high");
+  const eligible = active.filter(cluster => cluster.severity !== "high" && cluster.severity !== "critical");
+  const reveal = () => {
+    const details = document.querySelector<HTMLDetailsElement>(".install-dialog .risk-details");
+    if (details) {
+      details.open = true;
+      details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  };
+  if (critical || high) {
+    return <button type="button" className="ghost install-risk-footer-action" onClick={reveal}>
+      <CircleAlert size={15} />{critical ? t("查看 Critical 风险", "Review Critical risk") : t("查看 High 风险", "Review High risk")}
+    </button>;
+  }
+  return <button type="button" className="ghost install-risk-footer-action" disabled={busy || !eligible.length}
+    onClick={() => void onIgnore(eligible)}>
+    {busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}
+    {t(`一键处理 ${eligible.length} 个风险`, `Handle ${eligible.length} eligible risks`)}
+  </button>;
+}
+
 function CompactRiskReview({ report, busy, onIgnore }: {
   report: ScanReport;
   busy: boolean;
@@ -2022,6 +2161,70 @@ function CompactRiskReview({ report, busy, onIgnore }: {
         </article>)}
       </section>)}</div>
     </details>}
+  </section>;
+}
+
+*/
+
+function GroupSkillSelection({ candidates, selected, setSelected, disabled = false, sourceGroups, fallbackGroupName }: {
+  candidates: Candidate[];
+  selected: string[];
+  setSelected: (value: string[]) => void;
+  disabled?: boolean;
+  sourceGroups?: Group[];
+  fallbackGroupName?: string;
+}) {
+  const { t, locale } = useI18n();
+  const groups = useMemo(() => groupCandidates(candidates, sourceGroups, fallbackGroupName || t("来源分组", "Source group")), [candidates, fallbackGroupName, sourceGroups, t]);
+  const allNames = allCandidateNames(groups);
+  const selectedComplete = normalizeGroupSelection(selected, groups);
+  const allSelected = selectedComplete.length === allNames.length && allNames.length > 0;
+  useEffect(() => {
+    if (selectedComplete.length !== selected.length || selectedComplete.some((name, index) => name !== selected[index])) setSelected(selectedComplete);
+  }, [selected, selectedComplete, setSelected]);
+  return <section className="skill-selection install-group-selection">
+    <div className="section-heading"><div><h3>{t("来源分组", "Source groups")}</h3><p>{t("安装和更新始终处理完整分组。", "Install and update always handle a complete source group.")}</p></div>
+      {!allSelected && <button type="button" className="primary compact" disabled={disabled} onClick={() => setSelected(allNames)}>{t("选择全部分组", "Select all groups")}</button>}
+    </div>
+    <div className="install-group-list">{groups.map(group => {
+      const groupNames = group.candidates.map(candidate => candidate.name);
+      const selectedGroup = groupNames.every(name => selectedComplete.includes(name));
+      const groupName = groupLocalizedName(group.source, locale, group.name || t("来源分组", "Source group"));
+      return <article key={group.id} className={`install-group-row ${selectedGroup ? "selected" : ""}`}>
+        <div className="install-group-toggle"><span><strong>{groupName}</strong><small>{t(group.candidates.length + " 个 Skills 将作为一个事务处理", group.candidates.length + " Skills will be handled as one operation")}</small></span><em>{selectedGroup ? t("整组已选", "Whole group selected") : t("未选择", "Not selected")}</em></div>
+        <details className="install-group-details"><summary>{t("查看组内 Skills（不可拆分）", "View group Skills (cannot be split)")}</summary><div>{group.candidates.map(candidate => <div key={candidate.name}><strong>{candidate.name}</strong><small>{candidate.description || t("暂无说明", "No description")}</small>{candidate.sourcePath && <code>{candidate.sourcePath}</code>}</div>)}</div></details>
+      </article>;
+    })}</div>
+  </section>;
+}
+
+function InstallRiskFooterAction({ report, busy, onIgnore }: {
+  report?: ScanReport;
+  busy: boolean;
+  onIgnore: (clusters: RiskCluster[]) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  if (!report) return null;
+  const active = (report.clusters ?? []).filter(cluster => !cluster.ignored);
+  if (!active.length) return <span className="install-risk-footer-action clean"><ShieldCheck size={15} />{t("风险已处理", "Risks reviewed")}</span>;
+  return <button type="button" className="ghost install-risk-footer-action" disabled={busy} onClick={() => void onIgnore(active)}>
+    {busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}
+    {t("一键通过风险", "Approve risks")}
+  </button>;
+}
+
+function CompactRiskReview({ report, busy, onIgnore }: {
+  report: ScanReport;
+  busy: boolean;
+  onIgnore: (clusters: RiskCluster[]) => Promise<void>;
+}) {
+  const { t, locale } = useI18n();
+  const active = [...(report.clusters ?? [])].filter(cluster => !cluster.ignored).sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
+  const ignored = (report.clusters ?? []).filter(cluster => cluster.ignored);
+  const grouped = severityOrder.map(severity => ({ severity, clusters: active.filter(cluster => cluster.severity === severity) })).filter(group => group.clusters.length);
+  return <section className={`compact-risk ${active.length ? "has-warnings" : "clean"}`}>
+    <div className="compact-risk-head">{active.length ? <CircleAlert size={21} /> : <ShieldCheck size={21} />}<div><h3>{active.length ? t(active.length + " 个警告组待处理", active.length + " warning groups need review") : t("没有待处理警告", "No open warnings")}</h3><p>{t("本地规则扫描了 " + report.filesScanned + " 个文件；" + ignored.length + " 个警告组已忽略。", "Local rules scanned " + report.filesScanned + " files; " + ignored.length + " warning groups are ignored.")}</p></div>{active.length > 0 && <button type="button" disabled={busy} onClick={() => void onIgnore(active)}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{t("一键通过", "Approve all")}</button>}</div>
+    {grouped.length > 0 && <details className="risk-details"><summary>{t("查看警告详情", "View warning details")}</summary><div>{grouped.map(group => <section key={group.severity}><h4><span className={`risk-dot ${group.severity}`} />{severityLabel(group.severity, locale)}<em>{group.clusters.length}</em></h4>{group.clusters.map(cluster => <article key={cluster.id}><div><strong>{cluster.title}</strong><span>{cluster.ruleId} · {cluster.affectedFiles.length} {t("个文件", "files")}</span></div><button type="button" disabled={busy} onClick={() => void onIgnore([cluster])}>{t("通过", "Approve")}</button></article>)}</section>)}</div></details>}
   </section>;
 }
 

@@ -113,6 +113,35 @@ with `status`, `checkedAt`, `remoteCommit`, `currentCommits`,
 `lastUpdateCheck` is the newest check
 timestamp and `updateCount` counts source groups with available updates.
 
+Source-group operations in the 0.14 contract expose additive `sourceGroupId`
+and `sourceGroupName` fields on install previews. `ApplyGroupInstall` and
+`ApplyGroupUpdate` require the complete set of valid preview Skills; a partial
+set is rejected before a transaction is created. Their parent transaction
+(`type: "group-install"` or `"group-update"`) carries `groupId`, `groupName`,
+`operationId`, and per-Skill `itemResults`; a reusable `GroupOperation` record
+stores the same authoritative status plus child transaction, backup, and
+recovery diagnostics. Existing selective `ApplyInstall` remains available as
+a compatibility API.
+
+`SourceTrustPolicy` is repository-wide and keyed by canonical lower-case
+GitHub `owner/repository`. Set/revoke actions return ordinary transactions and
+append `SourceTrustAudit` records. Trust is advisory only: immutable commits,
+staged hashes, path containment, scanner findings, and technical recovery
+checks remain mandatory. A critical group finding may be approved with an
+empty reason after an explicit persisted decision; the approval does not
+authorize any additional command or bypass those integrity checks.
+
+Reusable source analysis and security records are represented by
+`SourceAnalysis` and `GroupSecurityReport`; summaries use `LocalizedText`
+(`en`/`zh`) with locale fallback. Detailed scanner `ScanReport` and legacy
+install/update objects remain unchanged and continue to be accepted.
+
+The group facade exposes `GetOrCreateSourceGroupAnalysis`,
+`RunGroupSecurityCheck`, `ApproveGroupSecurity`, `ApproveGroupRisk`,
+`PrepareGroupUpdate`, `ApplyGroupInstall`, and `ApplyGroupUpdate`. Group
+approval is persisted against the report/plan and repository group; it does
+not authorize arbitrary commands.
+
 `codex status` returns `available`, `authenticated`, `compatible`, `path`,
 `version`, `authStatus`, `checkedAt`, optional `missingCapabilities`, and an
 optional user-readable `error`. After successful authentication, `models`

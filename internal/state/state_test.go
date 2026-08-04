@@ -221,6 +221,68 @@ func TestSaveSkillSecurityStatesRejectsIncompleteState(t *testing.T) {
 	}
 }
 
+func TestSourceTrustPolicyAndAuditAreRepositoryWide(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC().Truncate(time.Second)
+	policy := model.SourceTrustPolicy{Repository: "Owner/Repo", Provider: "github", Trusted: true, Reason: "reviewed", UpdatedAt: now, SetAt: now}
+	audit := model.SourceTrustAudit{Action: "set", Reason: "reviewed", TransactionID: "tx-trust", CreatedAt: now}
+	if err := store.SetSourceTrust(policy, audit); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.SourceTrustPolicy("https://github.com/owner/repo.git")
+	if err != nil || !got.Trusted || got.Repository != "owner/repo" {
+		t.Fatalf("unexpected trust policy: %#v, %v", got, err)
+	}
+	entries, err := store.SourceTrustAudit("OWNER/REPO", 10)
+	if err != nil || len(entries) != 1 || entries[0].TransactionID != "tx-trust" {
+		t.Fatalf("unexpected trust audit: %#v, %v", entries, err)
+	}
+	revoked := policy
+	revoked.Trusted = false
+	revoked.RevokedAt = &now
+	revoked.UpdatedAt = now.Add(time.Minute)
+	if err := store.SetSourceTrust(revoked, model.SourceTrustAudit{Action: "revoke"}); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := store.SourceTrustPolicy("owner/repo"); err != nil || active.Trusted {
+		t.Fatalf("trust revoke was not persisted: %#v, %v", active, err)
+	}
+}
+
+func TestReusableGroupRecordsRoundTrip(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	security := model.GroupSecurityReport{ID: "group-security-1", GroupID: "github:owner/repo", Summary: model.LocalizedText{En: "ok", Zh: "正常"}, CreatedAt: now}
+	if err := store.SaveGroupSecurityReport(security); err != nil {
+		t.Fatal(err)
+	}
+	analysis := model.SourceAnalysis{ID: "source-analysis-1", GroupID: security.GroupID, Security: security, CreatedAt: now}
+	if err := store.SaveSourceAnalysis(analysis); err != nil {
+		t.Fatal(err)
+	}
+	op := model.GroupOperation{ID: "group-op-1", GroupID: security.GroupID, Status: "completed", StartedAt: now, TargetSkills: []string{"a"}, ValidSkills: []string{"a"}}
+	if err := store.SaveGroupOperation(op); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.GroupSecurityReport(security.ID); err != nil || got.Summary.Text("en") != "ok" {
+		t.Fatalf("security report round trip failed: %#v, %v", got, err)
+	}
+	if got, err := store.SourceAnalysis(analysis.ID); err != nil || got.Security.ID != security.ID {
+		t.Fatalf("analysis round trip failed: %#v, %v", got, err)
+	}
+	if got, err := store.GroupOperation(op.ID); err != nil || got.Status != op.Status {
+		t.Fatalf("operation round trip failed: %#v, %v", got, err)
+	}
+}
+
 func TestRecoverableAssistedTransactionsAreNotLimitedByRecentHistory(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

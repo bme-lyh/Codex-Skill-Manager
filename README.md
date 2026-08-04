@@ -6,14 +6,15 @@ Codex Skill Manager is a Windows app for understanding, checking, installing,
 updating, organizing, and recovering Codex Skills. Changes are explicit,
 logged, and reversible.
 
-[Download v0.13.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.13.0) ·
+[Download v0.14.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.14.0)
+
 [Get started](docs/en/getting-started.md) ·
 [User guide](docs/en/gui-guide.md) ·
 [Security](SECURITY_EN.md) ·
 [中文](README_ZH.md)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb)
-![Version](https://img.shields.io/badge/version-0.13.0-187a69)
+![Version](https://img.shields.io/badge/version-0.14.0-187a69)
 ![Go](https://img.shields.io/badge/Go-1.26-00add8)
 ![Wails](https://img.shields.io/badge/Wails-v2-cc1f45)
 ![License](https://img.shields.io/badge/license-MIT-334155)
@@ -34,7 +35,7 @@ The desktop shell has five top-level areas:
 - **Home** summarizes managed and unmanaged Skills, system content, open
   reports, groups, and recent activity.
 - **Assets** has the **Skills** and **Groups** tabs.
-- **Security** scans selected Skills locally and shows findings and optional
+- **Security** scans selected source groups locally and shows findings and optional
   semantic review.
 - **Activity** has **Updates**, **History & Rollback**, **Quarantine**, and
   **Reports** tabs.
@@ -57,11 +58,11 @@ The **Add project** dialog uses one flow for GitHub links and local directories:
    classifies the project, discovers Codex Skills, and runs the required local
    layered checks against the actual targets. Checks are grouped as required,
    conditional, or optional.
-3. **Check & confirm** shows the evidence, selected targets, risks, permissions,
+3. **Check & confirm** shows the evidence, the complete source group, risks, permissions,
    and recovery path before any write. The assessment ends with one of four
    conclusions: **Ready to install**, **Review before installing**,
    **Installation blocked**, or **Assessment incomplete**.
-4. **Install & result** writes only approved targets, records progress and a
+4. **Install & result** writes the complete approved source group, records progress and a
    transaction, refreshes the latest Skills and operation status, and shows the
    recovery state. Completed changes can be rolled back from **History &
    Rollback**; removals can be restored from **Quarantine**.
@@ -81,12 +82,19 @@ no Codex Skill is not copied to either global folder.
 Unsupported work remains manual, and any MCP project directory must be chosen
 explicitly.
 
+Installation and updates use source groups. A GitHub repository is one group;
+all valid Skills discovered in that repository are installed or updated as one
+transaction. The interface shows Skill details for diagnosis and recovery, but
+management status belongs to the group. A trusted repository can skip the
+foreground security approval; otherwise the group report can be approved with
+one click before the permission and apply steps.
+
 ## Features
 
 | Area | What it does |
 |---|---|
 | Understand and check | Reads project context, discovers Skills, scans exact targets, and exposes layered evidence before installation |
-| Install and update | Applies selected Skills or reviewed plans, compares immutable source commits, and backs up replacements |
+| Install and update | Applies complete source groups, reuses group analysis and security results, compares immutable commits, and backs up replacements |
 | Organize | Manages existing Skills without rewriting their content; creates and reorders groups |
 | Recover | Uses transaction history, backups, and quarantine for reversible recovery |
 | Automate | Provides the bundled `csm` CLI and optional Codex semantic workflows with structured records |
@@ -104,26 +112,27 @@ so SmartScreen may show a warning. Download only from this repository and
 verify the archive against the included checksum file:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.13.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.14.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-Compare the result with `CodexSkillManager-0.13.0-SHA256SUMS.txt`.
+Compare the result with `CodexSkillManager-0.14.0-SHA256SUMS.txt`.
 
 ### Add the bundled Codex Skill
 
 Release archives include `agent-skill\codex-skill-manager`. To add it to the
 global Codex Skills directory, open **Add project**, choose **Local directory**,
 select the archive's `agent-skill` directory, review the four-step flow, and
-install the selected Skill. From a source checkout, use
+install the complete source group. From a source checkout, use
 `skills\codex-skill-manager` instead.
 
 ## Safety rules
 
 - Repository scripts, free-form commands, and arbitrary Codex text are never
   executed by the app.
-- High risk requires one explicit human confirmation; the app records the
-  decision without asking for a typed explanation. Critical risk remains a
-  mandatory safety boundary.
+- High, Critical, Medium, and Low findings can be approved with one explicit
+  human action for the whole source group; no typed explanation is required.
+  Technical integrity checks (immutable commits, path containment, hashes, and
+  recovery) remain mandatory.
 - Batch actions continue independent targets and report partial success with
   child transaction IDs.
 - Replacements are backed up, removals go to quarantine, and rollback refuses
@@ -158,5 +167,5 @@ The unified shell is a UI refactor. Legacy Page routes and the Wails/API
 compatibility boundary remain available for existing integrations; the visible
 workflow is documented with the current labels above.
 
-Codex Skill Manager 0.13.0 supports Windows 10/11 and is licensed under the
+Codex Skill Manager 0.14.0 supports Windows 10/11 and is licensed under the
 [MIT License](LICENSE).

@@ -407,6 +407,30 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 			}
 		}
 	}
+	for i := range d.SourceGroups {
+		if strings.TrimSpace(d.SourceGroups[i].Status) == "" {
+			d.SourceGroups[i].Status = model.GroupStatusUnknown
+		}
+		status, ok := statusByGroup[model.QualifiedPackageID(d.SourceGroups[i].RootID, d.SourceGroups[i].ID)]
+		if !ok {
+			status, ok = statusByGroup[d.SourceGroups[i].ID]
+		}
+		if ok {
+			d.SourceGroups[i].Status = status.Status
+		}
+	}
+	for i := range d.Groups {
+		if strings.TrimSpace(d.Groups[i].Status) == "" && d.Groups[i].Provider != "system" {
+			d.Groups[i].Status = model.GroupStatusUnknown
+		}
+		status, ok := statusByGroup[model.QualifiedPackageID(d.Groups[i].RootID, d.Groups[i].ID)]
+		if !ok {
+			status, ok = statusByGroup[d.Groups[i].ID]
+		}
+		if ok && d.Groups[i].Provider != "system" {
+			d.Groups[i].Status = status.Status
+		}
+	}
 	for _, skill := range skills {
 		switch {
 		case skill.System:
@@ -1275,7 +1299,8 @@ func (m *Manager) prepareGitHub(ctx context.Context, rawURL, ref string, selecte
 		return model.InstallPreview{}, scanErr
 	}
 	preview := model.InstallPreview{
-		ID: id, TargetRootID: targetRoot.ID, Repository: repo, Skills: candidates, Scan: report,
+		ID: id, TargetRootID: targetRoot.ID, SourceGroupID: "github:" + strings.ToLower(repo.FullName),
+		SourceGroupName: repo.FullName, Repository: repo, Skills: candidates, Scan: report,
 		StagingPath: sourceRoot, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 	}
 	if err := sealInstallPreview(&preview); err != nil {
@@ -1347,6 +1372,7 @@ func (m *Manager) PrepareLocal(path string, targetRootID ...string) (model.Insta
 	m.recordScan(report)
 	preview := model.InstallPreview{
 		ID: id, TargetRootID: root.ID,
+		SourceGroupID: "local:" + strings.ToLower(filepath.Clean(abs)), SourceGroupName: filepath.Base(abs),
 		Repository: model.Repository{
 			Provider: "local", Name: filepath.Base(abs), FullName: "local:" + filepath.Base(abs),
 			LocalPath: abs, SourcePath: "", ResolvedRef: "local",
@@ -1762,6 +1788,21 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 	transactionID string,
 	acceptHighRisk bool,
 ) (model.Transaction, error) {
+	return m.applyInstallWithTransactionIDAndPolicy(planID, selected, transactionID, acceptHighRisk, false)
+}
+
+// applyInstallWithTransactionIDAndPolicy keeps the legacy selective install
+// path intact while allowing the strict source-group operation to use a
+// persisted human risk decision.  allowBlockingRisk never skips the technical
+// integrity checks below (plan digest, staged hashes, root containment,
+// backups, and journal checkpoints).
+func (m *Manager) applyInstallWithTransactionIDAndPolicy(
+	planID string,
+	selected []string,
+	transactionID string,
+	acceptHighRisk bool,
+	allowBlockingRisk bool,
+) (model.Transaction, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	preview, ok := m.previews[planID]
@@ -1778,7 +1819,7 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 	if err := m.verifyInstallPreviewMetadata(preview, planID); err != nil {
 		return model.Transaction{}, err
 	}
-	if _, err := m.enforceProjectAssessmentGate(preview); err != nil {
+	if _, err := m.enforceProjectAssessmentGateWithRisk(preview, allowBlockingRisk); err != nil {
 		return model.Transaction{}, err
 	}
 	ignored, err := m.store.IgnoredFindings()
@@ -1789,7 +1830,8 @@ func (m *Manager) applyInstallWithTransactionIDAndRisk(
 	if scanContainsAcceptedHighRisk(preview.Scan) && !acceptHighRisk {
 		return model.Transaction{}, errors.New("accepted High risk requires final apply confirmation")
 	}
-	if isBlockingRiskSeverity(preview.Scan.ActiveHighestSeverity) {
+	allowKnownBlockingRisk := allowBlockingRisk && (preview.Scan.ActiveHighestSeverity == model.RiskHigh || preview.Scan.ActiveHighestSeverity == model.RiskCritical)
+	if isBlockingRiskSeverity(preview.Scan.ActiveHighestSeverity) && !allowKnownBlockingRisk {
 		activeBlockingClusters := 0
 		for _, cluster := range preview.Scan.Clusters {
 			if !cluster.Ignored && isBlockingRiskSeverity(cluster.Severity) {
@@ -2656,6 +2698,9 @@ func (m *Manager) Rollback(transactionID string) (model.Transaction, error) {
 	}
 	if original.Type == "assisted-install" {
 		return m.rollbackAssistedInstall(original)
+	}
+	if original.Type == "group-install" || original.Type == "group-update" {
+		return m.rollbackSourceGroup(original)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

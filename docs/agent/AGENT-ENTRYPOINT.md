@@ -6,12 +6,13 @@ installing, updating, auditing, quarantining and restoring Codex skills.
 Agents should prefer `csm --json` and treat every mutating operation as a
 preview-and-apply workflow:
 
-1. prepare or inspect the intended change;
-2. apply it only after the user has approved the exact skills and any accepted
-   high-risk findings.
+1. prepare or inspect the intended source group;
+2. apply it only after the user has approved the complete group and any group
+   risk decision.
 
-Version 0.13.0 manages both `.codex/skills` and `.agents/skills`. Every Skill,
-group, scan, update, and transaction is identified by `rootId`; omitted install
+Version 0.14.0 manages both `.codex/skills` and `.agents/skills`. Install and
+update are source-group operations; Skill records remain child diagnostics.
+Every Skill, group, scan, update, and transaction is identified by `rootId`; omitted install
 targets default to `codex-default` only for compatibility. New integrations
 must send the root explicitly. Both `.system` directories are read-only.
 

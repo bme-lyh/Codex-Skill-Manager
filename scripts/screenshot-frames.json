@@ -50,6 +50,13 @@
       }
     },
     {
+      "file": "updates.png",
+      "label": {
+        "zh-CN": "更新 · 来源分组",
+        "en-US": "Updates · source groups"
+      }
+    },
+    {
       "file": "reports-1.png",
       "label": {
         "zh-CN": "报告列表",
