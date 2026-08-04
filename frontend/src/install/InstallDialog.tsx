@@ -65,8 +65,7 @@ import { UnifiedSourceStep } from "./components/UnifiedSourceStep";
 import type { SourceMethod } from "./components/UnifiedSourceStep";
 import { RootSelector } from "../shell/RootSelector";
 import type { RootContract } from "../roots";
-import { allCandidateNames, candidateGroupName, groupCandidates, groupLocalizedName, normalizeGroupSelection } from "../grouping";
-import type { CandidateGroup } from "../grouping";
+import { groupCandidates, groupLocalizedName } from "../grouping";
 import type { InstallWorkflowStage } from "./components/WorkflowStepper";
 import "./install.css";
 
@@ -1446,12 +1445,9 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
       return <>{assessmentPanel}<StandardReview
         preview={preview}
         candidates={candidates}
-        selected={selectedSkills}
-        setSelected={setSelectedSkills}
         scan={scan}
         riskBusy={busy === "risk"}
         onIgnore={ignoreClusters}
-        completed={!!standardResult}
         roots={roots}
         rootId={rootId}
         setRootId={setRootId}
@@ -1478,8 +1474,6 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     return <>{assessmentPanel}<AssistedPlanView
       plan={plan}
       candidates={candidates}
-      selectedSkills={selectedSkills}
-      setSelectedSkills={setSelectedSkills}
       selectedPermissions={selectedPermissions}
       setSelectedPermissions={setSelectedPermissions}
       permissionDependencyIssue={permissionDependencyIssue}
@@ -1537,7 +1531,9 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
         <button type="button" className="primary" disabled={busy !== "" || !selectedSkills.length || (hasBlockingWarnings && !riskApproved) || !assessmentAllowsInstall}
           onClick={() => void installStandard()}>
           {busy === "standard" ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
-          {busy === "standard" ? t("正在安装…", "Installing…") : t(`安装选中的 ${selectedSkills.length} 个`, `Install ${selectedSkills.length} selected`)}
+          {busy === "standard"
+            ? t("正在安装整组…", "Installing the complete group…")
+            : t(`安装整组（${selectedSkills.length} 个 Skills）`, `Install complete group (${selectedSkills.length} Skills)`)}
         </button>
       </>;
     }
@@ -1712,15 +1708,12 @@ function fallbackIncompleteAssessment(preview: InstallPreview): ProjectAssessmen
   };
 }
 
-function StandardReview({ preview, candidates, selected, setSelected, scan, riskBusy, onIgnore, completed, roots, rootId, setRootId }: {
+function StandardReview({ preview, candidates, scan, riskBusy, onIgnore, roots, rootId, setRootId }: {
   preview: InstallPreview | null;
   candidates: Candidate[];
-  selected: string[];
-  setSelected: (value: string[]) => void;
   scan?: ScanReport;
   riskBusy: boolean;
   onIgnore: (clusters: RiskCluster[]) => Promise<void>;
-  completed: boolean;
   roots: RootContract[];
   rootId: string;
   setRootId: (value: string) => void;
@@ -1728,7 +1721,7 @@ function StandardReview({ preview, candidates, selected, setSelected, scan, risk
   return <div className="install-review">
     <RepositorySummary preview={preview} />
     {roots.length > 0 && <RootSelector roots={roots} value={rootId} onChange={setRootId} disabled={!!preview} />}
-    <GroupSkillSelection candidates={candidates} selected={selected} setSelected={setSelected} disabled={completed}
+    <SourceGroupMembers candidates={candidates}
       sourceGroups={preview?.sourceGroups} fallbackGroupName={preview?.sourceGroupName} />
     {scan && <CompactRiskReview report={scan} busy={riskBusy} onIgnore={onIgnore} />}
   </div>;
@@ -1801,12 +1794,10 @@ function ProjectScanView({ scan }: { scan: CodexProjectScanResult }) {
   </div>;
 }
 
-function AssistedPlanView({ plan, candidates, selectedSkills, setSelectedSkills, selectedPermissions, setSelectedPermissions,
+function AssistedPlanView({ plan, candidates, selectedPermissions, setSelectedPermissions,
   permissionDependencyIssue, projectRoot, projectRootRequired, setProjectRoot, scan, riskBusy, onIgnore, roots, rootId, setRootId }: {
   plan: AssistedInstallPlan;
   candidates: Candidate[];
-  selectedSkills: string[];
-  setSelectedSkills: (value: string[]) => void;
   selectedPermissions: string[];
   setSelectedPermissions: (value: string[]) => void;
   permissionDependencyIssue: string;
@@ -1850,8 +1841,8 @@ function AssistedPlanView({ plan, candidates, selectedSkills, setSelectedSkills,
       </div>
     </div>}
 
-    {!!candidates.length && <GroupSkillSelection candidates={candidates} selected={selectedSkills}
-      setSelected={setSelectedSkills} sourceGroups={plan.sourceGroups} fallbackGroupName={plan.sourceGroupName} />}
+    {!!candidates.length && <SourceGroupMembers candidates={candidates}
+      sourceGroups={plan.sourceGroups} fallbackGroupName={plan.sourceGroupName} />}
 
     <PlanSection title={t("环境要求", "Requirements")} icon={<TerminalSquare size={19} />}
       subtitle={t("执行前需要满足的工具和环境", "Tools and environment needed before execution")}>
@@ -2003,196 +1994,32 @@ function RepositorySummary({ preview }: { preview: InstallPreview | null }) {
   </div>;
 }
 
-function SkillSelection({ candidates, selected, setSelected, disabled = false }: {
+function SourceGroupMembers({ candidates, sourceGroups, fallbackGroupName }: {
   candidates: Candidate[];
-  selected: string[];
-  setSelected: (value: string[]) => void;
-  disabled?: boolean;
-}) {
-  const { t } = useI18n();
-  const invert = () => setSelected(candidates.filter(skill => !selected.includes(skill.name)).map(skill => skill.name));
-  return <section className="skill-selection">
-    <div className="section-heading"><div><h3>{t("选择 Skills", "Choose Skills")}</h3>
-      <p>{t(`发现 ${candidates.length} 个，已选择 ${selected.length} 个`, `${candidates.length} found, ${selected.length} selected`)}</p></div>
-      <div className="selection-tools">
-        <button type="button" disabled={disabled} onClick={() => setSelected(candidates.map(skill => skill.name))}>{t("全选", "All")}</button>
-        <button type="button" disabled={disabled} onClick={invert}>{t("反选", "Invert")}</button>
-        <button type="button" disabled={disabled || !selected.length} onClick={() => setSelected([])}>{t("清空", "Clear")}</button>
-      </div>
-    </div>
-    <div className="install-skill-list">{candidates.map(skill => <label key={skill.name}>
-      <input type="checkbox" disabled={disabled} checked={selected.includes(skill.name)}
-        onChange={() => setSelected(selected.includes(skill.name)
-          ? selected.filter(name => name !== skill.name)
-          : [...selected, skill.name])} />
-      <span><strong>{skill.name}</strong><span>{skill.description || t("暂无说明", "No description")}</span>
-        {skill.sourcePath && <code>{skill.sourcePath}</code>}</span>
-    </label>)}</div>
-  </section>;
-}
-
-/* function GroupSkillSelection({ candidates, selected, setSelected, disabled = false, sourceGroups, fallbackGroupName }: {
-  candidates: Candidate[];
-  selected: string[];
-  setSelected: (value: string[]) => void;
-  disabled?: boolean;
   sourceGroups?: Group[];
   fallbackGroupName?: string;
 }) {
   const { t, locale } = useI18n();
-  const groups = useMemo(() => groupCandidates(candidates, sourceGroups, fallbackGroupName || t("鏉ユ簮鍒嗙粍", "Source group")),
-    [candidates, fallbackGroupName, sourceGroups, t]);
-  const selectedComplete = normalizeGroupSelection(selected, groups);
-  const selectedGroups = groups.filter(group => group.candidates.some(candidate => selectedComplete.includes(candidate.name)));
-  const allSelected = groups.length > 0 && selectedGroups.length === groups.length;
-  useEffect(() => {
-    if (selectedComplete.length !== selected.length || selectedComplete.some((name, index) => name !== selected[index])) {
-      setSelected(selectedComplete);
-    }
-  }, [selected, selectedComplete, setSelected]);
-  const invert = () => {
-    const selectedIDs = new Set(selectedGroups.map(group => group.id));
-    setSelected(groups.filter(group => !selectedIDs.has(group.id)).flatMap(group => group.candidates.map(candidate => candidate.name)));
-  };
-  const toggleGroup = (group: CandidateGroup) => {
-    const selectedIDs = new Set(selectedGroups.map(item => item.id));
-    if (selectedIDs.has(group.id)) selectedIDs.delete(group.id); else selectedIDs.add(group.id);
-    setSelected(groups.filter(item => selectedIDs.has(item.id)).flatMap(item => item.candidates.map(candidate => candidate.name)));
-  };
+  const groups = useMemo(
+    () => groupCandidates(candidates, sourceGroups, fallbackGroupName || t("来源分组", "Source group")),
+    [candidates, fallbackGroupName, sourceGroups, t]
+  );
   return <section className="skill-selection install-group-selection">
-    <div className="section-heading"><div><h3>{t("鎸夋潵婧愬垎缁勯€夋嫨", "Choose source groups")}</h3>
-      <p>{t(`${groups.length} 涓潵婧愬垎缁勩€?${selectedGroups.length} 涓垎缁勶紙${selectedComplete.length} 涓?Skill锛?,
-        `${groups.length} source groups · ${selectedGroups.length} selected (${selectedComplete.length} Skills)`)}</p></div>
-      <div className="selection-tools">
-        <button type="button" disabled={disabled || allSelected} onClick={() => setSelected(allCandidateNames(groups))}>{t("鍏ㄩ€夊垎缁?, "Select all groups")}</button>
-        <button type="button" disabled={disabled} onClick={invert}>{t("鍙嶉€夊垎缁?, "Invert groups")}</button>
-        <button type="button" disabled={disabled || !selectedGroups.length} onClick={() => setSelected([])}>{t("娓呯┖", "Clear")}</button>
-      </div>
+    <div className="section-heading"><div><h3>{t("来源分组（整组安装）", "Source group (installed as one group)")}</h3>
+      <p>{t("安装和更新始终处理完整分组，成员不可拆分。", "Install and update always handle the complete source group; members cannot be split.")}</p></div>
     </div>
     <div className="install-group-list">{groups.map(group => {
-      const selectedGroup = selectedGroups.some(item => item.id === group.id);
-      const groupName = groupLocalizedName(group.source, locale, group.name || t("鏉ユ簮鍒嗙粍", "Source group"));
-      return <article key={group.id} className={`install-group-row ${selectedGroup ? "selected" : ""}`}>
-        <label className="install-group-toggle">
-          <input type="checkbox" disabled={disabled} checked={selectedGroup} onChange={() => toggleGroup(group)} />
-          <span><strong>{groupName}</strong><small>{t(`${group.candidates.length} 涓?Skill 灏嗕綔涓轰竴涓搷浣滃崟鍏?, `${group.candidates.length} Skills will be handled as one operation`)}</small></span>
-        </label>
-        <details className="install-group-details">
-          <summary>{t("鏌ョ湅缁勫唴 Skills锛堜笉鍙垎锛?, "View group Skills (cannot be split)")}</summary>
+      const groupName = groupLocalizedName(group.source, locale, group.name || t("来源分组", "Source group"));
+      return <article key={group.id} className="install-group-row selected">
+        <div className="install-group-toggle"><span><strong>{groupName}</strong>
+          <small>{t(`${group.candidates.length} 个 Skills 将作为一个事务处理`, `${group.candidates.length} Skills will be handled as one operation`)}</small></span>
+          <em>{t("整组已选", "Whole group selected")}</em></div>
+        <details className="install-group-details"><summary>{t("查看组内 Skills（不可拆分）", "View group Skills (cannot be split)")}</summary>
           <div>{group.candidates.map(candidate => <div key={candidate.name}>
-            <strong>{candidate.name}</strong><small>{candidate.description || t("鏆傛棤璇存槑", "No description")}</small>
+            <strong>{candidate.name}</strong><small>{candidate.description || t("暂无说明", "No description")}</small>
             {candidate.sourcePath && <code>{candidate.sourcePath}</code>}
           </div>)}</div>
         </details>
-      </article>;
-    })}</div>
-  </section>;
-}
-
-function InstallRiskFooterAction({ report, busy, onIgnore }: {
-  report?: ScanReport;
-  busy: boolean;
-  onIgnore: (clusters: RiskCluster[]) => Promise<void>;
-}) {
-  const { t } = useI18n();
-  if (!report) return null;
-  const active = (report.clusters ?? []).filter(cluster => !cluster.ignored);
-  if (!active.length) return <span className="install-risk-footer-action clean"><ShieldCheck size={15} />{t("风险已处理", "Risks reviewed")}</span>;
-  const critical = active.some(cluster => cluster.severity === "critical");
-  const high = active.some(cluster => cluster.severity === "high");
-  const eligible = active.filter(cluster => cluster.severity !== "high" && cluster.severity !== "critical");
-  const reveal = () => {
-    const details = document.querySelector<HTMLDetailsElement>(".install-dialog .risk-details");
-    if (details) {
-      details.open = true;
-      details.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  };
-  if (critical || high) {
-    return <button type="button" className="ghost install-risk-footer-action" onClick={reveal}>
-      <CircleAlert size={15} />{critical ? t("查看 Critical 风险", "Review Critical risk") : t("查看 High 风险", "Review High risk")}
-    </button>;
-  }
-  return <button type="button" className="ghost install-risk-footer-action" disabled={busy || !eligible.length}
-    onClick={() => void onIgnore(eligible)}>
-    {busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}
-    {t(`一键处理 ${eligible.length} 个风险`, `Handle ${eligible.length} eligible risks`)}
-  </button>;
-}
-
-function CompactRiskReview({ report, busy, onIgnore }: {
-  report: ScanReport;
-  busy: boolean;
-  onIgnore: (clusters: RiskCluster[]) => Promise<void>;
-}) {
-  const { t, locale } = useI18n();
-  const active = [...(report.clusters ?? [])].filter(cluster => !cluster.ignored)
-    .sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
-  const ignored = (report.clusters ?? []).filter(cluster => cluster.ignored);
-	const batchDismissible = active.filter(cluster => cluster.severity !== "high" && cluster.severity !== "critical");
-  const grouped = severityOrder.map(severity => ({
-    severity,
-    clusters: active.filter(cluster => cluster.severity === severity)
-  })).filter(group => group.clusters.length);
-  return <section className={`compact-risk ${active.length ? "has-warnings" : "clean"}`}>
-    <div className="compact-risk-head">
-      {active.length ? <CircleAlert size={21} /> : <ShieldCheck size={21} />}
-      <div><h3>{active.length ? t(`${active.length} 个警告组待处理`, `${active.length} warning groups need review`) :
-        t("没有待处理警告", "No open warnings")}</h3>
-        <p>{t(`本地规则扫描了 ${report.filesScanned} 个文件；${ignored.length} 个警告组已忽略。`,
-          `Local rules scanned ${report.filesScanned} files; ${ignored.length} warning groups are ignored.`)}</p></div>
-      {batchDismissible.length > 0 && <button type="button" disabled={busy} onClick={() => void onIgnore(batchDismissible)}>
-        {busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}
-        {t(`忽略可处理项（${batchDismissible.length}）`, `Ignore eligible (${batchDismissible.length})`)}
-      </button>}
-    </div>
-    {grouped.length > 0 && <details className="risk-details">
-      <summary>{t("查看警告详情", "View warning details")}</summary>
-      <div>{grouped.map(group => <section key={group.severity}>
-        <h4><span className={`risk-dot ${group.severity}`} />{severityLabel(group.severity, locale)}
-          <em>{group.clusters.length}</em></h4>
-        {group.clusters.map(cluster => <article key={cluster.id}>
-          <div><strong>{cluster.title}</strong><span>{cluster.ruleId} · {cluster.affectedFiles.length} {t("个文件", "files")}</span></div>
-			{cluster.severity === "critical"
-				? <span className="risk-policy-label critical">{t("不可忽略", "Cannot ignore")}</span>
-				: <button type="button" disabled={busy} onClick={() => void onIgnore([cluster])}>
-					{cluster.severity === "high" ? t("审阅并接受", "Review and accept") : t("忽略", "Ignore")}
-				</button>}
-        </article>)}
-      </section>)}</div>
-    </details>}
-  </section>;
-}
-
-*/
-
-function GroupSkillSelection({ candidates, selected, setSelected, disabled = false, sourceGroups, fallbackGroupName }: {
-  candidates: Candidate[];
-  selected: string[];
-  setSelected: (value: string[]) => void;
-  disabled?: boolean;
-  sourceGroups?: Group[];
-  fallbackGroupName?: string;
-}) {
-  const { t, locale } = useI18n();
-  const groups = useMemo(() => groupCandidates(candidates, sourceGroups, fallbackGroupName || t("来源分组", "Source group")), [candidates, fallbackGroupName, sourceGroups, t]);
-  const allNames = allCandidateNames(groups);
-  const selectedComplete = normalizeGroupSelection(selected, groups);
-  const allSelected = selectedComplete.length === allNames.length && allNames.length > 0;
-  useEffect(() => {
-    if (selectedComplete.length !== selected.length || selectedComplete.some((name, index) => name !== selected[index])) setSelected(selectedComplete);
-  }, [selected, selectedComplete, setSelected]);
-  return <section className="skill-selection install-group-selection">
-    <div className="section-heading"><div><h3>{t("来源分组", "Source groups")}</h3><p>{t("安装和更新始终处理完整分组。", "Install and update always handle a complete source group.")}</p></div>
-      {!allSelected && <button type="button" className="primary compact" disabled={disabled} onClick={() => setSelected(allNames)}>{t("选择全部分组", "Select all groups")}</button>}
-    </div>
-    <div className="install-group-list">{groups.map(group => {
-      const groupNames = group.candidates.map(candidate => candidate.name);
-      const selectedGroup = groupNames.every(name => selectedComplete.includes(name));
-      const groupName = groupLocalizedName(group.source, locale, group.name || t("来源分组", "Source group"));
-      return <article key={group.id} className={`install-group-row ${selectedGroup ? "selected" : ""}`}>
-        <div className="install-group-toggle"><span><strong>{groupName}</strong><small>{t(group.candidates.length + " 个 Skills 将作为一个事务处理", group.candidates.length + " Skills will be handled as one operation")}</small></span><em>{selectedGroup ? t("整组已选", "Whole group selected") : t("未选择", "Not selected")}</em></div>
-        <details className="install-group-details"><summary>{t("查看组内 Skills（不可拆分）", "View group Skills (cannot be split)")}</summary><div>{group.candidates.map(candidate => <div key={candidate.name}><strong>{candidate.name}</strong><small>{candidate.description || t("暂无说明", "No description")}</small>{candidate.sourcePath && <code>{candidate.sourcePath}</code>}</div>)}</div></details>
       </article>;
     })}</div>
   </section>;

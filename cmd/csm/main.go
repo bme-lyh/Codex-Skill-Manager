@@ -265,7 +265,7 @@ func manage(m *manager.Manager, args []string) (any, error) {
 
 func group(m *manager.Manager, args []string) (any, error) {
 	if len(args) == 0 {
-		return nil, usagef("group requires create, rename, reorder, or move")
+		return nil, usagef("group requires create, rename, reorder, move, metadata, or operation")
 	}
 	switch args[0] {
 	case "create":
@@ -316,6 +316,27 @@ func group(m *manager.Manager, args []string) (any, error) {
 			return nil, usagef("group move requires --group and at least one --skill")
 		}
 		return m.MoveSkillsToGroup(skills, *id, *rootID)
+	case "metadata":
+		fs := flag.NewFlagSet("group metadata", flag.ContinueOnError)
+		id := fs.String("group", "", "source group ID")
+		rootID := fs.String("root", model.RootIDCodexDefault, "registered Skill root ID")
+		if err := parseFlags(fs, args[1:]); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(*id) == "" {
+			return nil, usagef("group metadata requires --group")
+		}
+		return m.GetGroupMetadata(*id, *rootID)
+	case "operation":
+		fs := flag.NewFlagSet("group operation", flag.ContinueOnError)
+		id := fs.String("id", "", "group operation ID")
+		if err := parseFlags(fs, args[1:]); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(*id) == "" {
+			return nil, usagef("group operation requires --id")
+		}
+		return m.GetGroupOperation(*id)
 	default:
 		return nil, usagef("unknown group action: %s", args[0])
 	}

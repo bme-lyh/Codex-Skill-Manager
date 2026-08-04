@@ -5,7 +5,7 @@
 Codex Skill Manager 是一款 Windows 本地工具，用于理解、检查、安装、更新、整理和
 恢复 Codex Skills。每次写入都会明确授权、记录事务，并保留恢复路径。
 
-[下载 v0.14.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.14.0) ·
+[下载 v0.15.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.15.0) ·
 [快速开始](docs/user/getting-started.md) ·
 [使用指南](docs/user/gui-guide.md) ·
 [安全策略](SECURITY.md) ·
@@ -75,10 +75,10 @@ MCP 时必须由用户明确选择项目目录。
 SmartScreen 可能提示警告。请只从本仓库下载，并核对 SHA-256：
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.14.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.15.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-将结果与 `CodexSkillManager-0.14.0-SHA256SUMS.txt` 中的对应行比较。
+将结果与 `CodexSkillManager-0.15.0-SHA256SUMS.txt` 中的对应行比较。
 
 ### 添加随包提供的 Codex Skill
 
@@ -118,4 +118,4 @@ pnpm --dir frontend install --frozen-lockfile
 统一界面是一次 UI 重构；旧 Page 路由和 Wails/API 兼容边界仍然保留，以支持已有
 集成。面向用户的说明统一使用当前界面术语。
 
-Codex Skill Manager 0.14.0 支持 Windows 10/11，使用 [MIT License](LICENSE)。
+Codex Skill Manager 0.15.0 支持 Windows 10/11，使用 [MIT License](LICENSE)。

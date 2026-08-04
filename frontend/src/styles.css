@@ -386,6 +386,14 @@ header, .section-tabs-wrap, .panel, .stats article, .modal, .ghost, .icon-button
 .report-detail-head p { margin: 0; color: var(--muted); font-size: 10px; }
 .report-detail-loading { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: var(--muted); font-size: 10px; }
 
+.group-metadata { padding: 14px 18px; border-top: 1px solid var(--line); }
+.group-metadata h4 { margin: 0 0 10px; font-size: 11px; }
+.group-metadata dl { display: grid; gap: 8px; margin: 0; }
+.group-metadata dl > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; font-size: 10px; }
+.group-metadata dt { color: var(--muted); }
+.group-metadata dd { color: var(--ink); margin: 0; overflow-wrap: anywhere; }
+.group-metadata-loading, .group-metadata-missing { color: var(--muted); font-size: 10px; margin: 0; }
+
 @media (max-width: 720px) {
   .root-filter { flex: 1 1 100%; }
   .theme-options { flex-direction: column; }
