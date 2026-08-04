@@ -3,7 +3,7 @@
 ## Project snapshot
 
 - Product: Windows desktop and CLI manager for Codex-compatible Skills.
-- Release line: `0.13.0`.
+- Release line: `0.14.0`.
 - Desktop: Wails v2 with a React/Vite/TypeScript frontend.
 - CLI: `cmd/csm`, with stable JSON envelopes for automation.
 - Default data directory: `%USERPROFILE%\.codex\skill-manager`.
@@ -34,6 +34,24 @@ internal/manager        use cases, plans, gates, transactions, recovery
 The GUI and CLI call the same manager. UI code must not reproduce authorization
 rules: previews, risk gates, target validation, and transaction decisions belong
 to the Go backend.
+
+### 0.14 source-group authority
+
+`SourceGroup` is the management unit. A GitHub repository maps to one source
+group, and the group includes every valid Skill discovered from the immutable
+commit. `SourceTrustPolicy` is repository-wide. `SourceAnalysis` and
+`GroupSecurityReport` keep reusable bilingual summaries (`en` and `zh`) while
+retaining Skill evidence for diagnosis. `GroupOperation` and its parent
+`Transaction` own install, update, and security status; child Skill records
+only describe execution, backups, failures, and recovery.
+
+`ApplyGroupInstall` and `ApplyGroupUpdate` reject incomplete target sets before
+creating a mutation. Internal steps continue after a failure and the parent
+ends as `completed`, `partial`, or `failed`. A persisted human approval can
+cover Critical, High, Medium, and Low group findings without a typed reason;
+immutable commit, path containment, staged hashes, snapshot completeness,
+expiry, and recovery checks remain non-bypassable. Trusted repositories skip
+the foreground risk prompt but still produce a background report.
 
 Mutating operations use a process-wide, root-scoped writer lease. The desktop
 shell rejects overlapping page operations and ignores stale dashboard refresh
@@ -100,11 +118,15 @@ cross-root bulk actions must stop and ask for a single root.
 - `cmd/csm/main.go`: CLI parsing and JSON command surface.
 - `internal/model/model.go`: shared domain and API schema.
 - `internal/manager/manager.go`: standard install/manage/update/recovery flows.
+- `internal/manager/group_operations.go`: source-group trust, analysis,
+  security approval, complete-group apply, and parent transaction recovery.
 - `internal/manager/assisted_install.go`: typed assisted-install execution.
 - `internal/config/config.go`: schema 2 root defaults and path validation.
 - `internal/state/state.go`: SQLite schemas and v1 migrations.
 - `frontend/src/App.tsx`: application state and page composition.
 - `frontend/src/api.ts`: Wails/demo API adapter.
+- `frontend/src/grouping.ts`: source-group identity and complete selection
+  normalization shared by install and update views.
 - `frontend/src/theme.ts`: persisted appearance normalization and DOM theme application.
 - `scripts/build.ps1`: verified production build into `build/bin`.
 - `scripts/dev.ps1`: local Wails development launcher.
@@ -187,5 +209,5 @@ at the real user Skill roots.
 - `ApplyAdoptionBestEffort`, `ApplyInstallBestEffort`, and multi-Skill audit
   results use child outcomes. A parent transaction may be `partial`; retry the
   failed child instead of repeating successful targets.
-- Release `0.13.0` makes Codex review the primary assisted-install entry while
-  retaining standard and legacy APIs for compatibility.
+- Release `0.14.0` makes source groups the authoritative install, update, and
+  security unit while retaining standard and legacy APIs for compatibility.

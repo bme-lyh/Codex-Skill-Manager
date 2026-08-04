@@ -8,6 +8,13 @@ on the first screen. One human confirmation is enough to run the digest-bound
 reviewed plan. Critical findings remain a safety boundary; High findings use a
 single explicit confirmation without a typed reason.
 
+In 0.14.0, the source group is the operation unit. One GitHub repository maps to
+one group, and every valid Skill in that group is installed or updated together.
+Group security reports support one-click human approval for every severity;
+immutable commits, paths, hashes, complete snapshots, and recovery checks still
+apply. Skill rows remain details for diagnosis and recovery, not independent
+management targets.
+
 ## Navigation
 
 Use the root selector at the top of the sidebar to switch between **Codex
@@ -70,13 +77,13 @@ The dialog has four visible steps:
    scans the actual write targets. Required, conditionally triggered, and
    optional checks are shown separately. This local phase does not call Codex,
    download dependencies, or execute repository scripts.
-3. **Check & confirm** shows the evidence, project classification, Skill
-   selection, exact targets, findings, permissions, and reversibility. Its four
+3. **Check & confirm** shows the evidence, project classification, the complete
+   source group, exact targets, findings, permissions, and reversibility. Its four
    conclusions are **Ready to install**, **Review before installing**,
    **Installation blocked**, and **Assessment incomplete**. Only the first two
    can proceed, and the latter two fail closed.
-4. **Install & result** applies the selected Skills or approved structured
-   steps, shows progress and activity, records a transaction, and refreshes the
+4. **Install & result** applies the complete source group or approved structured
+   steps, shows progress and activity, records a parent transaction, and refreshes the
    latest Skills and operation status after the change. The result keeps the
    transaction ID, completed targets, manual work, and recovery state visible.
 
@@ -92,7 +99,7 @@ After review, one human confirmation creates the digest-bound plan and starts
 the existing journaled executor.
 
 Codex text is never executed as a command. Automatic steps are limited to
-selected Skill installation, an exact-version Python tool from official PyPI,
+complete source-group Skill installation, an exact-version Python tool from official PyPI,
 and a manager-owned Codex MCP entry. Repository scripts, arbitrary shell
 commands, unsupported package managers, and other work remain manual. Managed
 Python and MCP automation requires a GitHub source so package ownership can be
@@ -108,8 +115,8 @@ approval. Apply verifies the locked files and installs offline.
 Every required permission must be approved before execution. The dialog can be
 hidden while a long task continues in the background; reopening restores its
 latest progress. If a Codex plan cannot be generated, the source assessment,
-risk result, and Skill selection remain available. **Standard Skill install**
-writes only the selected Skill directories and does not configure MCP or extra
+risk result, and the source group remain available. **Standard group install**
+writes only the complete source-group Skill directories and does not configure MCP or extra
 dependencies.
 
 After failure or cancellation, reversible steps are recovered in reverse order.
@@ -127,10 +134,11 @@ default. Results follow **Group → Skill → Warning**, with details collapsed 
 default for large reports. Repeated scans count unique active High/Critical
 findings from the latest effective report per target.
 
-Critical findings always block writes and cannot be ignored. High findings need
-one explicit per-cluster confirmation; the app records the decision without a
-typed reason. Medium and lower findings use the ordinary ignore flow. Restoring
-a previously accepted High cluster immediately reactivates the gate.
+Critical, High, Medium, and Low findings can be approved with one human action
+for the whole source group. The app records that decision without asking for a
+typed reason. Immutable refs, path containment, snapshot completeness, hashes,
+expiry, and recovery checks remain mandatory; changing the source or report
+invalidates the approval.
 
 The Security page's optional **Codex review** packages the selected group with
 shell access disabled. It is advisory, treats local rule hits as supplemental

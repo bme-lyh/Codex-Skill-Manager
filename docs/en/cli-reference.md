@@ -56,15 +56,16 @@ Create and review a plan, then apply it with explicit Skill names:
 csm --json install --url "https://github.com/owner/repository" [--ref "tag-or-commit"]
 csm --json install --local "D:\skills\package"
 csm --json install --plan-id "plan-..." --assess
-csm --json install --plan-id "plan-..." --skill "skill-a" --skill "skill-b" --apply
+csm --json install --plan-id "plan-..." --all --apply
 
 csm check
 csm --json update --group "github:owner/repository"
-csm --json install --plan-id "update-plan-..." --skill "skill-a" --apply
+csm --json install --plan-id "update-plan-..." --all --apply
 ```
 
-Standard installation installs only selected Skill directories. It does not
-install extra tools or change Codex MCP configuration.
+Standard installation installs every valid Skill in the source group. The
+backend rejects an incomplete member set before creating a transaction. It does
+not install extra tools or change Codex MCP configuration.
 
 ## Planned installation
 
@@ -117,14 +118,13 @@ csm warning --report "scan-..." --restore
 csm schedule --enabled=true --frequency=weekly --at=09:00
 ```
 
-Critical warnings cannot be ignored. Accepting a High cluster requires a
-non-empty `--reason` and `--confirm-deterministic`; lower severities keep an
-optional reason. Applying a plan with an accepted High cluster also requires
-`--accept-high-risk` as a final acknowledgement; that flag cannot create the
-decision by itself. Use `--restore` to reverse an accepted or ignored warning.
-Report-wide ignore processes only known Medium-or-lower clusters and returns
-High, Critical, or unknown entries in `skippedClusterIds`; report-wide restore
-may reverse matching persisted decisions at any known severity.
+Group install and update commands require the complete source-group member set.
+Use `--approve-risk` for a one-click human approval covering Critical, High,
+Medium, and Low findings in that group; no typed reason is required. Immutable
+refs, path containment, snapshot completeness, hashes, expiry, and recovery
+checks remain mandatory. `--restore` remains available for legacy warning
+records. The compatibility risk-decision command still reports skipped entries
+when a legacy report-wide action cannot apply to a group operation.
 Schedule frequency is `daily` or `weekly`, and time uses 24-hour `HH:mm`.
 
 Exit code `0` means success, `1` means an operational or policy failure, and

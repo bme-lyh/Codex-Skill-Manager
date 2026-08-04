@@ -29,10 +29,10 @@ returns authentication plus capability-based compatibility without a version pin
 after authentication it also returns the visible model catalog reported by the
 current CLI, with catalog failures kept separate from compatibility failures.
 `codex review --report ID [--skill NAME ...]` creates a journaled advisory
-review. Repeated `--skill` values restrict work to trusted Skills discovered
-inside the persisted report target. Omitting the flag reviews all discovered
-Skills. The result is stable per Skill. All selected Skills in the same application
-group share one review task. Groups execute serially by default; a failed group or
+review. Repeated `--skill` values are retained for compatibility, but new group
+operations review every valid Skill discovered inside the persisted report target.
+The result is stable per Skill. All Skills in the same application group share
+one review task. Groups execute serially by default; a failed group or
 an output missing a requested Skill is retried once serially.
 If at least one group succeeds, the command returns the partial report; its
 review and journal status are `partial`, with failed groups named explicitly.
@@ -42,6 +42,25 @@ Planning commands:
 - `update --group ID`: resolve a GitHub source and create a persisted update
   preview for its installed Skills; scan scope is limited to actual candidate
   Skill directories;
+
+Source-group apply surfaces use the immutable group membership sealed in the
+preview. A group install/update must submit every valid member in that
+preview; submitting only a subset is an explicit validation error. The legacy
+selective install facade remains source-compatible for older clients, while
+new group callers use the parent transaction and child diagnostics contract.
+
+The desktop and CLI group surfaces are `GetOrCreateSourceGroupAnalysis`,
+`RunGroupSecurityCheck`, `ApproveGroupSecurity`, `ApproveGroupRisk`,
+`PrepareGroupUpdate`, `ApplyGroupInstall`, and `ApplyGroupUpdate`. `--approve-risk`
+is the CLI equivalent of the one-click group decision and never changes the
+immutable source or technical gates.
+
+Repository trust is managed by canonical GitHub `owner/repository` identity.
+Set/revoke decisions are journaled and append an audit row. Trust does not
+replace immutable-ref, local scanner, path/hash, or recovery checks. Critical
+group risk may be approved with no reason after a persisted decision, but all
+technical integrity gates still apply.
+
 - `install --url URL [--ref REF] [--assist]`: create a commit-pinned preview;
   when `--assist` is present, enforce the mandatory assessment and continue to
   a reusable read-only Codex project scan;
@@ -74,7 +93,7 @@ this sequence:
    digests, downgrade unsupported actions to `manual`, and derive permissions;
 6. show the summary, requirements, warnings, exact Skills, typed steps, and
    every required permission;
-7. apply only the exact selected Skills and approved permission IDs, plus an
+7. apply only the exact complete source-group Skills and approved permission IDs, plus an
    explicit project root when MCP requires one;
 8. resolve any approved Python tool's complete Wheel closure during plan creation,
    record exact package identities and hashes, and reject source distributions;
@@ -138,9 +157,11 @@ Mutating commands:
 
 Names must be explicit and cannot contain wildcards. `.system` is reserved
 case-insensitively in every mutation route. A plan expires after 24 hours.
-Critical findings always block writes and cannot be ignored. High findings block
-until a human supplies a non-empty reason and explicit confirmation. Batch ignore
-cannot bypass either rule. `--accept-high-risk`, `--deterministic`, and
+For a source-group operation, Critical, High, Medium, and Low findings may be
+approved by one explicit human action without a typed reason. The approval is
+bound to the group report/plan and never bypasses immutable commit, path,
+snapshot, hash, or recovery checks. Legacy Skill-level warning commands retain
+their narrower compatibility rules. `--accept-high-risk`, `--deterministic`, and
 `--confirm-deterministic` remain accepted for compatibility; the last flag is the
 explicit High-risk decision confirmation. `--accept-high-risk` is a separate final
 apply acknowledgement when a persisted High decision exists and cannot create or
@@ -151,7 +172,7 @@ detects sources, hashes the current files and records a `manage` transaction.
 Legacy `adopt` remains an alias. Group mutations snapshot `groups.json` and
 never mutate source provenance or Skill content.
 Finding/cluster decisions are reloaded from local state at apply time. Every
-decision creates a transaction record. Reasons are optional only below High;
-High requires a non-empty reason and explicit confirmation, while Critical
-cannot be ignored. Restored findings immediately participate in the gate again.
+decision creates a transaction record. Group approvals do not require a reason;
+restored findings and changed snapshots immediately participate in the gate
+again. A Codex verdict can never substitute for the explicit human decision.
 A Codex verdict can never substitute for the explicit human decision.

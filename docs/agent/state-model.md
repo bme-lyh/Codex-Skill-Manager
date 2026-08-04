@@ -25,6 +25,17 @@ resolved commit, source path and installed file hashes.
   `skill_security_states`.
 - assisted-install parent transactions, including typed step snapshots, child
   transaction IDs, backup paths, output hashes, errors and recovery status.
+- repository-wide GitHub `source_trust_policies` plus append-only
+  `source_trust_audit` decisions keyed by canonical owner/repository;
+- reusable `source_analyses`, `group_security_reports`, and `group_operations`
+  payloads. Group operations retain a parent transaction and per-Skill child
+  diagnostics while the parent status remains authoritative.
+
+Group status values are `unknown`, `preparing`, `analyzing`,
+`security-checking`, `awaiting-approval`, `installing`, `checking`,
+`completed`, `partial`, `failed`, `recovery-required`, `update-available`,
+`up-to-date`, `rate-limited`, and `unsupported`. A Skill-level status must not
+be promoted to a separate management key.
 
 The dashboard risk count is derived from unique, non-ignored High/Critical
 findings in the latest report for each in-scope installed-skill target. It is

@@ -33,12 +33,12 @@ steps for a GitHub link and a local directory:
    Required, conditional, and optional checks are shown separately. The local
    phase does not call Codex, download dependencies, or execute repository
    scripts.
-3. **Check & confirm**: review evidence, selected Skills, exact write targets,
+3. **Check & confirm**: review evidence, the complete source group, exact write targets,
    risks, permissions, and recovery. The four conclusions are **Ready to
    install**, **Review before installing**, **Installation blocked**, and
    **Assessment incomplete**. Only the first two can continue.
-4. **Install & result**: approve the selected targets or structured steps. The
-   dialog shows progress, records a transaction, refreshes the latest Skills and
+4. **Install & result**: approve the complete source group or structured steps. The
+   dialog shows progress, records a parent transaction, refreshes the latest Skills and
    operation status, and keeps the recovery state visible.
 
 The first screen now offers **Codex review and controlled install**. After the
@@ -68,7 +68,7 @@ or **Quarantine** to restore removed Skills.
 Release archives include `agent-skill\codex-skill-manager`. To add it to the
 global Codex Skills directory, open **Add project**, choose **Local directory**,
 select the archive's `agent-skill` directory, review the four steps, and install
-the selected Skill. A source checkout provides the same content at
+the complete source group. A source checkout provides the same content at
 `skills\codex-skill-manager`.
 
 ## Manage existing Skills
@@ -87,7 +87,7 @@ prepared source with shell access disabled and returns a project summary,
 security conclusion, evidence limits, declarative methods, typed steps, and
 permissions.
 
-Automatic execution is limited to selected Skill installation, a verified
+Automatic execution is limited to complete source-group Skill installation, a verified
 repository-matched Python tool from official PyPI, and a manager-owned Codex MCP
 entry. Repository scripts, free-form commands, unsupported work, and other
 unsafe-to-automate steps remain manual. Managed Python and MCP automation
@@ -114,6 +114,12 @@ The CLI retains its lower-level compatibility contract for scripted workflows;
 see the [CLI reference](cli-reference.md#codex-assisted-installation).
 
 ## Check for updates
+
+Updates are source-group operations in 0.14.0. A GitHub repository is one
+group; the preview always includes every valid member and the apply action
+cannot submit a subset. Internal Skill failures continue independently and the
+parent group transaction records completed, partial, failed, and recovery
+states.
 
 Open **Activity → Updates** and click **Check updates**. This compares commits
 only. Select one or more available sources, review the immutable commit, exact
