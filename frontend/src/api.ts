@@ -9,6 +9,10 @@ import type {
   Finding,
   CodexProjectScanResult,
   InstallPreview,
+  GroupSecurityReport,
+  SourceAnalysis,
+  SourceTrustAudit,
+  SourceTrustPolicy,
   ProjectAssessment,
   RiskCluster,
   ScanReport,
@@ -80,8 +84,24 @@ type Backend = {
   GetProjectAssessment?(reference: string): Promise<ProjectAssessment>;
   ApplyInstall(plan: string, skills: string[], acceptHighRisk: boolean, rootId: string): Promise<Transaction>;
   ApplyInstallBestEffort?(plan: string, skills: string[], acceptHighRisk: boolean, rootId: string): Promise<Transaction>;
+  ApplyGroupInstall?(plan: string, skills: string[], acceptRisk: boolean, rootId: string): Promise<Transaction>;
+  ApplySourceGroupInstall?(plan: string, acceptRisk: boolean, rootId: string): Promise<Transaction>;
+  ApplyGroupUpdate?(plan: string, skills: string[], acceptRisk: boolean, rootId: string): Promise<Transaction>;
+  ApproveGroupRisk?(plan: string, reason: string): Promise<Transaction>;
+  ApproveGroupSecurity?(groupId: string, rootId: string, reason: string): Promise<Transaction>;
+  SetSourceTrust?(repository: string, reason: string): Promise<Transaction>;
+  RevokeSourceTrust?(repository: string, reason: string): Promise<Transaction>;
+  GetSourceTrustPolicy?(repository: string): Promise<SourceTrustPolicy>;
+  GetSourceTrustPolicies?(): Promise<SourceTrustPolicy[]>;
+  GetSourceTrustAudit?(repository: string, limit: number): Promise<SourceTrustAudit[]>;
   AuditSkill(name: string, rootId: string): Promise<ScanReport>;
   AuditSkills(names: string[], rootId: string): Promise<ScanReport>;
+  RunGroupSecurityCheck?(groupId: string, rootId: string): Promise<GroupSecurityReport>;
+  GetGroupSecurityReport?(id: string): Promise<GroupSecurityReport>;
+  GetSourceAnalysis?(id: string): Promise<SourceAnalysis>;
+  GetOrCreateSourceGroupAnalysis?(plan: string): Promise<SourceAnalysis>;
+  GetSourceAnalyses?(limit: number): Promise<SourceAnalysis[]>;
+  GetGroupOperations?(limit: number): Promise<any[]>;
   GetScanReport(id: string, rootId: string): Promise<ScanReport>;
   SetFindingIgnored(finding: Finding, ignored: boolean, reason: string): Promise<boolean>;
   SetRiskClusterIgnored(cluster: RiskCluster, ignored: boolean, reason: string, confirmDeterministic: boolean): Promise<boolean>;
@@ -89,6 +109,7 @@ type Backend = {
   CheckUpdates(): Promise<UpdateCheckResult>;
   CheckUpdatesSelected(groupIds: string[], force: boolean): Promise<UpdateCheckResult>;
   PrepareUpdate(groupId: string, rootId: string): Promise<InstallPreview>;
+  PrepareGroupUpdate?(groupId: string, rootId: string): Promise<InstallPreview>;
   QuarantineSkills(names: string[], rootId: string): Promise<Transaction>;
   RestoreSkill(name: string, transaction: string, rootId: string): Promise<Transaction>;
   Rollback(transaction: string): Promise<Transaction>;
@@ -321,8 +342,8 @@ function demoProjectScan(sourcePlanId: string): CodexProjectScanResult {
     },
     installationMethods: [{
       kind: "skills-only",
-      title: "Install selected Skills",
-      description: "Copy the selected Skills through the manager transaction.",
+      title: "Install the source group",
+      description: "Copy every valid Skill in the source group through one manager transaction.",
       supported: true,
       required: true,
       evidenceFiles: ["README.md"]
@@ -433,10 +454,35 @@ export const api = {
   apply: async (plan: string, skills: string[], accept: boolean, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
+    if (typeof b.ApplyGroupInstall === "function") {
+      return b.ApplyGroupInstall(plan, skills, accept, rootId);
+    }
     if (typeof b.ApplyInstallBestEffort === "function" && skills.length > 1) {
       return b.ApplyInstallBestEffort(plan, skills, accept, rootId);
     }
     return b.ApplyInstall(plan, skills, accept, rootId);
+  },
+  applySourceGroup: async (plan: string, accept: boolean, rootId: string) => {
+    const b = backend();
+    if (!b) throw disconnectedError();
+    if (typeof b.ApplySourceGroupInstall === "function") return b.ApplySourceGroupInstall(plan, accept, rootId);
+    throw apiError("当前版本不支持整组安装，请更新应用", "This desktop backend does not support group installation. Update the app.");
+  },
+  applyGroupUpdate: async (plan: string, skills: string[], accept: boolean, rootId: string) => {
+    const b = backend();
+    if (!b) throw disconnectedError();
+    if (typeof b.ApplyGroupUpdate === "function") return b.ApplyGroupUpdate(plan, skills, accept, rootId);
+    return b.ApplyInstall(plan, skills, accept, rootId);
+  },
+  approveGroupRisk: async (plan: string, reason = "") => {
+    const b = backend();
+    if (!b || typeof b.ApproveGroupRisk !== "function") throw apiError("当前版本不支持分组风险通过，请更新应用", "This desktop backend does not support group risk approval. Update the app.");
+    return b.ApproveGroupRisk(plan, reason);
+  },
+  approveGroupSecurity: async (groupId: string, rootId: string, reason = "") => {
+    const b = backend();
+    if (!b || typeof b.ApproveGroupSecurity !== "function") throw apiError("当前版本不支持分组安全通过，请更新应用", "This desktop backend does not support group security approval. Update the app.");
+    return b.ApproveGroupSecurity(groupId, rootId, reason);
   },
   audit: async (name: string, rootId: string) => {
     const b = backend();
@@ -447,6 +493,31 @@ export const api = {
     const b = backend();
     if (!b) return localizedDemo(demoScanReport);
     return normalizeScan(await b.AuditSkills(names, rootId));
+  },
+  auditGroup: async (groupId: string, rootId: string): Promise<GroupSecurityReport> => {
+    const b = backend();
+    if (!b || typeof b.RunGroupSecurityCheck !== "function") throw apiError("当前版本不支持分组安全检查，请更新应用", "This desktop backend does not support group security checks. Update the app.");
+    return b.RunGroupSecurityCheck(groupId, rootId);
+  },
+  getOrCreateSourceGroupAnalysis: async (plan: string): Promise<SourceAnalysis> => {
+    const b = backend();
+    if (!b || typeof b.GetOrCreateSourceGroupAnalysis !== "function") throw apiError("当前版本不支持来源分析，请更新应用", "This desktop backend does not support reusable source analysis. Update the app.");
+    return b.GetOrCreateSourceGroupAnalysis(plan);
+  },
+  sourceTrust: async (repository: string): Promise<SourceTrustPolicy> => {
+    const b = backend();
+    if (!b || typeof b.GetSourceTrustPolicy !== "function") throw apiError("当前版本不支持来源信任设置，请更新应用", "This desktop backend does not support source trust policies. Update the app.");
+    return b.GetSourceTrustPolicy(repository);
+  },
+  setSourceTrust: async (repository: string, reason = "") => {
+    const b = backend();
+    if (!b || typeof b.SetSourceTrust !== "function") throw apiError("当前版本不支持来源信任设置，请更新应用", "This desktop backend does not support source trust policies. Update the app.");
+    return b.SetSourceTrust(repository, reason);
+  },
+  revokeSourceTrust: async (repository: string, reason = "") => {
+    const b = backend();
+    if (!b || typeof b.RevokeSourceTrust !== "function") throw apiError("当前版本不支持撤销来源信任，请更新应用", "This desktop backend does not support source trust policies. Update the app.");
+    return b.RevokeSourceTrust(repository, reason);
   },
   report: async (id: string, rootId = "") => {
     const b = backend();
@@ -486,6 +557,13 @@ export const api = {
   prepareUpdate: async (groupId: string, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
+    if (typeof b.PrepareGroupUpdate === "function") return b.PrepareGroupUpdate(groupId, rootId);
+    return b.PrepareUpdate(groupId, rootId);
+  },
+  prepareGroupUpdate: async (groupId: string, rootId: string) => {
+    const b = backend();
+    if (!b) throw disconnectedError();
+    if (typeof b.PrepareGroupUpdate === "function") return b.PrepareGroupUpdate(groupId, rootId);
     return b.PrepareUpdate(groupId, rootId);
   },
   quarantine: async (names: string[], rootId: string) => {

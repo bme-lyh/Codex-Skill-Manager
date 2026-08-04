@@ -18,9 +18,10 @@ import { Loading, OperationBanner } from "./shell/AppChrome";
 import type { Operation } from "./shell/AppChrome";
 import { applyTheme, normalizeTheme } from "./theme";
 import type { AppTheme } from "./theme";
+import { groupLocalizedName, sourceGroupIdForSkill, sourceGroupNameForSkill } from "./grouping";
 import type { NavigationGroupId, NavigationTabId } from "./shell/navigation";
 import type { AppLocale, Translate } from "./i18n";
-import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateStatus } from "./types";
+import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateSkillDiagnostic, UpdateStatus } from "./types";
 
 type Page = "overview" | "skills" | "groups" | "updates" | "security" | "history" | "quarantine" | "reports" | "settings";
 type RunOperation = <T>(label: string, task: () => Promise<T>, successDetail?: string) => Promise<T | undefined>;
@@ -261,6 +262,15 @@ function displayGroupName(name: string, locale: AppLocale): string {
   return name;
 }
 
+function displayGroup(group: Partial<Group> | undefined, locale: AppLocale, fallback = "") {
+  const resolved = groupLocalizedName(group, locale, fallback);
+  return displayGroupName(resolved, locale) || fallback;
+}
+
+function displaySkillSourceGroup(skill: Partial<Skill>, locale: AppLocale, fallback = "") {
+  return displayGroupName(sourceGroupNameForSkill(skill, locale, fallback), locale);
+}
+
 function transactionTypeLabel(value: string, locale: AppLocale): string {
   const labels: Record<string, [string, string]> = {
     install: ["安装", "Install"], update: ["更新", "Update"], manage: ["管理", "Manage"], adopt: ["管理", "Manage"],
@@ -326,7 +336,7 @@ function availableReasoningLevels(models: CodexCLIStatus["models"], model: strin
 function GroupRow({ group }: { group: Group }) {
   const { locale } = useI18n();
   return <div className="group-row"><div className="repo-icon"><FolderGit2 size={19} /></div>
-    <div className="grow"><strong>{displayGroupName(group.name, locale)}</strong><span>{group.provider === "github" ? group.repository : group.provider}</span></div>
+    <div className="grow"><strong>{displayGroup(group, locale)}</strong><span>{group.provider === "github" ? group.repository : group.provider}</span></div>
     <div className="skill-stack">{group.skillNames.slice(0, 3).map(n => <i key={n}>{n.slice(0, 1).toUpperCase()}</i>)}</div>
     <b>{group.skillNames.length}</b><small>Skills</small></div>;
 }
@@ -424,10 +434,10 @@ function SkillsPage({ data, selected, setSelected, refresh, runOperation, rootFi
         <DetailCell summary={<span className="skill-text"><strong>{skill.name}</strong><small>{skill.description}</small>
           {rootNameFor(skill) && <em className="root-badge">{rootBadgeFor(skill)}</em>}</span>}
           rows={[[t("名称", "Name"), skill.name], [t("根目录", "Root"), rootNameFor(skill) || t("默认", "Default")], [t("说明", "Description"), skill.description], [t("路径", "Path"), skill.path], [t("文件数量", "Files"), String(skill.files?.length ?? 0)]]} />
-        <DetailCell summary={<span><b>{displayGroupName(skill.groupName, locale)}</b><small>{skill.sourceRepository || displayGroupName(skill.sourceGroupName, locale) || (skill.system ? "Codex" : t("本地", "Local"))}</small></span>}
+        <DetailCell summary={<span><b>{displayGroupName(skill.groupName, locale)}</b><small>{skill.sourceRepository || displaySkillSourceGroup(skill, locale) || (skill.system ? "Codex" : t("本地", "Local"))}</small></span>}
           rows={[
             [t("当前分组", "Current group"), displayGroupName(skill.groupName, locale)],
-            [t("真实来源分组", "Source group"), displayGroupName(skill.sourceGroupName, locale) || t("尚未识别", "Not identified")],
+            [t("真实来源分组", "Source group"), displaySkillSourceGroup(skill, locale, t("尚未识别", "Not identified"))],
             [t("来源类型", "Source type"), skill.sourceProvider || "unknown"],
             [t("仓库", "Repository"), skill.sourceRepository || t("无", "None")],
             [t("仓库内路径", "Repository path"), skill.sourcePath || t("无", "None")],
@@ -595,12 +605,12 @@ function GroupsPage({ data, refresh, runOperation, defaultRootId }: { data: Dash
         onDrop={event => void dropOnGroup(event, g)}>
         {!g.readOnly ? <GripVertical className="drag-handle" size={16} /> : <ShieldCheck size={16} />}
         <button className="group-select" onClick={() => setActive(g.id)}>
-          <span><strong>{displayGroupName(g.name, locale)}</strong><small>{g.skillNames.length} Skills · {g.manual ? t("手动分组", "Manual group") : t("来源分组", "Source group")}</small></span>
+          <span><strong>{displayGroup(g, locale)}</strong><small>{g.skillNames.length} Skills · {g.manual ? t("手动分组", "Manual group") : t("来源分组", "Source group")}</small></span>
         </button>
         {!g.readOnly && <button className="group-rename" title={t("重命名", "Rename")} onClick={() => void rename(g)}><Pencil size={14} /></button>}
       </div>)}
     </section>
-    <section className="panel relation-panel"><PanelHead title={group ? displayGroupName(group.name, locale) : t("分组详情", "Group details")} subtitle={t("拖动 Skill 可更换分组", "Drag a Skill to change its group")} />
+    <section className="panel relation-panel"><PanelHead title={group ? displayGroup(group, locale) : t("分组详情", "Group details")} subtitle={t("拖动 Skill 可更换分组", "Drag a Skill to change its group")} />
       {group ? <>
         <div className="group-skill-list">{group.skillNames.length ? group.skillNames.map(name => {
           const skill = data.skills.find(item => item.name === name && (item.rootId || defaultRootId) === (group.rootId || defaultRootId));
@@ -704,11 +714,11 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
     !latest || new Date(status.checkedAt) > new Date(latest) ? status.checkedAt : latest, data.lastUpdateCheck);
   return <section className="panel full">
     <div className="update-hero"><div className="round-icon"><RefreshCw size={28} /></div><div><h2>{t("检查更新", "Check for updates")}</h2>
-      <p>{t("检查版本并选择要更新的 Skills。更新前会显示计划和安全结果。", "Check versions and choose which Skills to update. The plan and security results appear before changes are applied.")}</p>
+      <p>{t("检查版本并选择要更新的来源分组。更新前会显示整组计划和安全结果。", "Check versions and choose which source groups to update. The complete-group plan and security results appear before changes are applied.")}</p>
       <small>{lastChecked ? t(`上次检查：${formatDate(lastChecked)}`, `Last checked: ${formatDate(lastChecked)}`) : t("尚未执行过更新检查", "No update check has been run")}</small></div>
       <button className="primary" onClick={check} disabled={working}>{working ? <LoaderCircle className="spin" size={17} /> : <RefreshCw size={17} />}{working ? t("正在检查…", "Checking…") : t("检查更新", "Check updates")}</button></div>
     {availableGroups.length > 0 && <div className="update-toolbar">
-      <div><strong>{t("选择更新来源", "Select update sources")}</strong><span>{t("仅显示有新版本的来源；每个来源可单独回滚。", "Only sources with updates are selectable. Each source can be rolled back separately.")}</span></div>
+      <div><strong>{t("选择更新来源分组", "Select update source groups")}</strong><span>{t("仅显示有新版本的分组；每个分组作为一个事务处理。", "Only groups with updates are selectable. Each group is handled as one transaction.")}</span></div>
       <div className="selection-tools">
         <button className="ghost" onClick={selectAll}><CheckSquare2 size={15} />{t("全选可更新", "Select all")}</button>
         <button className="ghost" onClick={invert}><ListRestart size={15} />{t("反选", "Invert")}</button>
@@ -730,7 +740,7 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
           checked={selectedGroups.includes(identity)}
           onChange={() => setSelectedGroups(selectedGroups.includes(identity) ? selectedGroups.filter(id => id !== identity) : [...selectedGroups, identity])} />
         <div className={`update-state-icon ${presentation.tone}`}>{presentation.icon}</div>
-        <div className="update-copy"><strong>{displayGroupName(g.name, locale)}</strong><span>{g.skillNames.length} Skills · {g.repository || g.provider}</span>
+        <div className="update-copy"><strong>{displayGroup(g, locale)}</strong><span>{g.skillNames.length} Skills · {g.repository || g.provider}</span>
           <small>{status ? updateDetail(status, t, formatDate, join) : t("点击“检查更新”获取当前状态", "Select “Check updates” to get the current status")}</small>
           {status?.error && <small className="update-error">{status.error}</small>}
           {status?.status === "rate-limited" && status.retryAt && <small className="rate-limit-countdown">
@@ -812,6 +822,31 @@ function formatCountdown(milliseconds: number, locale: AppLocale): string {
   return translate(locale, `${minutes}分${remainder.toString().padStart(2, "0")}秒`, `${minutes}m ${remainder.toString().padStart(2, "0")}s`);
 }
 
+function updateSkillDiagnostics(value: InstallPreview, scan: ScanReport): UpdateSkillDiagnostic[] {
+  const entries: UpdateSkillDiagnostic[] = [];
+  for (const summary of scan.skills ?? []) {
+    if (summary.error || summary.manualWork || /manual|unsupported|error|failed/i.test(summary.status || "")) {
+      entries.push({
+        skillName: summary.skillName,
+        error: summary.error,
+        manualWork: summary.manualWork,
+        message: summary.error || (summary.manualWork ? "Manual work required" : summary.status)
+      });
+    }
+  }
+  for (const skill of value.skills ?? []) {
+    const raw = skill as unknown as Record<string, unknown>;
+    const error = typeof raw.error === "string" ? raw.error : undefined;
+    const message = typeof raw.diagnostic === "string" ? raw.diagnostic :
+      typeof raw.message === "string" ? raw.message : undefined;
+    const manualWork = raw.manualWork === true || raw.requiresManualWork === true || raw.status === "manual";
+    if ((error || message || manualWork) && !entries.some(entry => entry.skillName === skill.name)) {
+      entries.push({ skillName: skill.name, error, message, manualWork });
+    }
+  }
+  return entries;
+}
+
 function UpdateDialog({ items, close, refresh }: {
   items: Array<{ group: Group; value: InstallPreview }>; close: () => void; refresh: () => Promise<void>;
 }) {
@@ -826,10 +861,38 @@ function UpdateDialog({ items, close, refresh }: {
   const [codexWorking, setCodexWorking] = useState(false);
   const [progress, setProgress] = useState("");
   const [failures, setFailures] = useState<string[]>([]);
+  const [approvedPlans, setApprovedPlans] = useState<Set<string>>(new Set());
+  const [trustedPlans, setTrustedPlans] = useState<Set<string>>(new Set());
   const { progress: codexProgress, clearProgress } = useCodexProgress();
   const selectedCount = Object.values(selected).reduce((sum, names) => sum + names.length, 0);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(items.map(async ({ value }) => {
+      if (value.repository.provider !== "github" || !value.repository.fullName) return null;
+      try {
+        const policy = await api.sourceTrust(value.repository.fullName);
+        return policy.trusted ? value.id : null;
+      } catch {
+        return null;
+      }
+    })).then(ids => {
+      if (!cancelled) setTrustedPlans(new Set(ids.filter((id): id is string => !!id)));
+    });
+    return () => { cancelled = true; };
+  }, [items]);
+  const planRiskApproved = (planID: string) => approvedPlans.has(planID) || trustedPlans.has(planID);
   const hasBlockingWarnings = items.some(({ value }) =>
-    ["critical", "high"].includes(scans[value.id].activeHighestSeverity) && (selected[value.id]?.length ?? 0) > 0);
+    !planRiskApproved(value.id) && ["critical", "high"].includes(scans[value.id].activeHighestSeverity) && (selected[value.id]?.length ?? 0) > 0);
+  const approveGroupRisk = async (planID: string) => {
+    setReviewing("approval:" + planID);
+    try {
+      await api.approveGroupRisk(planID, "");
+      setApprovedPlans(current => new Set(current).add(planID));
+      setScans(current => ({ ...current, [planID]: updateClustersState(current[planID], current[planID].clusters ?? [], true, "Approved by one-click human review") }));
+    } catch (error: any) {
+      setFailures(current => [`${t("分组风险通过失败", "Group risk approval failed")}: ${error?.message ?? String(error)}`, ...current]);
+    } finally { setReviewing(""); }
+  };
   const toggleCluster = async (planID: string, cluster: RiskCluster) => {
 		const decision = requestRiskDecision(cluster, !cluster.ignored, t);
 		if (!decision) return;
@@ -899,8 +962,8 @@ function UpdateDialog({ items, close, refresh }: {
         setProgress(t(`正在更新 ${displayGroupName(group.name, locale)}（${attempted}/${targets.length}）`,
           `Updating ${displayGroupName(group.name, locale)} (${attempted}/${targets.length})`));
         try {
-					await api.apply(value.id, selected[value.id],
-						(scans[value.id].clusters ?? []).some(cluster => cluster.severity === "high" && cluster.ignored),
+          await api.applyGroupUpdate(value.id, selected[value.id],
+						planRiskApproved(value.id) || (scans[value.id].clusters ?? []).some(cluster => (cluster.severity === "high" || cluster.severity === "critical") && cluster.ignored),
 						value.targetRootId || group.rootId || "codex-default");
           succeeded.push(value.id);
         } catch (error: any) {
@@ -921,35 +984,44 @@ function UpdateDialog({ items, close, refresh }: {
     } finally { setWorking(false); setProgress(""); }
   };
   return <div className="modal-backdrop"><div className="modal update-modal batch-update-modal">
-    <div className="modal-head"><div><h2>{t("选择要更新的 Skills", "Choose Skills to update")}</h2>
-      <small>{t(`${items.length} 个来源 · 已选择 ${selectedCount} 个 Skills`,
-        `${items.length} source${items.length === 1 ? "" : "s"} · ${selectedCount} Skills selected`)}</small></div><button onClick={close} disabled={working}><X /></button></div>
+    <div className="modal-head"><div><h2>{t("更新来源分组", "Update source groups")}</h2>
+      <small>{t(`${items.length} 个来源分组 · 将更新 ${selectedCount} 个 Skills`,
+        `${items.length} source group${items.length === 1 ? "" : "s"} · ${selectedCount} Skills in scope`)}</small></div><button onClick={close} disabled={working}><X /></button></div>
     <div className="update-plan-list">{items.map(({ group, value }) => {
       const names = selected[value.id] ?? [];
       const scan = scans[value.id];
       const blocking = ["critical", "high"].includes(scan.activeHighestSeverity);
+      const blockedByRisk = blocking && !planRiskApproved(value.id);
+      const diagnostics = updateSkillDiagnostics(value, scan);
       return <section className="update-plan" key={value.id}>
-        <div className="repo-summary update-repo"><FolderGit2 size={24} /><div><strong>{displayGroupName(group.name, locale)}</strong>
+        <div className="repo-summary update-repo"><FolderGit2 size={24} /><div><strong>{displayGroup(group, locale)}</strong>
           <span>{value.repository.resolvedRef} · Commit {value.repository.commitSha.slice(0, 12)} · {t(`仅扫描本次写入的 ${scan.filesScanned} 个文件`, `Scanned only the ${scan.filesScanned} files to be written`)}</span></div>
           <span className={`severity ${scan.activeHighestSeverity}`}>{severityLabel(scan.activeHighestSeverity, locale)}</span></div>
-        <div className="candidate-tools">
-          <button onClick={() => setSelected({ ...selected, [value.id]: value.skills.map(skill => skill.name) })}>{t("全选", "Select all")}</button>
-          <button onClick={() => setSelected({ ...selected, [value.id]: value.skills.filter(skill => !names.includes(skill.name)).map(skill => skill.name) })}>{t("反选", "Invert")}</button>
-          <button onClick={() => setSelected({ ...selected, [value.id]: [] })} disabled={!names.length}>{t("清空", "Clear")}</button>
-        </div>
-        <div className="candidate-list update-candidates">{value.skills.map(skill => <label key={skill.name}>
-          <input type="checkbox" checked={names.includes(skill.name)}
-            onChange={() => setSelected({ ...selected, [value.id]: names.includes(skill.name) ? names.filter(name => name !== skill.name) : [...names, skill.name] })} />
-          <span><strong>{skill.name}</strong><small>{skill.description}</small><code>{skill.sourcePath}</code></span>
-        </label>)}</div>
+        <details className="update-group-skills">
+          <summary><strong>{t("整个来源分组", "Complete source group")}</strong><span>{t(`${value.skills.length} 个 Skill 将一起更新`, `${value.skills.length} Skills update together`)}</span></summary>
+          <div className="update-group-skill-list">{value.skills.map(skill => <div key={skill.name}>
+            <strong>{skill.name}</strong><small>{skill.description}</small><code>{skill.sourcePath}</code>
+          </div>)}</div>
+        </details>
         <ScanSummary report={scan} compact />
         <FindingDetails report={scan} reviewing={reviewing} onToggle={cluster => toggleCluster(value.id, cluster)}
           onCodexReview={() => codexReview(value.id)} codexWorking={codexWorking}
           codexProgress={codexProgress?.reportId === scan.id ? codexProgress : null}
           onApplyCodexSuggestions={clusters => applyCodexSuggestions(value.id, clusters)}
           onIgnoreAll={clusters => ignoreAll(value.id, clusters)} />
-        {blocking && <div className="error-banner inline"><CircleAlert size={17} />
-          {t("仍有 High 或 Critical 风险。High 必须逐项确认，Critical 必须修复。", "High or Critical findings remain. Confirm High individually and fix Critical findings.")}</div>}
+        {blockedByRisk && <div className="error-banner inline"><CircleAlert size={17} />
+          <span>{t("仍有 High 或 Critical 风险。", "High or Critical findings remain.")}</span>
+          <button type="button" className="ghost compact" disabled={working || reviewing !== ""} onClick={() => void approveGroupRisk(value.id)}>
+            {reviewing === "approval:" + value.id ? <LoaderCircle className="spin" size={14} /> : <ShieldCheck size={14} />}{t("一键通过风险", "Approve risks")}
+          </button>
+        </div>}
+        {diagnostics.length > 0 && <details className="update-skill-diagnostics">
+          <summary><CircleAlert size={15} />{t(`查看 ${diagnostics.length} 个 Skill 的错误或人工步骤`, `View errors or manual work for ${diagnostics.length} Skills`)}</summary>
+          <div>{diagnostics.map((diagnostic, index) => <article key={`${diagnostic.skillName}:${index}`}>
+            <strong>{diagnostic.skillName}</strong><span className={diagnostic.error ? "error" : "manual"}>
+              {diagnostic.error || diagnostic.message || t("需要人工处理", "Manual work required")}</span>
+          </article>)}</div>
+        </details>}
       </section>;
     })}</div>
     {progress && <div className="batch-progress"><LoaderCircle className="spin" size={17} /><span>{progress}</span></div>}
@@ -958,7 +1030,7 @@ function UpdateDialog({ items, close, refresh }: {
     <div className="modal-actions"><button className="ghost" onClick={close}>{t("取消", "Cancel")}</button>
       <button className="primary" disabled={working || reviewing !== "" || hasBlockingWarnings || selectedCount === 0} onClick={apply}>
         {working ? <LoaderCircle className="spin" size={17} /> : <ArrowUpCircle size={17} />}
-        {working ? t("正在更新…", "Updating…") : t(`更新选中的 ${selectedCount} 个`, `Update ${selectedCount} selected`)}
+        {working ? t("正在更新…", "Updating…") : t("更新整个来源分组", "Update complete source group")}
       </button></div>
   </div></div>;
 }
@@ -985,8 +1057,8 @@ function FindingDetails({ report, onToggle, reviewing = "", onCodexReview, codex
         "Local rules found no warnings. You can optionally ask Codex to review the full context.")}</div>}
     {onIgnoreAll && batchClusters.length > 0 && <div className="manual-review-action"><div>
       <strong>{t("批量处理警告", "Review warnings in bulk")}</strong>
-      <small>{t(`可批量忽略 ${batchClusters.length} 个 Medium 及以下警告；High 必须逐项确认，Critical 不可忽略。`,
-        `Ignore ${batchClusters.length} eligible Medium-or-lower warnings; High requires individual confirmation and Critical cannot be ignored.`)}</small>
+      <small>{t(`这里的批量按钮只处理 ${batchClusters.length} 个 Medium 及以下警告；要处理整个分组，请使用分组行的一键通过。`,
+        `This batch button handles ${batchClusters.length} Medium-or-lower warnings. Use the group-row action to approve the complete group.`)}</small>
     </div><button className="primary compact" disabled={reviewing !== "" || codexWorking}
       onClick={() => void onIgnoreAll(batchClusters)}>
       {reviewing === "manual-batch" ? <LoaderCircle className="spin" size={14} /> : <CheckSquare2 size={14} />}
@@ -1202,7 +1274,7 @@ function RiskOverview({ report }: { report: ScanReport }) {
   </div>;
 }
 
-function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }: {
+/* function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }: {
   data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation; rootFilter: string; defaultRootId: string;
 }) {
   const { t, locale, formatDate } = useI18n();
@@ -1210,10 +1282,13 @@ function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }
   const [working, setWorking] = useState(false);
   const [codexWorking, setCodexWorking] = useState(false);
   const [reviewing, setReviewing] = useState("");
+  const [approvedGroups, setApprovedGroups] = useState<Set<string>>(new Set());
   const activeRootId = rootFilter === "all" ? defaultRootId : rootFilter;
   const selectable = data.skills.filter(skill => !skill.system && (skill.rootId || "codex-default") === activeRootId);
-  const recommendedNames = () => selectable.filter(skill =>
-    !isSecurityCurrent(skill)).map(skill => skill.name);
+  const recommendedNames = () => {
+    const staleGroups = new Set(selectable.filter(skill => !isSecurityCurrent(skill)).map(skill => sourceGroupIdForSkill(skill)));
+    return selectable.filter(skill => staleGroups.has(sourceGroupIdForSkill(skill))).map(skill => skill.name);
+  };
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(() => new Set(recommendedNames()));
   const { progress: codexProgress, clearProgress } = useCodexProgress();
   useEffect(() => {
@@ -1239,13 +1314,19 @@ function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }
     } finally { setWorking(false); }
   };
   const toggleSkill = (name: string) => setSelectedSkills(current => {
+    const skill = selectable.find(item => item.name === name);
+    const groupId = sourceGroupIdForSkill(skill || { name });
+    const names = selectable.filter(item => sourceGroupIdForSkill(item) === groupId).map(item => item.name);
     const next = new Set(current);
-    if (next.has(name)) next.delete(name); else next.add(name);
+    if (names.some(item => next.has(item))) names.forEach(item => next.delete(item)); else names.forEach(item => next.add(item));
     return next;
   });
   const selectAll = () => setSelectedSkills(new Set(selectable.map(skill => skill.name)));
-  const invertSelection = () => setSelectedSkills(new Set(selectable
-    .filter(skill => !selectedSkills.has(skill.name)).map(skill => skill.name)));
+  const invertSelection = () => {
+    const selectedGroups = new Set(selectable.filter(skill => selectedSkills.has(skill.name)).map(skill => sourceGroupIdForSkill(skill)));
+    setSelectedSkills(new Set(selectable.filter(skill => !selectedGroups.has(sourceGroupIdForSkill(skill)))
+      .map(skill => skill.name)));
+  };
   const selectRecommended = () => setSelectedSkills(new Set(recommendedNames()));
   const toggleIgnore = async (cluster: RiskCluster) => {
 		const decision = requestRiskDecision(cluster, !cluster.ignored, t);
@@ -1300,10 +1381,36 @@ function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }
       setReviewing("");
     }
   };
-  const groups = data.groups.map(group => ({
+  const sourceGroups = data.sourceGroups.length ? data.sourceGroups : data.groups;
+  const groups = sourceGroups.map(group => ({
     ...group,
-    skills: selectable.filter(skill => skill.groupId === group.id)
+    skills: selectable.filter(skill => sourceGroupIdForSkill(skill) === (group.sourceGroupId || group.id))
   })).filter(group => group.skills.length > 0);
+  const scanGroup = async (group: typeof groups[number]) => {
+    if (!group.skills.length) return;
+    setWorking(true);
+    try {
+      const scanned = await runOperation(
+        t(`鎵弿 ${displayGroup(group, locale)}`, `Scan ${displayGroup(group, locale)}`),
+        () => api.auditSkills(group.skills.map(skill => skill.name), activeRootId),
+        t("瀹夊畨鍏ㄦ壂鎻忓凡瀹屾垚", "Security scan completed")
+      );
+      if (scanned) {
+        setReport(scanned);
+        setSelectedSkills(current => new Set([...current].filter(name => !group.skills.some(skill => skill.name === name))));
+        await refresh();
+      }
+    } finally { setWorking(false); }
+  };
+  const approveGroup = async (group: typeof groups[number]) => {
+    const groupID = group.sourceGroupId || group.id;
+    setReviewing("group:" + groupID);
+    try {
+      await api.approveGroupSecurity(groupID, group.rootId || activeRootId, "");
+      setApprovedGroups(current => new Set(current).add(groupID));
+      await refresh();
+    } finally { setReviewing(""); }
+  };
   return <div className="security-grid">
     <section className="panel security-summary"><div className="shield"><ShieldCheck size={42} /></div><h2>{t("本地安全扫描", "Local security scan")}</h2>
       <p>{t("检查提示注入、凭据访问、命令执行、网络请求、批量删除和混淆内容。",
@@ -1325,11 +1432,16 @@ function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }
       </div>
       <div className="security-skill-groups">{groups.map(group => {
         const selectedCount = group.skills.filter(skill => selectedSkills.has(skill.name)).length;
-        return <details key={group.id} open={selectedCount > 0}>
-          <summary><span><strong>{displayGroupName(group.name, locale)}</strong><small>{group.skills.length} Skills</small></span>
+        const riskCount = (report?.clusters ?? []).filter(cluster =>
+          !cluster.ignored && (cluster.groupId === group.id || cluster.groupId === group.sourceGroupId)).length;
+        return <details key={group.id}>
+          <summary><span><strong>{displayGroup(group, locale)}</strong><small>{group.skills.length} Skills · {riskCount} {t("涓紑鏀捐鍛?, "open risks")}</small></span>
             <b>{t(`${selectedCount} 个已选`, `${selectedCount} selected`)}</b></summary>
-          <div>{group.skills.map(skill => <label key={skill.name} className="security-skill-option">
-            <input type="checkbox" checked={selectedSkills.has(skill.name)} onChange={() => toggleSkill(skill.name)} />
+          <button type="button" className="ghost compact security-group-action" disabled={working || codexWorking}
+            onClick={event => { event.preventDefault(); event.stopPropagation(); void scanGroup(group); }}>
+            <ShieldCheck size={14} />{riskCount ? t("澶嶆煡椋庨櫓", "Review risks") : t("鎵弿鍒嗙粍", "Scan group")}
+          </button>
+          <div>{group.skills.map(skill => <div key={skill.name} className="security-skill-option">
             <span><strong>{skill.name}</strong><small>
               {isSecurityCurrent(skill)
                 ? t(`已检查${skill.lastSecurityScan ? ` · ${formatDate(skill.lastSecurityScan)}` : ""}`,
@@ -1339,7 +1451,7 @@ function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }
             <em className={isSecurityCurrent(skill) ? "checked" : "pending"}>
               {isSecurityCurrent(skill) ? t("可跳过", "Can skip") : t("建议检查", "Recommended")}
             </em>
-          </label>)}</div>
+          </div>)}</div>
         </details>;
       })}</div>
     </section>
@@ -1356,6 +1468,140 @@ function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }
             onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} />
         </div>
       </>}
+    </section>
+  </div>;
+}
+
+*/
+
+function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }: {
+  data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation; rootFilter: string; defaultRootId: string;
+}) {
+  const { t, locale, formatDate } = useI18n();
+  const approveGroup = async (group: Group) => {
+    const groupID = group.sourceGroupId || group.id;
+    setReviewing("group:" + groupID);
+    try {
+      await api.approveGroupSecurity(groupID, group.rootId || activeRootId, "");
+      setApprovedGroups(current => new Set(current).add(groupID));
+      await refresh();
+    } finally { setReviewing(""); }
+  };
+  const [report, setReport] = useState<ScanReport | null>(data.recentReports[0] ?? null);
+  const [working, setWorking] = useState(false);
+  const [codexWorking, setCodexWorking] = useState(false);
+  const [reviewing, setReviewing] = useState("");
+  const [approvedGroups, setApprovedGroups] = useState<Set<string>>(new Set());
+  const activeRootId = rootFilter === "all" ? defaultRootId : rootFilter;
+  const selectable = data.skills.filter(skill => !skill.system && (skill.rootId || "codex-default") === activeRootId);
+  const sourceGroups = data.sourceGroups.length ? data.sourceGroups : data.groups;
+  const groups = sourceGroups.map(group => ({
+    ...group,
+    skills: selectable.filter(skill => sourceGroupIdForSkill(skill) === (group.sourceGroupId || group.id))
+  })).filter(group => group.skills.length > 0);
+  const recommendedNames = () => {
+    const stale = new Set(selectable.filter(skill => !isSecurityCurrent(skill)).map(skill => sourceGroupIdForSkill(skill)));
+    return selectable.filter(skill => stale.has(sourceGroupIdForSkill(skill))).map(skill => skill.name);
+  };
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(() => new Set(recommendedNames()));
+  const { progress: codexProgress, clearProgress } = useCodexProgress();
+  useEffect(() => setSelectedSkills(new Set(recommendedNames())), [activeRootId]);
+  useEffect(() => {
+    const latest = data.recentReports[0] ?? null;
+    if (!working && !codexWorking && latest?.id !== report?.id) setReport(latest);
+  }, [data.recentReports, working, codexWorking, report?.id]);
+  const audit = async () => {
+    const names = [...selectedSkills];
+    if (!names.length) return;
+    setWorking(true);
+    try {
+      const scanned = await runOperation("Scan " + names.length + " Skills", () => api.auditSkills(names, activeRootId), t("安全扫描已完成", "Security scan completed"));
+      if (scanned) { setReport(scanned); setSelectedSkills(new Set()); await refresh(); }
+    } finally { setWorking(false); }
+  };
+  const toggleGroup = (group: typeof groups[number]) => setSelectedSkills(current => {
+    const names = group.skills.map(skill => skill.name);
+    const next = new Set(current);
+    if (names.some(name => next.has(name))) names.forEach(name => next.delete(name)); else names.forEach(name => next.add(name));
+    return next;
+  });
+  const selectAll = () => setSelectedSkills(new Set(selectable.map(skill => skill.name)));
+  const invertSelection = () => {
+    const selectedGroups = new Set(groups.filter(group => group.skills.some(skill => selectedSkills.has(skill.name))).map(group => group.id));
+    setSelectedSkills(new Set(groups.filter(group => !selectedGroups.has(group.id)).flatMap(group => group.skills.map(skill => skill.name))));
+  };
+  const selectRecommended = () => setSelectedSkills(new Set(recommendedNames()));
+  const toggleIgnore = async (cluster: RiskCluster) => {
+    const decision = requestRiskDecision(cluster, !cluster.ignored, t);
+    if (!decision) return;
+    setReviewing(cluster.id);
+    const changed = await runOperation(
+      cluster.ignored ? t("恢复警告", "Restore warning") : t("记录人工决定", "Record manual decision"),
+      () => api.setRiskClusterIgnored(cluster, !cluster.ignored, decision.reason, decision.confirmHighRisk),
+      cluster.ignored ? t("警告已恢复", "Warning restored") : t("警告已忽略", "Warning ignored")
+    );
+    setReviewing("");
+    if (!changed) return;
+    setReport(current => current ? updateClusterState(current, cluster.id, !cluster.ignored, decision.reason) : current);
+    await refresh();
+  };
+  const ignoreAll = async (clusters: RiskCluster[]) => {
+    const eligible = batchDismissibleClusters(clusters);
+    if (!report || !eligible.length) return;
+    setReviewing("manual-batch");
+    const changed = await runOperation(t("批量忽略可处理警告", "Ignore eligible warnings in bulk"), () => api.setRiskClustersIgnored(eligible, true, ""), t("警告已忽略", "Warnings ignored"));
+    setReviewing("");
+    if (!changed) return;
+    setReport(current => current ? updateClustersState(current, eligible, true, "") : current);
+    await refresh();
+  };
+  const reviewWithCodex = async () => {
+    if (!report) return;
+    setCodexWorking(true); clearProgress();
+    try {
+      const reviewed = await runOperation(t("Codex 风险复核", "Codex risk review"), () => api.reviewWithCodex(report, (report.skills ?? []).map(skill => skill.skillName)), t("Codex 风险复核已完成", "Codex risk review completed"));
+      if (reviewed) { setReport(reviewed); await refresh(); }
+    } finally { setCodexWorking(false); }
+  };
+  const applyCodexSuggestions = async (clusters: RiskCluster[]) => {
+    if (!report || !confirmCodexSuggestions(report, clusters)) return;
+    setReviewing("codex-batch");
+    try {
+      const reason = codexBatchReason(report, clusters, locale);
+      await api.setRiskClustersIgnored(clusters, true, reason);
+      setReport(updateClustersState(report, clusters, true, reason));
+      await refresh();
+    } finally { setReviewing(""); }
+  };
+  const scanGroup = async (group: typeof groups[number]) => {
+    setWorking(true);
+    try {
+      const scanned = await runOperation(t("扫描 " + displayGroup(group, locale), "Scan " + displayGroup(group, locale)), () => api.auditSkills(group.skills.map(skill => skill.name), activeRootId), t("安全扫描已完成", "Security scan completed"));
+      if (scanned) { setReport(scanned); setSelectedSkills(current => new Set([...current].filter(name => !group.skills.some(skill => skill.name === name)))); await refresh(); }
+    } finally { setWorking(false); }
+  };
+  return <div className="security-grid">
+    <section className="panel security-summary"><div className="shield"><ShieldCheck size={42} /></div><h2>{t("本地安全扫描", "Local security scan")}</h2><p>{t("检查提示注入、凭据访问、命令执行、网络请求、批量删除和混淆内容。", "Checks for prompt injection, credential access, command execution, network requests, bulk deletion, and obfuscation.")}</p>
+      <button className="primary" onClick={audit} disabled={working || codexWorking || selectedSkills.size === 0}>{working ? <LoaderCircle className="spin" size={17} /> : <ShieldCheck size={17} />}{working ? t("正在扫描…", "Scanning…") : t("扫描已选 " + selectedSkills.size + " 个", "Scan " + selectedSkills.size + " selected")}</button>
+      <small>{t("文件只在本地读取；Codex 复核可从扫描结果启动。", "Files are read locally only. Codex review can be started from the scan results.")}</small></section>
+    <section className="panel security-queue"><PanelHead title={t("选择要检查的 Skills", "Choose Skills to scan")} subtitle={t("默认选择尚未检查或内容已变化的分组。", "Groups not yet scanned or changed since their last scan are selected by default.")} />
+      <div className="selection-tools"><button className="ghost compact" onClick={selectRecommended}>{t("恢复推荐", "Use recommended")}</button><button className="ghost compact" onClick={selectAll}>{t("全选", "Select all")}</button><button className="ghost compact" onClick={invertSelection}>{t("反选分组", "Invert groups")}</button><button className="ghost compact" onClick={() => setSelectedSkills(new Set())}>{t("清空", "Clear")}</button><small>{t("已选 " + selectedSkills.size + "/" + selectable.length, selectedSkills.size + "/" + selectable.length + " selected")}</small></div>
+      <div className="security-skill-groups">{groups.map(group => {
+        const selectedCount = group.skills.filter(skill => selectedSkills.has(skill.name)).length;
+        const riskCount = (report?.clusters ?? []).filter(cluster => !cluster.ignored && (cluster.groupId === group.id || cluster.groupId === group.sourceGroupId)).length;
+        const selected = selectedCount > 0;
+        const groupID = group.sourceGroupId || group.id;
+        const approved = approvedGroups.has(groupID);
+        return <details key={group.id}><summary><span><strong>{displayGroup(group, locale)}</strong><small>{group.skills.length} Skills · {riskCount} {t("条未处理风险", "open risks")}</small></span><b>{t(selectedCount + " 个已选", selectedCount + " selected")}</b></summary>
+          <button type="button" className="ghost compact security-group-action" disabled={working || codexWorking} onClick={event => { event.preventDefault(); event.stopPropagation(); void scanGroup(group); }}><ShieldCheck size={14} />{riskCount ? t("查看风险", "Review risks") : t("扫描分组", "Scan group")}</button>
+          {riskCount > 0 && <button type="button" className="ghost compact security-group-action" disabled={working || codexWorking || reviewing !== "" || approved} onClick={event => { event.preventDefault(); event.stopPropagation(); void approveGroup(group); }}>{approved ? t("已通过人工审核", "Human approved") : t("一键通过风险", "Approve risks")}</button>}
+          <button type="button" className={"ghost compact " + (selected ? "selected" : "")} disabled={working || codexWorking} onClick={() => toggleGroup(group)}>{selected ? t("取消分组选择", "Deselect group") : t("选择整个分组", "Select whole group")}</button>
+          <div>{group.skills.map(skill => <div key={skill.name} className="security-skill-option"><span><strong>{skill.name}</strong><small>{isSecurityCurrent(skill) ? t("已检查" + (skill.lastSecurityScan ? " · " + formatDate(skill.lastSecurityScan) : ""), "Scanned" + (skill.lastSecurityScan ? " · " + formatDate(skill.lastSecurityScan) : "")) : skill.securityChanged ? t("内容已变化，需要重新检查", "Content changed; scan again") : t("尚未检查", "Not scanned")}</small></span><em className={isSecurityCurrent(skill) ? "checked" : "pending"}>{isSecurityCurrent(skill) ? t("可跳过", "Can skip") : t("建议检查", "Recommended")}</em></div>)}</div>
+        </details>;
+      })}</div>
+    </section>
+    <section className="panel security-results"><PanelHead title={t("最近扫描结果", "Latest scan result")} subtitle={report ? t(report.filesScanned + " 个文件 · " + report.activeFindingCount + " 条未处理 · " + report.ignoredFindingCount + " 条已忽略", report.filesScanned + " files · " + report.activeFindingCount + " open · " + report.ignoredFindingCount + " ignored") : t("尚未扫描", "Not scanned yet")} />
+      {!report ? <Empty text={t("运行一次本地安全扫描", "Run a local security scan")} /> : <><ScanSummary report={report} /><div className="security-report-details"><FindingDetails report={report} reviewing={reviewing} onToggle={toggleIgnore} onCodexReview={reviewWithCodex} codexWorking={codexWorking} codexProgress={codexProgress?.reportId === report.id ? codexProgress : null} onApplyCodexSuggestions={applyCodexSuggestions} onIgnoreAll={ignoreAll} /></div></>}
     </section>
   </div>;
 }
@@ -1462,8 +1708,8 @@ function requestRiskDecision(cluster: RiskCluster, ignored: boolean, t: Translat
 	if (!ignored) return { reason: "", confirmHighRisk: false };
 	if (cluster.severity === "critical") {
 		window.alert(t(
-			"Critical 风险不可忽略。请修复风险内容或更换来源后重新检查。",
-			"Critical risk cannot be ignored. Fix the content or replace the source, then reassess."
+			"详情页不单独处理 Critical 风险，请使用来源分组行的“一键通过风险”。",
+			"Critical risk is approved at the source-group row. Use its one-click approval action."
 		));
 		return null;
 	}
