@@ -3,7 +3,7 @@
 ## Project snapshot
 
 - Product: Windows desktop and CLI manager for Codex-compatible Skills.
-- Release line: `0.15.0`.
+- Release line: `0.14.0`.
 - Desktop: Wails v2 with a React/Vite/TypeScript frontend.
 - CLI: `cmd/csm`, with stable JSON envelopes for automation.
 - Default data directory: `%USERPROFILE%\.codex\skill-manager`.
@@ -57,31 +57,6 @@ Mutating operations use a process-wide, root-scoped writer lease. The desktop
 shell rejects overlapping page operations and ignores stale dashboard refresh
 responses. The lease is a UI/process fence, not a substitute for external file
 change verification; apply paths still recheck hashes and plan digests.
-
-### 0.15 group hardening
-
-Group approvals are now bound to the exact persisted report plus root, group,
-repository, commit, and `policyVersion`. The security-center and update-dialog
-one-click flows reuse a report only while the current plan matches that report;
-a newer report, changed commit, or different repository invalidates the stored
-decision and requires a fresh approval. Legacy v0.14 reports without a policy
-version keep their group-prefix approval key only after the same binding
-checks pass.
-
-Source-group parent transactions left `running` by an application exit are
-reconciled on the next dashboard read: the parent and its `GroupOperation`
-become `recovery-required`, queued/running steps become `interrupted`, and the
-parent rollback entry remains the recovery authority. Completed child install
-transactions keep their own journals and recover in reverse order through
-`Rollback`.
-
-`GetGroupOperation` and `GetGroupMetadata` are read-only desktop/CLI contracts
-(`csm group operation --id ID`, `csm group metadata --group ID`). The install
-dialog shows the complete source group without per-Skill selection controls;
-the Groups page renders the latest analysis, security report, operation, and
-update status for source groups. A book-to-skill-shaped regression covers
-root-level and nested `SKILL.md` discovery, analysis, one-click approval, and
-complete-group installation.
 
 ## Root and identity model
 
@@ -234,8 +209,5 @@ at the real user Skill roots.
 - `ApplyAdoptionBestEffort`, `ApplyInstallBestEffort`, and multi-Skill audit
   results use child outcomes. A parent transaction may be `partial`; retry the
   failed child instead of repeating successful targets.
-- Release `0.15.0` keeps source groups as the authoritative install, update,
-  and security unit, adds strict approval binding (report + repository +
-  commit + policy version), restart recovery for interrupted group operations,
-  group metadata/operation read interfaces, and complete-group-only install
-  controls while retaining standard and legacy APIs for compatibility.
+- Release `0.14.0` makes source groups the authoritative install, update, and
+  security unit while retaining standard and legacy APIs for compatibility.

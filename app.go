@@ -497,20 +497,6 @@ func (a *App) GetGroupOperations(limit int) ([]model.GroupOperation, error) {
 	return a.mgr.GroupOperations(limit)
 }
 
-func (a *App) GetGroupOperation(id string) (model.GroupOperation, error) {
-	if err := a.ready(); err != nil {
-		return model.GroupOperation{}, err
-	}
-	return a.mgr.GetGroupOperation(id)
-}
-
-func (a *App) GetGroupMetadata(groupID, rootID string) (model.GroupMetadata, error) {
-	if err := a.ready(); err != nil {
-		return model.GroupMetadata{}, err
-	}
-	return a.mgr.GetGroupMetadata(groupID, rootID)
-}
-
 func (a *App) SetFindingIgnored(finding model.Finding, ignored bool, reason string) (bool, error) {
 	if err := a.ready(); err != nil {
 		return false, err

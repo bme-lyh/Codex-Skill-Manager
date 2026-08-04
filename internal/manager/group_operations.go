@@ -27,48 +27,18 @@ func (m *Manager) sourceGroupRiskApproved(preview model.InstallPreview) bool {
 		return true
 	}
 	if preview.SourceGroupID != "" {
+		if approved, groupErr := m.store.HasApproval(groupSecurityApprovalPrefix+preview.SourceGroupID, groupRiskApprovalDecision); groupErr == nil && approved {
+			return true
+		}
 		if report, reportErr := m.store.LatestGroupSecurityReport(preview.TargetRootID, preview.SourceGroupID); reportErr == nil {
-			if !groupSecurityReportMatchesPreview(report, preview) {
+			if report.CommitSHA != "" && preview.Repository.CommitSHA != "" && !strings.EqualFold(report.CommitSHA, preview.Repository.CommitSHA) {
 				return false
 			}
-			key := groupSecurityApprovalPrefix + report.PolicyVersion + ":" + report.ID
-			if report.PolicyVersion == "" {
-				key = groupSecurityApprovalPrefix + preview.SourceGroupID
-			}
-			approved, reportErr := m.store.HasApproval(key, groupRiskApprovalDecision)
+			approved, reportErr := m.store.HasApproval(report.ID, groupRiskApprovalDecision)
 			return reportErr == nil && approved
 		}
 	}
 	return false
-}
-
-// groupSecurityReportMatchesPreview binds a persisted report to the exact
-// source-group contract used by the current install/update preview.  A report
-// from a different root, group, repository, commit, or policy version can
-// never approve a new plan.
-func groupSecurityReportMatchesPreview(report model.GroupSecurityReport, preview model.InstallPreview) bool {
-	if strings.TrimSpace(report.RootID) == "" || strings.TrimSpace(preview.TargetRootID) == "" ||
-		!strings.EqualFold(strings.TrimSpace(report.RootID), strings.TrimSpace(preview.TargetRootID)) {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(report.GroupID), strings.TrimSpace(preview.SourceGroupID)) {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(report.Provider), strings.TrimSpace(preview.Repository.Provider)) {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(report.Repository), strings.TrimSpace(preview.Repository.FullName)) {
-		return false
-	}
-	if strings.TrimSpace(report.CommitSHA) == "" ||
-		!strings.EqualFold(strings.TrimSpace(report.CommitSHA), strings.TrimSpace(preview.Repository.CommitSHA)) {
-		return false
-	}
-	if strings.TrimSpace(report.PolicyVersion) != "" &&
-		!strings.EqualFold(strings.TrimSpace(report.PolicyVersion), model.GroupSecurityPolicyVersion) {
-		return false
-	}
-	return true
 }
 
 // SourceTrustPolicy returns the current repository-wide GitHub trust decision.
@@ -119,7 +89,7 @@ func (m *Manager) setSourceTrust(repository, reason string, trusted bool) (model
 	}
 	policy := model.SourceTrustPolicy{
 		Repository: canonical, Provider: "github", Trusted: trusted, Reason: strings.TrimSpace(reason),
-		PolicyVersion: model.GroupSecurityPolicyVersion, SetAt: now, UpdatedAt: now,
+		SetAt: now, UpdatedAt: now,
 	}
 	if !trusted {
 		policy.RevokedAt = &now
@@ -215,15 +185,7 @@ func (m *Manager) ApproveGroupSecurity(groupID, rootID, reason string) (model.Tr
 		_, failErr := m.fail(tx, err)
 		return tx, failErr
 	}
-	// New approvals are bound to the report, group, root, commit, and policy
-	// version through the composite key.  Legacy v0.14 reports without a
-	// policy version keep the group-prefix key so their stored decisions are
-	// still readable by the strict matcher's legacy branch.
-	approvalKey := groupSecurityApprovalPrefix + report.PolicyVersion + ":" + report.ID
-	if report.PolicyVersion == "" {
-		approvalKey = groupSecurityApprovalPrefix + groupID
-	}
-	if err := m.store.Approve(approvalKey, groupRiskApprovalDecision, decisionReason); err != nil {
+	if err := m.store.Approve(groupSecurityApprovalPrefix+groupID, groupRiskApprovalDecision, decisionReason); err != nil {
 		_, failErr := m.fail(tx, err)
 		return tx, failErr
 	}
@@ -382,14 +344,6 @@ func (m *Manager) applyGroupOperation(planID string, selected []string, acceptRi
 		OperationID: "group-op-" + now.Format("20060102T150405.000000000"),
 		Targets:     append([]string(nil), chosen...), StartedAt: now,
 	}
-	m.mu.Lock()
-	m.groupOps[parent.OperationID] = true
-	m.mu.Unlock()
-	defer func() {
-		m.mu.Lock()
-		delete(m.groupOps, parent.OperationID)
-		m.mu.Unlock()
-	}()
 	operationStatus := model.GroupStatusInstalling
 	op := model.GroupOperation{
 		ID: parent.OperationID, ParentTransactionID: parent.ID, RootID: root.ID, GroupID: groupID,
@@ -516,8 +470,7 @@ func (m *Manager) AuditGroup(groupID string, requestedRootID ...string) (model.G
 	report := model.GroupSecurityReport{
 		ID: "group-security-" + time.Now().UTC().Format("20060102T150405.000000000"), RootID: rootID,
 		GroupID: groupID, GroupName: source.Name, Provider: source.Provider, Repository: source.Repository, CommitSHA: commitSHA,
-		PolicyVersion: model.GroupSecurityPolicyVersion,
-		Status:        scan.Status, HighestSeverity: scan.HighestSeverity, ActiveHighestSeverity: scan.ActiveHighestSeverity,
+		Status: scan.Status, HighestSeverity: scan.HighestSeverity, ActiveHighestSeverity: scan.ActiveHighestSeverity,
 		Findings: append([]model.Finding(nil), scan.Findings...), Clusters: append([]model.RiskCluster(nil), scan.Clusters...),
 		ScanReportID: scan.ID, CreatedAt: scan.StartedAt, CompletedAt: scan.CompletedAt,
 		Skills:  make([]model.GroupSkillSecurity, 0, len(scan.Skills)),
@@ -558,8 +511,7 @@ func (m *Manager) AnalyzeGroup(groupID string, requestedRootID ...string) (model
 	analysis := model.SourceAnalysis{
 		ID: "source-analysis-" + now.Format("20060102T150405.000000000"), RootID: report.RootID,
 		GroupID: report.GroupID, GroupName: report.GroupName, Provider: report.Provider,
-		Repository: report.Repository, CommitSHA: report.CommitSHA, PolicyVersion: report.PolicyVersion,
-		Status: report.Status, Security: report,
+		Repository: report.Repository, CommitSHA: report.CommitSHA, Status: report.Status, Security: report,
 		ScanReportID: report.ScanReportID, CreatedAt: now, CompletedAt: report.CompletedAt,
 		Summary: report.Summary, Skills: make([]string, 0, len(report.Skills)),
 	}
@@ -596,8 +548,7 @@ func (m *Manager) GetOrCreateSourceGroupAnalysis(planID string) (model.SourceAna
 	report := model.GroupSecurityReport{
 		ID: "group-security-preview-" + planID, RootID: preview.TargetRootID, GroupID: groupID, GroupName: groupName,
 		Provider: preview.Repository.Provider, Repository: preview.Repository.FullName, CommitSHA: preview.Repository.CommitSHA,
-		PolicyVersion: model.GroupSecurityPolicyVersion,
-		Status:        scan.Status, HighestSeverity: scan.HighestSeverity, ActiveHighestSeverity: scan.ActiveHighestSeverity,
+		Status: scan.Status, HighestSeverity: scan.HighestSeverity, ActiveHighestSeverity: scan.ActiveHighestSeverity,
 		Summary: model.LocalizedText{En: "Source understanding and security checks are ready for review.", Zh: "来源理解和安全检查已完成，等待审核。"},
 		Skills:  make([]model.GroupSkillSecurity, 0, len(preview.Skills)), Findings: append([]model.Finding(nil), scan.Findings...), Clusters: append([]model.RiskCluster(nil), scan.Clusters...),
 		ScanReportID: scan.ID, CreatedAt: now, CompletedAt: scan.CompletedAt,
@@ -623,8 +574,7 @@ func (m *Manager) GetOrCreateSourceGroupAnalysis(planID string) (model.SourceAna
 	analysis := model.SourceAnalysis{
 		ID: "source-analysis-" + planID, RootID: preview.TargetRootID, GroupID: groupID, GroupName: groupName,
 		Provider: preview.Repository.Provider, Repository: preview.Repository.FullName, CommitSHA: preview.Repository.CommitSHA,
-		PolicyVersion: model.GroupSecurityPolicyVersion,
-		Status:        "ready", Summary: report.Summary, Security: report, ScanReportID: scan.ID, PlanID: planID,
+		Status: "ready", Summary: report.Summary, Security: report, ScanReportID: scan.ID, PlanID: planID,
 		ContextDigest: preview.PreviewDigest, AnalysisDigest: preview.PreviewDigest, CreatedAt: now, ExpiresAt: preview.ExpiresAt,
 	}
 	for _, candidate := range preview.Skills {
@@ -646,136 +596,6 @@ func (m *Manager) SourceAnalyses(limit int) ([]model.SourceAnalysis, error) {
 
 func (m *Manager) GroupOperations(limit int) ([]model.GroupOperation, error) {
 	return m.store.RecentGroupOperations(limit)
-}
-
-func (m *Manager) GetGroupOperation(id string) (model.GroupOperation, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return model.GroupOperation{}, errors.New("group operation ID is required")
-	}
-	return m.store.GroupOperation(id)
-}
-
-// GetGroupMetadata returns the combined read-only detail contract for one
-// source group: its dashboard projection plus the latest persisted analysis,
-// security report, operation, and update status.
-func (m *Manager) GetGroupMetadata(groupID string, requestedRootID ...string) (model.GroupMetadata, error) {
-	groupID = strings.TrimSpace(groupID)
-	if groupID == "" {
-		return model.GroupMetadata{}, errors.New("source group ID is required")
-	}
-	rootID := ""
-	if len(requestedRootID) > 0 {
-		rootID = strings.TrimSpace(requestedRootID[0])
-	}
-	dashboard, err := m.Dashboard()
-	if err != nil {
-		return model.GroupMetadata{}, err
-	}
-	var found model.Group
-	for _, candidate := range dashboard.SourceGroups {
-		if candidate.ID == groupID && (rootID == "" || candidate.RootID == rootID) {
-			found = candidate
-			rootID = candidate.RootID
-			break
-		}
-	}
-	if found.ID == "" {
-		for _, candidate := range dashboard.Groups {
-			if candidate.ID == groupID && (rootID == "" || candidate.RootID == rootID) {
-				found = candidate
-				rootID = candidate.RootID
-				break
-			}
-		}
-	}
-	if found.ID == "" {
-		return model.GroupMetadata{}, fmt.Errorf("source group not found: %s", groupID)
-	}
-	metadata := model.GroupMetadata{Group: found}
-	if analysis, analysisErr := m.store.LatestSourceAnalysis(rootID, groupID); analysisErr == nil {
-		metadata.Analysis = &analysis
-	}
-	if report, reportErr := m.store.LatestGroupSecurityReport(rootID, groupID); reportErr == nil {
-		metadata.SecurityReport = &report
-	}
-	if operation, operationErr := m.store.LatestGroupOperation(rootID, groupID); operationErr == nil {
-		metadata.LatestOperation = &operation
-	}
-	if statuses, statusErr := m.store.LatestUpdateStatuses(); statusErr == nil {
-		for index := range statuses {
-			if statuses[index].RootID == rootID && statuses[index].GroupID == groupID {
-				metadata.UpdateStatus = &statuses[index]
-				break
-			}
-		}
-	}
-	return metadata, nil
-}
-
-// reconcileGroupOperations marks source-group parent transactions that were
-// left "running" by an application exit as recovery-required.  Completed child
-// transactions keep their own journals, so the parent rollback entry remains
-// the recovery authority and never runs automatically.
-func (m *Manager) reconcileGroupOperations(
-	transactions []model.Transaction,
-) ([]model.Transaction, error) {
-	out := append([]model.Transaction(nil), transactions...)
-	for index := range out {
-		tx := out[index]
-		if !strings.EqualFold(strings.TrimSpace(tx.Status), "running") ||
-			m.hasActiveGroupRun(tx.OperationID) {
-			continue
-		}
-		message := "应用在整组操作完成前退出；请先回滚已记录的修改 (The application exited before the source-group operation completed; roll back recorded changes first)"
-		completedAt := time.Now().UTC()
-		operationID := strings.TrimSpace(tx.OperationID)
-		if operationID != "" {
-			op, operationErr := m.store.GroupOperation(operationID)
-			if operationErr != nil {
-				tx.Status = model.GroupStatusFailed
-				tx.CompletedAt = completedAt
-				tx.RecoveryStatus = "required"
-				tx.Error = fmt.Sprintf("source-group operation record is unavailable: %v", operationErr)
-				if saveErr := m.store.SaveTransaction(tx); saveErr != nil {
-					return nil, errors.Join(
-						fmt.Errorf("persist interrupted source-group transaction: %w", operationErr),
-						saveErr,
-					)
-				}
-				out[index] = tx
-				continue
-			}
-			op.Status = model.GroupStatusRecoveryRequired
-			op.CompletedAt = completedAt
-			op.RecoveryStatus = "required"
-			op.Error = message
-			for stepIndex := range op.Steps {
-				if op.Steps[stepIndex].Status == "running" || op.Steps[stepIndex].Status == "queued" {
-					op.Steps[stepIndex].Status = "interrupted"
-					op.Steps[stepIndex].Error = message
-				}
-			}
-			if saveErr := m.store.SaveGroupOperation(op); saveErr != nil {
-				return nil, fmt.Errorf("persist interrupted source-group operation: %w", saveErr)
-			}
-		}
-		tx.Status = model.GroupStatusRecoveryRequired
-		tx.CompletedAt = completedAt
-		tx.RecoveryStatus = "required"
-		tx.Error = message
-		if saveErr := m.store.SaveTransaction(tx); saveErr != nil {
-			return nil, fmt.Errorf("persist interrupted source-group transaction: %w", saveErr)
-		}
-		out[index] = tx
-	}
-	return out, nil
-}
-
-func (m *Manager) hasActiveGroupRun(operationID string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return operationID != "" && m.groupOps[operationID]
 }
 
 // rollbackSourceGroup recovers each completed child install in reverse order.

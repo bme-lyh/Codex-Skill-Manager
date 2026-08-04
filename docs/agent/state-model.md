@@ -37,13 +37,6 @@ Group status values are `unknown`, `preparing`, `analyzing`,
 `up-to-date`, `rate-limited`, and `unsupported`. A Skill-level status must not
 be promoted to a separate management key.
 
-Source-group parent transactions left `running` by an application exit are
-reconciled on the next dashboard read. The parent transaction and its
-`GroupOperation` become `recovery-required`, queued/running steps become
-`interrupted`, and the parent rollback entry remains the recovery authority.
-Completed child install transactions keep their own journals and are recovered
-in reverse order by `Rollback` on the parent.
-
 The dashboard risk count is derived from unique, non-ignored High/Critical
 findings in the latest report for each in-scope installed-skill target. It is
 not a count of historical scan rows.

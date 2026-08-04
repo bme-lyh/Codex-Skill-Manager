@@ -85,14 +85,7 @@ csm --json group create --name "Development"
 csm --json group rename --id GROUP_ID --name "Daily tools"
 csm --json group reorder --id GROUP_A --id GROUP_B
 csm --json group move --group GROUP_ID --skill SKILL_A
-csm --json group metadata --group SOURCE_GROUP_ID [--root ROOT_ID]
-csm --json group operation --id GROUP_OPERATION_ID
 ```
-
-`group metadata` returns the dashboard group plus the latest persisted source
-analysis, group security report, group operation, and update status.
-`group operation` returns one persisted source-group parent operation with its
-per-Skill step diagnostics. Both are read-only.
 
 Ignore or restore an exact warning:
 

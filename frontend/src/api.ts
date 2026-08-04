@@ -10,8 +10,6 @@ import type {
   CodexProjectScanResult,
   InstallPreview,
   GroupSecurityReport,
-  GroupMetadata,
-  GroupOperation,
   SourceAnalysis,
   SourceTrustAudit,
   SourceTrustPolicy,
@@ -104,8 +102,6 @@ type Backend = {
   GetOrCreateSourceGroupAnalysis?(plan: string): Promise<SourceAnalysis>;
   GetSourceAnalyses?(limit: number): Promise<SourceAnalysis[]>;
   GetGroupOperations?(limit: number): Promise<any[]>;
-  GetGroupOperation?(id: string): Promise<GroupOperation>;
-  GetGroupMetadata?(groupId: string, rootId: string): Promise<GroupMetadata>;
   GetScanReport(id: string, rootId: string): Promise<ScanReport>;
   SetFindingIgnored(finding: Finding, ignored: boolean, reason: string): Promise<boolean>;
   SetRiskClusterIgnored(cluster: RiskCluster, ignored: boolean, reason: string, confirmDeterministic: boolean): Promise<boolean>;
@@ -507,16 +503,6 @@ export const api = {
     const b = backend();
     if (!b || typeof b.GetOrCreateSourceGroupAnalysis !== "function") throw apiError("当前版本不支持来源分析，请更新应用", "This desktop backend does not support reusable source analysis. Update the app.");
     return b.GetOrCreateSourceGroupAnalysis(plan);
-  },
-  getGroupOperation: async (id: string): Promise<GroupOperation> => {
-    const b = backend();
-    if (!b || typeof b.GetGroupOperation !== "function") throw apiError("当前版本不支持分组操作详情，请更新应用", "This desktop backend does not support group operation details. Update the app.");
-    return b.GetGroupOperation(id);
-  },
-  getGroupMetadata: async (groupId: string, rootId: string): Promise<GroupMetadata> => {
-    const b = backend();
-    if (!b || typeof b.GetGroupMetadata !== "function") throw apiError("当前版本不支持分组元数据，请更新应用", "This desktop backend does not support group metadata. Update the app.");
-    return b.GetGroupMetadata(groupId, rootId);
   },
   sourceTrust: async (repository: string): Promise<SourceTrustPolicy> => {
     const b = backend();

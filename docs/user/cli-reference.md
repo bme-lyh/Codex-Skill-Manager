@@ -73,13 +73,9 @@ csm group create --root agents --name "常用工具"
 csm group rename --id GROUP_ID --name "开发工具"
 csm group reorder --id GROUP_A --id GROUP_B
 csm group move --group GROUP_ID --skill skill-a --skill skill-b
-csm group metadata --group "github:owner/repository" --root agents
-csm group operation --id GROUP_OPERATION_ID
 ```
 
 分组操作只修改本地布局，不改变真实来源；它们都会写入事务日志并支持回滚。
-`group metadata` 返回该来源分组的最新分析、安全报告、操作和更新状态；
-`group operation` 返回一次整组父操作及其逐 Skill 诊断。两者均为只读。
 
 ## GitHub 安装计划
 
