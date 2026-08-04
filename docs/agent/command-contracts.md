@@ -55,6 +55,23 @@ The desktop and CLI group surfaces are `GetOrCreateSourceGroupAnalysis`,
 is the CLI equivalent of the one-click group decision and never changes the
 immutable source or technical gates.
 
+`GetGroupOperation` (`csm group operation --id ID`) returns one persisted
+source-group parent operation with its step diagnostics. `GetGroupMetadata`
+(`csm group metadata --group ID [--root ROOT_ID]`) returns the dashboard group
+plus the latest analysis, security report, operation, and update status in one
+read-only contract. Both are safe to call at any time and never mutate state.
+
+Reusable group approvals are bound to the exact `GroupSecurityReport` plus its
+root, group, repository, commit, and `policyVersion`. A newer report or a plan
+for a different commit/repository cannot reuse an older approval; callers must
+approve the current report again. Legacy reports without a policy version keep
+the v0.14 group-prefix approval key only after the same binding checks pass.
+
+Source-group parent transactions that remain `running` after an application
+exit are reconciled on the next dashboard read: the parent and its group
+operation become `recovery-required`, queued/running steps become
+`interrupted`, and the parent rollback entry remains the recovery authority.
+
 Repository trust is managed by canonical GitHub `owner/repository` identity.
 Set/revoke decisions are journaled and append an audit row. Trust does not
 replace immutable-ref, local scanner, path/hash, or recovery checks. Critical

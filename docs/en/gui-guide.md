@@ -8,7 +8,7 @@ on the first screen. One human confirmation is enough to run the digest-bound
 reviewed plan. Critical findings remain a safety boundary; High findings use a
 single explicit confirmation without a typed reason.
 
-In 0.14.0, the source group is the operation unit. One GitHub repository maps to
+In 0.15.0, the source group is the operation unit. One GitHub repository maps to
 one group, and every valid Skill in that group is installed or updated together.
 Group security reports support one-click human approval for every severity;
 immutable commits, paths, hashes, complete snapshots, and recovery checks still

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const Version = "0.14.0"
+const Version = "0.15.0"
 const SourcesLockSchemaVersion = 2
 
 // Skill root identifiers are part of the persisted identity of a Skill.  A
@@ -342,6 +342,12 @@ const (
 	GroupStatusRateLimited      = "rate-limited"
 	GroupStatusUnsupported      = "unsupported"
 )
+
+// GroupSecurityPolicyVersion identifies the approval/report contract version.
+// Approvals are bound to the exact report, group, repository, commit, and
+// policy version; a plan or report from a different version cannot reuse an
+// older human decision.
+const GroupSecurityPolicyVersion = "v1"
 
 func ValidGroupStatus(value string) bool {
 	switch strings.TrimSpace(value) {
@@ -749,13 +755,16 @@ func (t LocalizedText) Text(locale string) string {
 // explicit human policy signal and never replaces local hash, path, scanner,
 // or immutable-ref checks.
 type SourceTrustPolicy struct {
-	Repository string     `json:"repository"`
-	Provider   string     `json:"provider"`
-	Trusted    bool       `json:"trusted"`
-	Reason     string     `json:"reason,omitempty"`
-	SetAt      time.Time  `json:"setAt,omitempty"`
-	UpdatedAt  time.Time  `json:"updatedAt"`
-	RevokedAt  *time.Time `json:"revokedAt,omitempty"`
+	Repository string `json:"repository"`
+	Provider   string `json:"provider"`
+	Trusted    bool   `json:"trusted"`
+	Reason     string `json:"reason,omitempty"`
+	// PolicyVersion is the repository-wide trust policy contract version.
+	// It is advisory metadata for audit; trust never bypasses technical gates.
+	PolicyVersion string     `json:"policyVersion,omitempty"`
+	SetAt         time.Time  `json:"setAt,omitempty"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+	RevokedAt     *time.Time `json:"revokedAt,omitempty"`
 }
 
 // SourceTrustAudit is append-only evidence for every trust set/revoke action.
@@ -800,6 +809,7 @@ type GroupSecurityReport struct {
 	Provider              string               `json:"provider,omitempty"`
 	Repository            string               `json:"repository,omitempty"`
 	CommitSHA             string               `json:"commitSha,omitempty"`
+	PolicyVersion         string               `json:"policyVersion,omitempty"`
 	Status                string               `json:"status"`
 	HighestSeverity       RiskSeverity         `json:"highestSeverity"`
 	ActiveHighestSeverity RiskSeverity         `json:"activeHighestSeverity"`
@@ -824,6 +834,7 @@ type SourceAnalysis struct {
 	Provider       string              `json:"provider,omitempty"`
 	Repository     string              `json:"repository,omitempty"`
 	CommitSHA      string              `json:"commitSha,omitempty"`
+	PolicyVersion  string              `json:"policyVersion,omitempty"`
 	Status         string              `json:"status"`
 	Summary        LocalizedText       `json:"summary"`
 	Skills         []string            `json:"skills"`
@@ -874,6 +885,17 @@ type GroupOperation struct {
 	StartedAt           time.Time            `json:"startedAt"`
 	CompletedAt         time.Time            `json:"completedAt,omitempty"`
 	RecoveryStatus      string               `json:"recoveryStatus,omitempty"`
+}
+
+// GroupMetadata is the combined read-only detail view for one source group.
+// It lets the UI render repository, member, analysis, report, operation, and
+// update state from one contract without inventing a new primary status.
+type GroupMetadata struct {
+	Group           Group                `json:"group"`
+	Analysis        *SourceAnalysis      `json:"analysis,omitempty"`
+	SecurityReport  *GroupSecurityReport `json:"securityReport,omitempty"`
+	LatestOperation *GroupOperation      `json:"latestOperation,omitempty"`
+	UpdateStatus    *UpdateStatus        `json:"updateStatus,omitempty"`
 }
 
 // CodexProjectSecurity is the read-only security portion of a project scan.

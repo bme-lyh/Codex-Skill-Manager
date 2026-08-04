@@ -41,6 +41,7 @@ type Manager struct {
 	assisted   map[string]model.AssistedInstallPlan
 	progress   map[string]model.AssistedInstallProgress
 	cancels    map[string]context.CancelFunc
+	groupOps   map[string]bool
 }
 
 func (m *Manager) configuredRoots() []model.SkillRoot {
@@ -148,6 +149,7 @@ func Open(configPath string) (*Manager, error) {
 		assisted:  map[string]model.AssistedInstallPlan{},
 		progress:  map[string]model.AssistedInstallProgress{},
 		cancels:   map[string]context.CancelFunc{},
+		groupOps:  map[string]bool{},
 	}, nil
 }
 
@@ -312,6 +314,15 @@ func (m *Manager) Dashboard() (model.Dashboard, error) {
 		return model.Dashboard{}, recoveryHistoryErr
 	}
 	history = mergeTransactionHistory(history, recoverableAssisted)
+	recoverableGroups, groupRecoveryErr := m.store.RecoverableGroupTransactions()
+	if groupRecoveryErr != nil {
+		return model.Dashboard{}, groupRecoveryErr
+	}
+	recoverableGroups, groupRecoveryErr = m.reconcileGroupOperations(recoverableGroups)
+	if groupRecoveryErr != nil {
+		return model.Dashboard{}, groupRecoveryErr
+	}
+	history = mergeTransactionHistory(history, recoverableGroups)
 	updateStatuses, updateErr := m.store.LatestUpdateStatuses()
 	if updateErr != nil {
 		return model.Dashboard{}, updateErr

@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.15.0
+
+### English
+
+- Bound every reusable group approval to the exact report, source group, root,
+  repository, commit, and policy version. A changed plan, newer report, or
+  stale approval can no longer be reused; technical integrity errors remain
+  non-bypassable.
+- Added restart recovery for source-group install/update parents. An
+  interrupted parent becomes `recovery-required` with interrupted steps, and
+  the existing parent rollback entry remains the recovery authority.
+- Added read-only `GetGroupOperation` and `GetGroupMetadata` contracts, plus
+  `csm group operation` and `csm group metadata` CLI commands, so the UI and
+  automation can render commit, analysis, security report, operation, and
+  update state from one source-group view.
+- Kept the install dialog strictly whole-group: member details remain visible
+  but selection, deselection, and per-Skill install controls were removed.
+- Added a real book-to-skill-shaped regression covering root-level and nested
+  `SKILL.md` discovery, source-group analysis, one-click risk approval, and
+  complete-group installation.
+- Added source-group metadata details to the Groups page and commit/report
+  time/status to Security rows.
+
+### 中文
+
+- 分组人工批准现在严格绑定报告、来源分组、根、仓库、Commit 和策略版本；
+  计划变化、报告更新或旧批准不能复用，技术完整性错误仍不可绕过。
+- 增加来源分组安装/更新父事务的重启恢复：中断的父事务标记为
+  recovery-required，未完成步骤标记为 interrupted，恢复入口仍使用原父事务回滚。
+- 增加只读 GetGroupOperation / GetGroupMetadata 契约，以及
+  `csm group operation` / `csm group metadata` 命令，界面和自动化可从单一
+  分组视图读取 Commit、分析、安全报告、操作和更新状态。
+- 安装弹窗保持严格整组：成员详情可见，但已移除选择、反选和单 Skill 安装控件。
+- 增加 book-to-skill 形态的真实回归：覆盖根目录与嵌套 SKILL.md 发现、
+  来源分组分析、一键通过风险与整组安装。
+- 分组管理页新增来源分组元数据，安全中心分组行显示 Commit、报告时间和处理状态。
+
 ## 0.14.0
 
 ### English

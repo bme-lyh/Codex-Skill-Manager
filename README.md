@@ -6,7 +6,7 @@ Codex Skill Manager is a Windows app for understanding, checking, installing,
 updating, organizing, and recovering Codex Skills. Changes are explicit,
 logged, and reversible.
 
-[Download v0.14.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.14.0)
+[Download v0.15.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.15.0)
 
 [Get started](docs/en/getting-started.md) ·
 [User guide](docs/en/gui-guide.md) ·
@@ -14,7 +14,7 @@ logged, and reversible.
 [中文](README_ZH.md)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb)
-![Version](https://img.shields.io/badge/version-0.14.0-187a69)
+![Version](https://img.shields.io/badge/version-0.15.0-187a69)
 ![Go](https://img.shields.io/badge/Go-1.26-00add8)
 ![Wails](https://img.shields.io/badge/Wails-v2-cc1f45)
 ![License](https://img.shields.io/badge/license-MIT-334155)
@@ -112,10 +112,10 @@ so SmartScreen may show a warning. Download only from this repository and
 verify the archive against the included checksum file:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.14.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.15.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-Compare the result with `CodexSkillManager-0.14.0-SHA256SUMS.txt`.
+Compare the result with `CodexSkillManager-0.15.0-SHA256SUMS.txt`.
 
 ### Add the bundled Codex Skill
 
@@ -167,5 +167,5 @@ The unified shell is a UI refactor. Legacy Page routes and the Wails/API
 compatibility boundary remain available for existing integrations; the visible
 workflow is documented with the current labels above.
 
-Codex Skill Manager 0.14.0 supports Windows 10/11 and is licensed under the
+Codex Skill Manager 0.15.0 supports Windows 10/11 and is licensed under the
 [MIT License](LICENSE).

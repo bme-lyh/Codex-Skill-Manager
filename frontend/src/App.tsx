@@ -18,10 +18,10 @@ import { Loading, OperationBanner } from "./shell/AppChrome";
 import type { Operation } from "./shell/AppChrome";
 import { applyTheme, normalizeTheme } from "./theme";
 import type { AppTheme } from "./theme";
-import { groupLocalizedName, sourceGroupIdForSkill, sourceGroupNameForSkill } from "./grouping";
+import { groupLocalizedName, localizedValue, sourceGroupIdForSkill, sourceGroupNameForSkill } from "./grouping";
 import type { NavigationGroupId, NavigationTabId } from "./shell/navigation";
 import type { AppLocale, Translate } from "./i18n";
-import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateSkillDiagnostic, UpdateStatus } from "./types";
+import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, GroupMetadata, InstallPreview, RiskCluster, ScanReport, Skill, UpdateSkillDiagnostic, UpdateStatus } from "./types";
 
 type Page = "overview" | "skills" | "groups" | "updates" | "security" | "history" | "quarantine" | "reports" | "settings";
 type RunOperation = <T>(label: string, task: () => Promise<T>, successDetail?: string) => Promise<T | undefined>;
@@ -540,13 +540,30 @@ function DetailCell({ summary, rows }: { summary: React.ReactNode; rows: Array<[
 }
 
 function GroupsPage({ data, refresh, runOperation, defaultRootId }: { data: Dashboard; refresh: () => Promise<void>; runOperation: RunOperation; defaultRootId: string }) {
-  const { t, locale } = useI18n();
+  const { t, locale, formatDate } = useI18n();
   const [active, setActive] = useState(data.groups[0]?.id ?? "");
   const [working, setWorking] = useState(false);
+  const [metadata, setMetadata] = useState<GroupMetadata | null>(null);
+  const [metadataLoading, setMetadataLoading] = useState(false);
   const group = data.groups.find(g => g.id === active) ?? data.groups[0];
+  const sourceGroupID = group?.sourceGroupId || (group && !group.manual ? group.id : "");
   useEffect(() => {
     if (!data.groups.some(item => item.id === active)) setActive(data.groups[0]?.id ?? "");
   }, [data.groups, active]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!sourceGroupID) {
+      setMetadata(null);
+      setMetadataLoading(false);
+      return;
+    }
+    setMetadataLoading(true);
+    api.getGroupMetadata(sourceGroupID, group?.rootId || defaultRootId)
+      .then(value => { if (!cancelled) setMetadata(value); })
+      .catch(() => { if (!cancelled) setMetadata(null); })
+      .finally(() => { if (!cancelled) setMetadataLoading(false); });
+    return () => { cancelled = true; };
+  }, [defaultRootId, group?.rootId, sourceGroupID]);
   const create = async () => {
     const name = window.prompt(t("请输入新分组名称：", "Enter a new group name:"), "")?.trim();
     if (!name) return;
@@ -623,6 +640,29 @@ function GroupsPage({ data, refresh, runOperation, defaultRootId }: { data: Dash
             <span>{skill?.sourceGroupName && skill.sourceGroupName !== group.name ? `${t("来源", "Source")}: ${displayGroupName(skill.sourceGroupName, locale)}` : skill?.sourceProvider}</span>
           </article>;
         }) : <Empty text={t("这个分组暂时为空，可将 Skill 拖入", "This group is empty. Drag a Skill here.")} />}</div>
+        {sourceGroupID && <div className="group-metadata">
+          <h4>{t("来源分组元数据", "Source group metadata")}</h4>
+          {metadataLoading
+            ? <p className="group-metadata-loading">{t("正在读取…", "Loading…")}</p>
+            : metadata ? <dl>
+              <div><dt>{t("Commit", "Commit")}</dt>
+                <dd>{metadata.securityReport?.commitSha || metadata.analysis?.commitSha || t("未知", "Unknown")}</dd></div>
+              <div><dt>{t("项目理解", "Project understanding")}</dt>
+                <dd>{localizedValue(metadata.analysis?.security?.summary, locale,
+                  localizedValue(metadata.analysis?.summary, locale, t("暂无", "None")))}</dd></div>
+              <div><dt>{t("安全报告", "Security report")}</dt>
+                <dd>{metadata.securityReport
+                  ? `${severityLabel(metadata.securityReport.activeHighestSeverity, locale)} · ${formatDate(metadata.securityReport.completedAt || metadata.securityReport.createdAt || "")}`
+                  : t("尚未生成", "Not generated")}</dd></div>
+              <div><dt>{t("最近操作", "Latest operation")}</dt>
+                <dd>{metadata.latestOperation
+                  ? `${transactionStatusLabel(metadata.latestOperation.status || "", locale)} · ${formatDate(metadata.latestOperation.startedAt || metadata.latestOperation.completedAt || "")}`
+                  : t("暂无操作", "No operations yet")}</dd></div>
+              <div><dt>{t("更新状态", "Update status")}</dt>
+                <dd>{metadata.updateStatus ? updatePresentation(metadata.updateStatus, t).label : t("未知", "Unknown")}</dd></div>
+            </dl>
+            : <p className="group-metadata-missing">{t("暂无可用元数据；先检查或安装该来源分组。", "No metadata available yet; check or install this source group first.")}</p>}
+        </div>}
       </> : <Empty text={t("暂无分组", "No groups")} />}
     </section>
   </div>;
@@ -1592,7 +1632,12 @@ function SecurityPage({ data, refresh, runOperation, rootFilter, defaultRootId }
         const selected = selectedCount > 0;
         const groupID = group.sourceGroupId || group.id;
         const approved = approvedGroups.has(groupID);
-        return <details key={group.id}><summary><span><strong>{displayGroup(group, locale)}</strong><small>{group.skills.length} Skills · {riskCount} {t("条未处理风险", "open risks")}</small></span><b>{t(selectedCount + " 个已选", selectedCount + " selected")}</b></summary>
+        const commit = group.skills[0]?.installedCommit
+          ? `${group.skills[0].installedCommit.slice(0, 12)}`
+          : t("未固定", "unpinned");
+        const reportCompletedAt = report?.completedAt;
+        const reportTime = reportCompletedAt ? formatDate(reportCompletedAt) : t("尚无报告", "no report");
+        return <details key={group.id}><summary><span><strong>{displayGroup(group, locale)}</strong><small>{group.skills.length} Skills · {riskCount} {t("条未处理风险", "open risks")} · {commit} · {reportTime} · {transactionStatusLabel(group.status || "unknown", locale)}</small></span><b>{t(selectedCount + " 个已选", selectedCount + " selected")}</b></summary>
           <button type="button" className="ghost compact security-group-action" disabled={working || codexWorking} onClick={event => { event.preventDefault(); event.stopPropagation(); void scanGroup(group); }}><ShieldCheck size={14} />{riskCount ? t("查看风险", "Review risks") : t("扫描分组", "Scan group")}</button>
           {riskCount > 0 && <button type="button" className="ghost compact security-group-action" disabled={working || codexWorking || reviewing !== "" || approved} onClick={event => { event.preventDefault(); event.stopPropagation(); void approveGroup(group); }}>{approved ? t("已通过人工审核", "Human approved") : t("一键通过风险", "Approve risks")}</button>}
           <button type="button" className={"ghost compact " + (selected ? "selected" : "")} disabled={working || codexWorking} onClick={() => toggleGroup(group)}>{selected ? t("取消分组选择", "Deselect group") : t("选择整个分组", "Select whole group")}</button>

@@ -10,7 +10,7 @@ preview-and-apply workflow:
 2. apply it only after the user has approved the complete group and any group
    risk decision.
 
-Version 0.14.0 manages both `.codex/skills` and `.agents/skills`. Install and
+Version 0.15.0 manages both `.codex/skills` and `.agents/skills`. Install and
 update are source-group operations; Skill records remain child diagnostics.
 Every Skill, group, scan, update, and transaction is identified by `rootId`; omitted install
 targets default to `codex-default` only for compatibility. New integrations
