@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,73 @@ func TestV1SourcesLockMigrationFailsClosedOnAmbiguousPath(t *testing.T) {
 	}
 	if _, err := store.LoadLock(); err == nil {
 		t.Fatal("ambiguous v1 root migration unexpectedly succeeded")
+	}
+}
+
+func TestSourcesLockMigrationAddsAssociationAndImmutableRefCompatibility(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "skills")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	commit := "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	legacy := model.SourcesLock{SchemaVersion: 1, Packages: map[string]model.PackageLock{
+		"github:owner/repo": {
+			Provider: "github", Repository: "owner/repo", RequestedRef: "main",
+			ResolvedCommit: commit, Skills: map[string]model.SkillLock{
+				"demo": {LocalPath: "demo", SourcePath: "skills/demo"},
+			},
+		},
+	}}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenWithRoots(filepath.Join(base, "data"), []model.SkillRoot{{ID: model.RootIDCodexDefault, Path: root}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := os.WriteFile(filepath.Join(base, "data", "sources.lock.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, ok := migrated.Packages[model.QualifiedPackageID(model.RootIDCodexDefault, "github:owner/repo")]
+	if !ok || pkg.SourceAssociation != model.SourceAssociationRemote || pkg.ResolvedCommit != strings.ToLower(commit) || pkg.ResolvedRef != strings.ToLower(commit) {
+		t.Fatalf("legacy source identity was not normalized: %#v", migrated)
+	}
+	skill := pkg.Skills["demo"]
+	if skill.SourceAssociation != model.SourceAssociationRemote || skill.ResolvedCommit != "" {
+		t.Fatalf("legacy Skill metadata was not preserved/normalized: %#v", skill)
+	}
+}
+
+func TestSourcesLockDoesNotPromoteMutableRefToImmutableCommit(t *testing.T) {
+	base := t.TempDir()
+	store, err := Open(filepath.Join(base, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	lock := model.SourcesLock{SchemaVersion: model.SourcesLockSchemaVersion, Packages: map[string]model.PackageLock{
+		model.QualifiedPackageID(model.RootIDCodexDefault, "github:owner/repo"): {
+			RootID: model.RootIDCodexDefault, Provider: "github", RequestedRef: "main", ResolvedRef: "main",
+			Skills: map[string]model.SkillLock{"demo": {RootID: model.RootIDCodexDefault, LocalPath: "demo"}},
+		},
+	}}
+	if err := store.SaveLock(lock); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := loaded.Packages[model.QualifiedPackageID(model.RootIDCodexDefault, "github:owner/repo")]
+	if pkg.ResolvedCommit != "" || pkg.ResolvedRef != "main" {
+		t.Fatalf("mutable ref was promoted during lock normalization: %#v", pkg)
 	}
 }
 

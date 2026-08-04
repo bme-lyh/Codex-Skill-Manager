@@ -3,7 +3,7 @@
 ## Project snapshot
 
 - Product: Windows desktop and CLI manager for Codex-compatible Skills.
-- Release line: `0.12.0`.
+- Release line: `0.13.0`.
 - Desktop: Wails v2 with a React/Vite/TypeScript frontend.
 - CLI: `cmd/csm`, with stable JSON envelopes for automation.
 - Default data directory: `%USERPROFILE%\.codex\skill-manager`.
@@ -35,6 +35,11 @@ The GUI and CLI call the same manager. UI code must not reproduce authorization
 rules: previews, risk gates, target validation, and transaction decisions belong
 to the Go backend.
 
+Mutating operations use a process-wide, root-scoped writer lease. The desktop
+shell rejects overlapping page operations and ignores stale dashboard refresh
+responses. The lease is a UI/process fence, not a substitute for external file
+change verification; apply paths still recheck hashes and plan digests.
+
 ## Root and identity model
 
 Names are unique only inside a root. Persisted or cross-root operations use
@@ -54,10 +59,14 @@ backup, report, cache, and quarantine paths.
 1. Resolve GitHub branches/tags to a full commit SHA, or snapshot a local source.
 2. Discover candidate Skills and run the local scanner against exact targets.
 3. Seal the preview, including `TargetRootID`, candidates, scan, source, and expiry.
-4. Build a project assessment and show its gate, evidence, targets, and recovery path.
-5. Apply only the selected candidates from the sealed preview.
-6. Back up replacements, journal each checkpoint, update the root-qualified lock
-   and security state, then report the transaction.
+4. Build the mandatory local assessment. The Codex-first Add project path then
+   starts a bounded read-only project review automatically.
+5. Generate a typed plan and require one human confirmation. The confirmation is
+   persisted with source, report, assessment, plan, and permission digests.
+6. Revalidate all digests and execute through the existing journaled assisted
+   installer. No downloaded Skill script or dependency/publishing command runs.
+7. Back up replacements, update the root-qualified lock and security state, then
+   report a completed or partial transaction with per-Skill recovery IDs.
 
 Updates create a new immutable preview and remain bound to the package's original
 root. Removal always means moving one explicit Skill directory to quarantine.
@@ -171,3 +180,12 @@ at the real user Skill roots.
 - Codex chunk summaries treat the local manifest as authoritative. A
   `coverageMismatch` is a lower-confidence warning, never evidence of complete
   semantic coverage.
+- Local Skills without verifiable provenance are stored as
+  `sourceAssociation: unlinked`. The UI can explicitly link one Skill to a
+  GitHub URL/ref; linking requires an immutable commit and an exact local/remote
+  tree hash match.
+- `ApplyAdoptionBestEffort`, `ApplyInstallBestEffort`, and multi-Skill audit
+  results use child outcomes. A parent transaction may be `partial`; retry the
+  failed child instead of repeating successful targets.
+- Release `0.13.0` makes Codex review the primary assisted-install entry while
+  retaining standard and legacy APIs for compatibility.

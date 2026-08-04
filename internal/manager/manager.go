@@ -902,15 +902,21 @@ func (m *Manager) AuditSkills(names []string, requestedRootID ...string) (model.
 		}
 	}
 	selected := make([]model.Skill, 0, len(names))
+	selectionErrors := make([]string, 0)
 	for _, name := range names {
 		matches := byName[name]
 		if len(matches) == 0 {
-			return model.ScanReport{}, fmt.Errorf("Skill not found or not selectable: %s", name)
+			selectionErrors = append(selectionErrors, fmt.Sprintf("%s: Skill not found or not selectable", name))
+			continue
 		}
 		if len(matches) > 1 {
-			return model.ScanReport{}, fmt.Errorf("Skill %q exists in multiple roots; specify rootId", name)
+			selectionErrors = append(selectionErrors, fmt.Sprintf("%s: Skill exists in multiple roots; specify rootId", name))
+			continue
 		}
 		selected = append(selected, matches[0])
+	}
+	if len(selected) == 0 {
+		return model.ScanReport{}, errors.New(strings.Join(selectionErrors, "; "))
 	}
 	if rootID == "" {
 		rootID = selected[0].RootID
@@ -938,19 +944,34 @@ func (m *Manager) AuditSkills(names []string, requestedRootID ...string) (model.
 		Findings: []model.Finding{}, Skills: []model.ScanSkillSummary{},
 		Status: "passed", ScannerVersion: scanner.Version,
 	}
+	if len(selectionErrors) > 0 {
+		report.Status = "partial"
+		report.Error = strings.Join(selectionErrors, "; ")
+	}
+	completedSkills := make([]model.Skill, 0, len(selected))
+	partialErrors := append([]string(nil), selectionErrors...)
 	remaining := m.Config.MaxFiles
 	for _, skill := range selected {
 		part, scanErr := scanner.Scan(skill.Path, remaining, m.Config.MaxFileBytes)
 		if scanErr != nil {
 			report.Status = "failed"
-			report.CompletedAt = time.Now().UTC()
-			_ = m.store.SaveScan(report)
-			m.recordScan(report)
-			return report, fmt.Errorf("scan %s: %w", skill.Name, scanErr)
+			partialErrors = append(partialErrors, fmt.Sprintf("%s: %v", skill.Name, scanErr))
+			report.Skills = append(report.Skills, model.ScanSkillSummary{
+				SkillName: skill.Name, RootID: skill.RootID, SourcePath: filepath.ToSlash(skill.Name),
+				GroupID: skill.GroupID, GroupName: skill.GroupName, Error: scanErr.Error(),
+			})
+			continue
 		}
 		relative, relErr := filepath.Rel(root.Path, skill.Path)
 		if relErr != nil || relative == "." || strings.HasPrefix(relative, "..") || filepath.IsAbs(relative) {
-			return model.ScanReport{}, fmt.Errorf("invalid Skill path: %s", skill.Path)
+			report.Status = "partial"
+			message := fmt.Sprintf("%s: invalid Skill path", skill.Name)
+			partialErrors = append(partialErrors, message)
+			report.Skills = append(report.Skills, model.ScanSkillSummary{
+				SkillName: skill.Name, RootID: skill.RootID, SourcePath: filepath.ToSlash(skill.Path),
+				GroupID: skill.GroupID, GroupName: skill.GroupName, Error: message,
+			})
+			continue
 		}
 		sourcePath := filepath.ToSlash(relative)
 		for _, finding := range part.Findings {
@@ -965,12 +986,19 @@ func (m *Manager) AuditSkills(names []string, requestedRootID ...string) (model.
 			GroupName: skill.GroupName, FilesScanned: part.FilesScanned,
 			HighestSeverity: highestFindingSeverity(part.Findings, false),
 		})
+		completedSkills = append(completedSkills, skill)
 		remaining = m.Config.MaxFiles - report.FilesScanned
 		if remaining < 0 {
-			return model.ScanReport{}, fmt.Errorf("selected Skills exceed file count limit %d", m.Config.MaxFiles)
+			partialErrors = append(partialErrors, fmt.Sprintf("%s: selected Skills exceed file count limit %d", skill.Name, m.Config.MaxFiles))
+			report.Status = "partial"
+			break
 		}
 	}
 	finishCandidateScan(&report)
+	if len(partialErrors) > 0 {
+		report.Status = "partial"
+		report.Error = strings.Join(partialErrors, "; ")
+	}
 	ignored, err := m.store.IgnoredFindings()
 	if err != nil {
 		return model.ScanReport{}, err
@@ -980,8 +1008,8 @@ func (m *Manager) AuditSkills(names []string, requestedRootID ...string) (model.
 	if err := m.store.SaveScan(report); err != nil {
 		return model.ScanReport{}, err
 	}
-	states := make([]model.SkillSecurityState, 0, len(selected))
-	for _, skill := range selected {
+	states := make([]model.SkillSecurityState, 0, len(completedSkills))
+	for _, skill := range completedSkills {
 		states = append(states, model.SkillSecurityState{
 			SkillName: skill.Name, RootID: skill.RootID, ContentHash: skillContentHash(skill.Files),
 			ReportID: report.ID, CheckedAt: report.CompletedAt,
@@ -991,6 +1019,9 @@ func (m *Manager) AuditSkills(names []string, requestedRootID ...string) (model.
 		return model.ScanReport{}, err
 	}
 	m.recordScan(report)
+	if len(completedSkills) == 0 {
+		return report, errors.New(report.Error)
+	}
 	return report, nil
 }
 
@@ -1464,6 +1495,11 @@ func (m *Manager) ApplyAdoption(planID string, selected []string, targetRootID .
 	if err != nil {
 		return model.Transaction{}, err
 	}
+	releaseRootLease, err := acquireRootOperationLease(root)
+	if err != nil {
+		return model.Transaction{}, err
+	}
+	defer releaseRootLease()
 	selected = uniqueNonEmpty(selected)
 	allowed := map[string]bool{}
 	planned := map[string]model.Skill{}
@@ -1570,6 +1606,55 @@ func (m *Manager) ApplyAdoption(planID string, selected []string, targetRootID .
 	return tx, nil
 }
 
+// ApplyAdoptionBestEffort gives select-all actions independent child
+// transactions. A failed Skill is recorded and does not prevent the next
+// explicit target from being attempted.
+func (m *Manager) ApplyAdoptionBestEffort(planID string, selected []string, targetRootID string) (model.Transaction, error) {
+	selected = uniqueNonEmpty(selected)
+	if len(selected) == 0 {
+		return model.Transaction{}, errors.New("no skills selected")
+	}
+	parent := model.Transaction{
+		ID:     "tx-batch-" + time.Now().UTC().Format("20060102T150405.000000000"),
+		RootID: strings.TrimSpace(targetRootID), Type: "manage-batch", Status: "running",
+		Targets: append([]string(nil), selected...), StartedAt: time.Now().UTC(),
+	}
+	var failures []string
+	succeeded := 0
+	for _, name := range selected {
+		child, err := m.ApplyAdoption(planID, []string{name}, targetRootID)
+		item := model.BatchItemResult{Target: name, Status: "completed", TransactionID: child.ID}
+		if err != nil {
+			item.Status = "failed"
+			item.Error = err.Error()
+			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
+		} else {
+			succeeded++
+		}
+		parent.ItemResults = append(parent.ItemResults, item)
+	}
+	parent.CompletedAt = time.Now().UTC()
+	switch {
+	case succeeded == 0:
+		parent.Status = "failed"
+	case len(failures) > 0:
+		parent.Status = "partial"
+	default:
+		parent.Status = "completed"
+	}
+	if len(failures) > 0 {
+		parent.Error = strings.Join(failures, "; ")
+	}
+	if err := m.store.SaveTransaction(parent); err != nil {
+		return parent, errors.Join(errors.New("persist batch adoption transaction"), err)
+	}
+	m.recordTransaction(parent)
+	if succeeded == 0 {
+		return parent, errors.New(parent.Error)
+	}
+	return parent, nil
+}
+
 // ApplyInstall requires both the persisted, audited High-risk cluster decision
 // and a final caller acknowledgement. The boolean cannot create an acceptance
 // record and therefore cannot bypass the backend decision workflow.
@@ -1594,7 +1679,73 @@ func (m *Manager) ApplyInstall(planID string, selected []string, acceptHighRisk 
 			return model.Transaction{}, errors.New("install plan target root does not match apply target")
 		}
 	}
+	preview, ok := m.previews[planID]
+	if !ok {
+		var err error
+		preview, err = loadPreview(m.Config.Paths.DataRoot, planID)
+		if err != nil {
+			return model.Transaction{}, err
+		}
+	}
+	root, err := m.resolveWritableRoot(preview.TargetRootID)
+	if err != nil {
+		return model.Transaction{}, err
+	}
+	release, err := acquireRootOperationLease(root)
+	if err != nil {
+		return model.Transaction{}, err
+	}
+	defer release()
 	return m.applyInstallWithTransactionIDAndRisk(planID, selected, "", acceptHighRisk)
+}
+
+// ApplyInstallBestEffort runs one journaled child transaction per selected
+// Skill. This is used by select-all UI actions; single-plan callers retain the
+// atomic ApplyInstall behavior for compatibility.
+func (m *Manager) ApplyInstallBestEffort(planID string, selected []string, acceptHighRisk bool, targetRootID string) (model.Transaction, error) {
+	selected = uniqueNonEmpty(selected)
+	if len(selected) == 0 {
+		return model.Transaction{}, errors.New("no skills selected")
+	}
+	parent := model.Transaction{
+		ID:     "tx-batch-" + time.Now().UTC().Format("20060102T150405.000000000"),
+		RootID: strings.TrimSpace(targetRootID), Type: "install-batch", Status: "running",
+		Targets: append([]string(nil), selected...), StartedAt: time.Now().UTC(),
+	}
+	var failures []string
+	succeeded := 0
+	for _, name := range selected {
+		child, err := m.ApplyInstall(planID, []string{name}, acceptHighRisk, targetRootID)
+		item := model.BatchItemResult{Target: name, Status: "completed", TransactionID: child.ID}
+		if err != nil {
+			item.Status = "failed"
+			item.Error = err.Error()
+			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
+		} else {
+			succeeded++
+		}
+		parent.ItemResults = append(parent.ItemResults, item)
+	}
+	parent.CompletedAt = time.Now().UTC()
+	switch {
+	case succeeded == 0:
+		parent.Status = "failed"
+	case len(failures) > 0:
+		parent.Status = "partial"
+	default:
+		parent.Status = "completed"
+	}
+	if len(failures) > 0 {
+		parent.Error = strings.Join(failures, "; ")
+	}
+	if err := m.store.SaveTransaction(parent); err != nil {
+		return parent, errors.Join(errors.New("persist batch install transaction"), err)
+	}
+	m.recordTransaction(parent)
+	if succeeded == 0 {
+		return parent, errors.New(parent.Error)
+	}
+	return parent, nil
 }
 
 func (m *Manager) applyInstallWithTransactionID(
@@ -1862,6 +2013,11 @@ func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappin
 	if repository == "" || len(mappings) == 0 {
 		return errors.New("repository and mappings are required")
 	}
+	canonicalCommit, err := model.CanonicalCommitSHA(commit)
+	if err != nil || canonicalCommit == "" {
+		return errors.New("GitHub source must be linked to a full immutable commit SHA")
+	}
+	commit = canonicalCommit
 	lock, err := m.store.LoadLock()
 	if err != nil {
 		return err
@@ -1869,7 +2025,7 @@ func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappin
 	id := "github:" + strings.ToLower(repository)
 	packageKey := model.QualifiedPackageID(root.ID, id)
 	pkg := model.PackageLock{
-		RootID: root.ID, Provider: "github", Repository: repository, SourceURL: sourceURL,
+		RootID: root.ID, Provider: "github", SourceAssociation: model.SourceAssociationRemote, Repository: repository, SourceURL: sourceURL,
 		RequestedRef: ref, ResolvedCommit: commit, InstalledAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(), Skills: map[string]model.SkillLock{},
 	}
@@ -1890,11 +2046,83 @@ func (m *Manager) AdoptPackage(repository, sourceURL, ref, commit string, mappin
 			hashes[f.Path] = f.SHA256
 		}
 		pkg.Skills[name] = model.SkillLock{
-			RootID: root.ID, SourcePath: sourcePath, LocalPath: name, ResolvedCommit: commit, Files: hashes,
+			RootID: root.ID, SourceAssociation: model.SourceAssociationRemote, SourcePath: sourcePath, LocalPath: name, ResolvedCommit: commit, ResolvedRef: commit, Files: hashes,
 		}
 	}
 	lock.Packages[packageKey] = pkg
 	return m.store.SaveLock(lock)
+}
+
+// LinkLocalSource associates one existing local Skill with a user-supplied
+// GitHub source. The remote ref is resolved and staged first; linking fails if
+// the remote candidate does not exactly match the installed tree, preserving
+// local edits instead of silently replacing them.
+func (m *Manager) LinkLocalSource(ctx context.Context, skillName, rawURL, ref, targetRootID string) (model.DetectedSource, error) {
+	skillName = strings.TrimSpace(skillName)
+	if !validMutableSkillName(skillName) {
+		return model.DetectedSource{}, errors.New("a valid Skill name is required")
+	}
+	root, err := m.resolveWritableRoot(targetRootID)
+	if err != nil {
+		return model.DetectedSource{}, err
+	}
+	lock, err := m.store.LoadLock()
+	if err != nil {
+		return model.DetectedSource{}, err
+	}
+	skills, _, _, err := inventory.DiscoverRoots([]model.SkillRoot{root}, lock)
+	if err != nil {
+		return model.DetectedSource{}, err
+	}
+	var local model.Skill
+	for _, candidate := range skills {
+		if candidate.Name == skillName && !candidate.System {
+			local = candidate
+			break
+		}
+	}
+	if local.Name == "" {
+		return model.DetectedSource{}, fmt.Errorf("local Skill not found: %s", skillName)
+	}
+	preview, err := m.PrepareGitHubForRoot(ctx, rawURL, ref, root.ID)
+	if err != nil {
+		return model.DetectedSource{}, err
+	}
+	var selected model.CandidateSkill
+	for _, candidate := range preview.Skills {
+		if candidate.Name == skillName {
+			selected = candidate
+			break
+		}
+	}
+	if selected.Name == "" {
+		return model.DetectedSource{}, fmt.Errorf("remote source does not contain Skill %q", skillName)
+	}
+	_, remotePath, err := candidateSourceTarget(preview.StagingPath, selected.SourcePath)
+	if err != nil {
+		return model.DetectedSource{}, err
+	}
+	remoteFiles, err := inventory.HashTree(remotePath)
+	if err != nil {
+		return model.DetectedSource{}, err
+	}
+	localFiles, err := inventory.HashTree(local.Path)
+	if err != nil {
+		return model.DetectedSource{}, err
+	}
+	if !sameFileRecords(localFiles, remoteFiles) {
+		return model.DetectedSource{}, errors.New("local Skill differs from the requested GitHub source; review the replacement instead of linking it")
+	}
+	if err := m.AdoptPackage(preview.Repository.FullName, rawURL, preview.Repository.ResolvedRef, preview.Repository.CommitSHA, map[string]string{skillName: selected.SourcePath}, root.ID); err != nil {
+		return model.DetectedSource{}, err
+	}
+	return model.DetectedSource{
+		SkillName: skillName, RootID: root.ID, Provider: "github", SourceAssociation: model.SourceAssociationRemote,
+		Repository: preview.Repository.FullName, SourceURL: rawURL,
+		SourcePath: selected.SourcePath, RequestedRef: preview.Repository.ResolvedRef,
+		ResolvedCommit: preview.Repository.CommitSHA, GroupID: "github:" + strings.ToLower(preview.Repository.FullName),
+		GroupName: preview.Repository.FullName, Confidence: 1, Evidence: "用户确认并通过完整树哈希校验关联远程来源",
+	}, nil
 }
 
 func (m *Manager) CheckUpdates(ctx context.Context) (model.UpdateCheckResult, error) {
@@ -1936,6 +2164,9 @@ func (m *Manager) CheckUpdatesSelected(ctx context.Context, groupIDs []string, f
 			GroupID: groupID, RootID: rootID, GroupName: pkg.GroupName, Provider: pkg.Provider,
 			Repository: pkg.Repository, Status: "unsupported", CheckedAt: checkedAt,
 			CurrentCommits: map[string]string{}, OutdatedSkills: []string{},
+		}
+		if model.NormalizeSourceAssociation(pkg.Provider, pkg.SourceAssociation) == model.SourceAssociationUnlinked {
+			status.Error = "local source is not linked to a verifiable GitHub repository"
 		}
 		if status.GroupName == "" {
 			status.GroupName = pkg.Repository

@@ -5,7 +5,7 @@
 Codex Skill Manager 是一款 Windows 本地工具，用于理解、检查、安装、更新、整理和
 恢复 Codex Skills。每次写入都会明确授权、记录事务，并保留恢复路径。
 
-[下载 v0.12.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.12.0) ·
+[下载 v0.13.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.13.0) ·
 [快速开始](docs/user/getting-started.md) ·
 [使用指南](docs/user/gui-guide.md) ·
 [安全策略](SECURITY.md) ·
@@ -31,7 +31,8 @@ Codex 结论；更新状态按根目录区分，不会混淆 `.codex/skills` 与
 
 ## 四步添加项目
 
-打开 **添加项目** 后，GitHub 链接和本地目录都使用同一条流程：
+打开 **添加项目** 后，GitHub 链接和本地目录都使用同一条流程；默认入口是
+**Codex 审核并受控安装**：
 
 1. **来源**：输入仓库、目录或 `SKILL.md` 链接。GitHub 来源会解析并固定到完整
    Commit；本地来源会复制到应用管理的快照。
@@ -39,14 +40,13 @@ Codex 结论；更新状态按根目录区分，不会混淆 `.codex/skills` 与
    并针对实际目标运行必选的本地分层检查。检查分为必选、条件触发和可选。
 3. **检查与确认**：查看证据、安装目标、风险、权限和恢复方式，然后再允许写入。
    检查结论有四种：**可安装**、**需要确认**、**已阻止**、**检查未完成**。
-4. **安装与结果**：只写入已批准的目标，记录进度和事务；完成后重新读取最新 Skills
+4. **安装与结果**：Codex 审核完成后，人工一次确认即可让应用按已绑定计划完成受控步骤；只写入已批准的目标，记录进度和事务；完成后重新读取最新 Skills
    与操作状态，并显示恢复状态。已完成的变更可在 **历史与回滚** 中回滚，移除的内容
    可在 **隔离区** 中恢复。
 
-入口直接进入统一流程。复杂项目的技术操作 **运行增强项目扫描** 位于 **更多选项** 中；
-Codex 是可选的语义检查提供器，不是独立
-安装模式。扫描阶段只读、关闭 Shell，并且其结论或计划仍需本地验证和明确授权。
-**切换标准安装**同样位于 **更多选项**，不是另一条入口流程。
+Codex 审核入口在首屏可见。完成本地必选检查后，Codex 只读审核会自动开始；人工一次确认
+即可让应用执行已绑定的受控安装计划。**标准 Skill 安装**仍可作为明确的替代选项。
+应用不会执行来源仓库中的脚本、依赖安装、发布或清理命令。
 
 应用同时管理 `%USERPROFILE%\.codex\skills` 与 `%USERPROFILE%\.agents\skills`；
 新安装默认写入 Codex 目录。两个目录分别维护身份和状态，各自的 `.system` 都始终只读。
@@ -75,10 +75,10 @@ MCP 时必须由用户明确选择项目目录。
 SmartScreen 可能提示警告。请只从本仓库下载，并核对 SHA-256：
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.12.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.13.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-将结果与 `CodexSkillManager-0.12.0-SHA256SUMS.txt` 中的对应行比较。
+将结果与 `CodexSkillManager-0.13.0-SHA256SUMS.txt` 中的对应行比较。
 
 ### 添加随包提供的 Codex Skill
 
@@ -89,10 +89,10 @@ Get-FileHash .\CodexSkillManager-0.12.0-windows-amd64.zip -Algorithm SHA256
 ## 安全边界
 
 - 应用不会执行仓库脚本、自由格式命令或 Codex 生成的任意文本。
-- 高风险（High）必须逐簇确认并填写原因；严重风险（Critical）不可忽略。
-- 报告级批量忽略只处理已知的中风险（Medium）及以下风险。
+- 高风险（High）只需一次人工确认，应用自动记录审核决定；严重风险（Critical）仍是安全底线。
+- 全选操作逐项执行，失败项不会阻止其他项，并提供子事务编号以便重试。
 - 替换前备份，卸载后进入隔离区；目标被外部修改后，回滚不会强行覆盖。
-- 增强项目扫描是可选的，默认只读；生成计划、批准权限和执行是分开的操作。
+- Codex 审核默认只读；确认时后端会重新校验来源、报告、权限和摘要，再进入事务执行。
 
 “未发现风险”不等于绝对安全。批准陌生来源前，请阅读[安全策略](SECURITY.md)。
 
@@ -118,4 +118,4 @@ pnpm --dir frontend install --frozen-lockfile
 统一界面是一次 UI 重构；旧 Page 路由和 Wails/API 兼容边界仍然保留，以支持已有
 集成。面向用户的说明统一使用当前界面术语。
 
-Codex Skill Manager 0.12.0 支持 Windows 10/11，使用 [MIT License](LICENSE)。
+Codex Skill Manager 0.13.0 支持 Windows 10/11，使用 [MIT License](LICENSE)。

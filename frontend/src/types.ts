@@ -224,6 +224,8 @@ export interface ScanSkillSummary {
   groupId: string;
   groupName: string;
   filesScanned: number;
+  findingCount?: number;
+  error?: string;
   highestSeverity: Severity;
   activeFindingCount: number;
   ignoredFindingCount: number;
@@ -242,6 +244,13 @@ export interface Transaction {
   projectRoot?: string;
   recoveryStatus?: string;
   error?: string;
+  parentId?: string;
+  itemResults?: Array<{
+    target: string;
+    status: string;
+    transactionId?: string;
+    error?: string;
+  }>;
 }
 
 export interface UpdateStatus {

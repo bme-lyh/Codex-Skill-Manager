@@ -14,7 +14,7 @@ Codex Skill Manager 因此：
 - 只扫描实际准备安装或更新的 Skill 文件；
 - 不执行仓库的安装、构建或初始化脚本；
 - 活跃的 High/Critical 默认阻止写入；已知的 Medium 及以下风险可以逐簇或按报告
-  忽略，High 必须逐簇确认并填写原因，Critical 不可忽略；目标和决定都会记录；
+  忽略，High 必须逐簇确认并记录审计决定；GUI 会自动生成记录，CLI 仍可使用 `--reason`；Critical 不可忽略；目标和决定都会记录；
 - 替换前保留备份，移除时进入隔离区；
 - 永不修改 `.codex/skills/.system`；
 - 从日志和报告中排除凭据；

@@ -129,6 +129,9 @@ func TestCleanScanReturnsEmptyFindingsArray(t *testing.T) {
 	if report.Findings == nil || len(report.Findings) != 0 {
 		t.Fatalf("clean findings must be a non-nil empty array: %#v", report.Findings)
 	}
+	if report.RuleCounts == nil || report.CategoryCounts == nil || len(report.RuleCounts) != 0 || len(report.CategoryCounts) != 0 {
+		t.Fatalf("clean scan must expose non-nil structured count maps: %#v", report)
+	}
 }
 
 func TestClassifiesFindingsAndMarksDeterministicBaseline(t *testing.T) {
@@ -199,6 +202,32 @@ func TestParallelTextScanKeepsDeterministicFindingOrder(t *testing.T) {
 		if left.RuleID != right.RuleID || left.File != right.File || left.Line != right.Line {
 			t.Fatalf("finding order changed at %d: %#v != %#v", index, left, right)
 		}
+	}
+}
+
+func TestScanErrorIsStructuredAndDoesNotLookPassed(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "missing")
+	report, err := Scan(root, 20, 1<<20)
+	if err == nil {
+		t.Fatal("missing scan root unexpectedly succeeded")
+	}
+	if report.Status != model.ScanStatusFailed || report.Error == "" {
+		t.Fatalf("scan failure was not represented in report: %#v", report)
+	}
+}
+
+func TestScanPopulatesRuleAndCategoryCounts(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("Remove-Item C:\\tmp -Recurse\npassword\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Scan(root, 20, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.RuleCounts["CSM-DEL-001"] != 1 || report.RuleCounts["CSM-CRED-002"] != 1 ||
+		report.CategoryCounts["destructive"] != 1 || report.CategoryCounts["credentials"] != 1 {
+		t.Fatalf("unexpected structured scan counts: %#v", report)
 	}
 }
 

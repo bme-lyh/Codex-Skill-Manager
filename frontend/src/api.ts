@@ -16,6 +16,39 @@ import type {
   Transaction,
   UpdateCheckResult
 } from "./types";
+
+/** Opaque, digest-bound acknowledgement returned by the manager after the
+ * user reviews a Codex installation plan.  The renderer sends only `id` when
+ * applying; selections and digests are reloaded and verified by Go. */
+export interface InstallConfirmation {
+  id: string;
+  planId: string;
+  sourcePlanId: string;
+  sourceDigest: string;
+  reportDigest: string;
+  assessmentDigest: string;
+  planDigest: string;
+  targetRootId: string;
+  selectedSkills: string[];
+  permissionIds: string[];
+  highRiskAccepted: boolean;
+  createdAt: string;
+  expiresAt: string;
+  usedAt?: string;
+  digest: string;
+}
+
+export interface LinkedSource {
+  skillName: string;
+  rootId?: string;
+  provider: string;
+  sourceAssociation?: string;
+  repository: string;
+  sourceUrl: string;
+  sourcePath: string;
+  requestedRef?: string;
+  resolvedCommit?: string;
+}
 import {
   demoAssistedInstallPlan,
   demoAssistedInstallProgress,
@@ -35,15 +68,18 @@ type Backend = {
   BootstrapCurrentSkills(): Promise<void>;
   PrepareAdoption(names: string[], rootId: string): Promise<AdoptionPreview>;
   ApplyAdoption(plan: string, names: string[], rootId: string): Promise<Transaction>;
+  ApplyAdoptionBestEffort?(plan: string, names: string[], rootId: string): Promise<Transaction>;
   CreateGroup(name: string, rootId: string): Promise<Transaction>;
   RenameGroup(id: string, name: string, rootId: string): Promise<Transaction>;
   ReorderGroups(ids: string[], rootId: string): Promise<Transaction>;
   MoveSkillsToGroup(names: string[], groupId: string, rootId: string): Promise<Transaction>;
   PrepareGitHub(url: string, ref: string, rootId: string): Promise<InstallPreview>;
   PrepareLocal(path: string, rootId: string): Promise<InstallPreview>;
+  LinkLocalSource?(skillName: string, url: string, ref: string, rootId: string): Promise<LinkedSource>;
   AssessInstallSource?(sourcePlanId: string): Promise<ProjectAssessment>;
   GetProjectAssessment?(reference: string): Promise<ProjectAssessment>;
   ApplyInstall(plan: string, skills: string[], acceptHighRisk: boolean, rootId: string): Promise<Transaction>;
+  ApplyInstallBestEffort?(plan: string, skills: string[], acceptHighRisk: boolean, rootId: string): Promise<Transaction>;
   AuditSkill(name: string, rootId: string): Promise<ScanReport>;
   AuditSkills(names: string[], rootId: string): Promise<ScanReport>;
   GetScanReport(id: string, rootId: string): Promise<ScanReport>;
@@ -65,6 +101,18 @@ type Backend = {
   ReviewScanWithCodex(report: ScanReport, skillNames: string[]): Promise<ScanReport>;
   ScanProjectWithCodex?(sourcePlanId: string): Promise<CodexProjectScanResult>;
   AnalyzeInstallFromProjectScan?(projectScanId: string): Promise<AssistedInstallPlan>;
+  ConfirmCodexInstall?(
+    planId: string,
+    skills: string[],
+    permissionIds: string[],
+    acceptHighRisk: boolean,
+    rootId: string
+  ): Promise<InstallConfirmation>;
+  ApplyConfirmedAssistedInstall?(
+    confirmationId: string,
+    projectRoot: string,
+    rootId: string
+  ): Promise<AssistedInstallResult>;
   GetProjectScan?(reference: string): Promise<CodexProjectScanResult>;
   ApplyAssistedInstall?(
     planId: string,
@@ -324,6 +372,9 @@ export const api = {
   applyAdoption: async (plan: string, names: string[], rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
+    if (typeof b.ApplyAdoptionBestEffort === "function" && names.length > 1) {
+      return b.ApplyAdoptionBestEffort(plan, names, rootId);
+    }
     return b.ApplyAdoption(plan, names, rootId);
   },
   createGroup: async (name: string, rootId: string) => {
@@ -356,6 +407,13 @@ export const api = {
     if (!b) return localizedDemo(demoInstallPreview);
     return b.PrepareLocal(path, rootId);
   },
+  linkLocalSource: async (skillName: string, url: string, ref = "", rootId = "codex-default"): Promise<LinkedSource> => {
+    const b = backend();
+    if (!b || typeof b.LinkLocalSource !== "function") {
+      throw apiError("当前桌面后端不支持关联远程来源，请升级应用", "This desktop backend does not support linking a remote source. Update the app.");
+    }
+    return b.LinkLocalSource(skillName, url, ref, rootId);
+  },
   assessSource: async (sourcePlanId: string): Promise<ProjectAssessment> => {
     const b = backend();
     if (!b) return localizedDemo(demoAssessment(sourcePlanId));
@@ -375,6 +433,9 @@ export const api = {
   apply: async (plan: string, skills: string[], accept: boolean, rootId: string) => {
     const b = backend();
     if (!b) throw disconnectedError();
+    if (typeof b.ApplyInstallBestEffort === "function" && skills.length > 1) {
+      return b.ApplyInstallBestEffort(plan, skills, accept, rootId);
+    }
     return b.ApplyInstall(plan, skills, accept, rootId);
   },
   audit: async (name: string, rootId: string) => {
@@ -487,6 +548,23 @@ export const api = {
     }
     return normalizeAssistedPlan(await b.AnalyzeInstallFromProjectScan(projectScanId));
   },
+  confirmCodexInstall: async (
+    planId: string,
+    skills: string[],
+    permissionIds: string[],
+    acceptHighRisk: boolean,
+    rootId: string
+  ): Promise<InstallConfirmation> => {
+    const b = backend();
+    if (!b) throw disconnectedError();
+    if (typeof b.ConfirmCodexInstall !== "function") {
+      throw apiError(
+        "当前桌面后端不支持一次性 Codex 安装确认，请升级应用",
+        "This desktop backend does not support one-time Codex installation confirmation. Update the app."
+      );
+    }
+    return b.ConfirmCodexInstall(planId, skills, permissionIds, acceptHighRisk, rootId);
+  },
   getProjectScan: async (reference: string): Promise<CodexProjectScanResult> => {
     const b = backend();
     if (!b) return localizedDemo(demoProjectScan(reference));
@@ -514,6 +592,26 @@ export const api = {
       throw apiError("当前桌面后端不支持执行计划安装，请升级应用或切换到标准安装", "This desktop backend cannot run planned installation. Update the app or use standard installation.");
     }
     const result = await b.ApplyAssistedInstall(planId, skills, permissionIds, projectRoot, rootId);
+    return {
+      ...result,
+      plan: normalizeAssistedPlan(result.plan),
+      progress: result.progress ? normalizeAssistedProgress(result.progress) : undefined
+    };
+  },
+  applyConfirmedAssisted: async (
+    confirmationId: string,
+    projectRoot = "",
+    rootId: string
+  ): Promise<AssistedInstallResult> => {
+    const b = backend();
+    if (!b) throw disconnectedError();
+    if (typeof b.ApplyConfirmedAssistedInstall !== "function") {
+      throw apiError(
+        "当前桌面后端不支持受确认绑定的安装，请升级应用",
+        "This desktop backend does not support confirmation-bound installation. Update the app."
+      );
+    }
+    const result = await b.ApplyConfirmedAssistedInstall(confirmationId, projectRoot, rootId);
     return {
       ...result,
       plan: normalizeAssistedPlan(result.plan),

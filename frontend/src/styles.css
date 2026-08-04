@@ -483,3 +483,101 @@ header, .section-tabs-wrap, .panel, .stats article, .modal, .ghost, .icon-button
 .update-state-icon.unsupported { background: var(--subtle-surface); color: var(--muted); }
 .badge.green, .severity.low, .severity.informational { background: var(--success-surface); color: var(--success-ink); }
 .badge.blue { background: var(--info-surface); color: var(--info-ink); }
+
+/* Explicit appearance modes must own native control chrome. The operating
+   system preference can otherwise re-apply dark checkbox/select surfaces from
+   the earlier compatibility media query even after the user picks Light. */
+[data-theme="light"] *,
+[data-theme="light"] *::before,
+[data-theme="light"] *::after { color-scheme: light; }
+[data-theme="dark"] *,
+[data-theme="dark"] *::before,
+[data-theme="dark"] *::after { color-scheme: dark; }
+
+[data-theme="light"] :is(input, select, textarea, button),
+[data-theme="light"] :is(select option, select optgroup) {
+  color-scheme: light;
+}
+[data-theme="dark"] :is(input, select, textarea, button),
+[data-theme="dark"] :is(select option, select optgroup) {
+  color-scheme: dark;
+}
+
+[data-theme="light"] :is(input[type="checkbox"], input[type="radio"], input[type="range"], progress),
+[data-theme="dark"] :is(input[type="checkbox"], input[type="radio"], input[type="range"], progress) {
+  accent-color: var(--system-blue);
+}
+[data-theme="light"] :is(select option, select optgroup) {
+  background: var(--control-surface);
+  color: var(--ink);
+}
+[data-theme="dark"] :is(select option, select optgroup) {
+  background: var(--control-surface);
+  color: var(--ink);
+}
+
+/* Modal chrome shared by adoption, update, risk and security review flows. */
+.modal,
+.modal-head,
+.modal-actions { color: var(--ink); border-color: var(--line); }
+.modal { background: var(--panel); }
+.modal-head,
+.modal-actions { background: var(--panel); }
+.modal-head > button {
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+.modal-head > button:hover { background: var(--subtle-surface); }
+.adoption-modal .notice,
+.batch-update-modal .notice { background: var(--success-surface); color: var(--success-ink); border-color: var(--success-line); }
+.adoption-modal .repo-summary,
+.batch-update-modal .repo-summary { background: var(--panel-soft); color: var(--ink); }
+.adoption-modal .candidate-list,
+.batch-update-modal .candidate-list {
+  background: var(--panel-soft);
+  border-color: var(--line);
+}
+.adoption-modal .candidate-list label,
+.batch-update-modal .candidate-list label {
+  border-color: var(--line);
+  color: var(--ink);
+}
+.adoption-modal .candidate-list small,
+.batch-update-modal .candidate-list small,
+.adoption-modal .candidate-list code,
+.batch-update-modal .candidate-list code { color: var(--muted); }
+.update-modal .update-hero,
+.batch-update-modal .update-hero { background: var(--panel); border-color: var(--line); }
+.update-modal .update-list,
+.batch-update-modal .update-list { background: var(--panel); }
+.update-modal .update-list article,
+.batch-update-modal .update-list article,
+.update-plan {
+  background: var(--panel-soft);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.batch-update-modal .update-plan-list { background: var(--panel); }
+.batch-update-modal .modal-head small,
+.update-copy span,
+.update-copy small,
+.update-hero p,
+.update-hero small { color: var(--muted); }
+.security-summary,
+.security-results,
+.security-report-details { color: var(--ink); }
+.security-summary p,
+.security-summary > small,
+.finding-head small,
+.findings.detailed p,
+.risk-group-summary small,
+.risk-skill > summary small { color: var(--muted); }
+.security-skill-option,
+.risk-group,
+.risk-skill,
+.risk-skill > summary,
+.risk-group-summary { color: var(--ink); border-color: var(--line); }
+.risk-skill > summary:hover,
+.risk-group-summary:hover,
+.security-skill-option:hover { background: var(--subtle-surface); }

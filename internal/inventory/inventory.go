@@ -205,6 +205,7 @@ func readSkill(rootID, path string, managed map[string]managedRecord, system boo
 		skill.GroupID, skill.GroupName = rec.GroupID, rec.GroupName
 		skill.SourceGroupID, skill.SourceGroupName = rec.GroupID, rec.GroupName
 		skill.SourceProvider, skill.SourceConfidence, skill.SourceEvidence = rec.Package.Provider, 1, "来源锁记录"
+		skill.SourceAssociation = model.NormalizeSourceAssociation(rec.Package.Provider, rec.Package.SourceAssociation)
 		skill.SourceRepository = rec.Package.Repository
 		skill.SourcePath = rec.Skill.SourcePath
 		skill.InstalledCommit = rec.Skill.ResolvedCommit
@@ -216,6 +217,7 @@ func readSkill(rootID, path string, managed map[string]managedRecord, system boo
 		skill.GroupID, skill.GroupName = "unmanaged", "未管理 Skills"
 		skill.SourceGroupID, skill.SourceGroupName = skill.GroupID, skill.GroupName
 		skill.SourceProvider, skill.SourceConfidence, skill.SourceEvidence = "local", 0, "尚未分析来源"
+		skill.SourceAssociation = model.SourceAssociationUnlinked
 	}
 	return skill, nil
 }

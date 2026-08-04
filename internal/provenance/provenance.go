@@ -95,7 +95,7 @@ func detectRaw(skill model.Skill) model.DetectedSource {
 
 	sum := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(skill.Path))))
 	return model.DetectedSource{
-		SkillName: skill.Name, Provider: "local", Repository: skill.Path,
+		SkillName: skill.Name, Provider: "local", SourceAssociation: model.SourceAssociationUnlinked, Repository: skill.Path,
 		SourceURL: skill.Path, SourcePath: skill.Name,
 		GroupID: "local:" + fmt.Sprintf("%x", sum[:8]), GroupName: "本地 · " + skill.Name,
 		Confidence: .3, Evidence: "未发现可验证的远程来源，按独立本地 Skill 管理",
@@ -128,7 +128,7 @@ func fromGitHubURL(skillName, raw string, confidence float64, evidence string) (
 
 func githubSource(skillName, repository, ref, sourcePath string, confidence float64, evidence string) model.DetectedSource {
 	return model.DetectedSource{
-		SkillName: skillName, Provider: "github", Repository: repository,
+		SkillName: skillName, Provider: "github", SourceAssociation: model.SourceAssociationRemote, Repository: repository,
 		SourceURL: "https://github.com/" + repository, RequestedRef: ref, SourcePath: sourcePath,
 		GroupID: "github:" + strings.ToLower(repository), GroupName: repository,
 		Confidence: confidence, Evidence: evidence,

@@ -7,8 +7,10 @@ installation targets, never executes repository scripts, blocks active
 High/Critical findings by default, backs up replacements, quarantines removals,
 protects `.codex/skills/.system`, redacts credentials, and remains local-first.
 Known Medium-or-lower findings may be ignored individually or for a whole
-report. High requires per-cluster confirmation and a non-empty reason. Critical
-cannot be ignored. Every exact decision target remains journaled.
+report. High requires per-cluster confirmation and a non-empty audit record.
+The GUI supplies that record automatically after the one-click human decision;
+the CLI continues to require `--reason`. Critical cannot be ignored. Every exact
+decision target remains journaled.
 
 Codex risk review and planned installation are explicit opt-in features. They
 require a signed-in Codex CLI and consume account usage. Planned installation

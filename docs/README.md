@@ -15,8 +15,8 @@
 6. [私有 GitHub 仓库](user/private-repositories.md)：凭据和限流。
 7. [故障排查](user/troubleshooting.md)：启动、GitHub、Codex、安装结果和恢复问题。
 
-增强项目扫描位于添加项目窗口的 **更多选项** 中。Codex 是可选语义检查提供器，
-不是独立安装模式；安装完成后，窗口会重新读取最新状态，并可从 **历史与回滚**
+Codex 审核入口位于添加项目窗口首屏。完成本地检查后，人工一次确认即可进入受控安装；
+安装完成后，窗口会重新读取最新状态，并可从 **历史与回滚**
 继续恢复。旧 Page 路由和 Wails/API 兼容边界仍保留。
 
 英文文档是项目的主要参考，见 [English documentation](en/README.md)。开发者和 Agent

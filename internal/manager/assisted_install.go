@@ -578,6 +578,15 @@ func (m *Manager) ApplyAssistedInstallForRoot(
 	if targetRootID != "" && targetRootID != plan.TargetRootID {
 		return model.AssistedInstallResult{}, errors.New("assisted-install plan target root does not match apply target")
 	}
+	root, rootErr := m.resolveWritableRoot(plan.TargetRootID)
+	if rootErr != nil {
+		return model.AssistedInstallResult{}, rootErr
+	}
+	releaseRootLease, leaseErr := acquireRootOperationLease(root)
+	if leaseErr != nil {
+		return model.AssistedInstallResult{}, leaseErr
+	}
+	defer releaseRootLease()
 	selectedNames := make([]string, 0, len(chosen))
 	for _, candidate := range chosen {
 		selectedNames = append(selectedNames, candidate.Name)

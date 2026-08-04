@@ -2,8 +2,8 @@
 
 Every source first passes a required local assessment. The optional Enhanced
 project scan stays read-only until you approve its plan and permissions.
-Critical findings cannot be ignored. High findings require confirmation and a
-reason for each cluster. Report-wide ignore handles known Medium or lower
+Critical findings cannot be ignored. High findings require one explicit human
+confirmation for each cluster; a typed reason is no longer required. Report-wide ignore handles known Medium or lower
 findings only.
 
 All downloaded Skill content is untrusted. The manager never executes repository scripts and never modifies either root's `.system` directory.
@@ -14,7 +14,7 @@ The built-in scanner checks prompt injection, credential access, dynamic executi
 |---|---|
 | Informational / Low | Record |
 | Medium | Display for review |
-| High | Block writes; only per-cluster confirmation with a non-empty reason may accept it |
+| High | Block writes; one explicit per-cluster confirmation may accept it |
 | Critical | Always block writes and cannot be ignored |
 
 Before replacement, the current Skill is backed up and the operation is journaled. Removal moves one explicitly selected Skill at a time to quarantine. Recovery is available from **History** or **Quarantine**.
@@ -27,8 +27,8 @@ Large reports are de-duplicated by stable fingerprint and capped in the GUI for 
 
 Install, update, management, and security views show a five-level summary.
 Medium and lower clusters use the ordinary ignore flow. High requires explicit
-per-cluster confirmation and a non-empty reason. Critical cannot be ignored,
-and batch actions cannot accept High or Critical. Every decision is atomic and
+per-cluster confirmation. Critical cannot be ignored, and batch actions cannot
+accept High or Critical. Every decision is atomic and
 journaled. The backend resolves the persisted finding and severity immediately
 before apply instead of trusting client risk metadata.
 

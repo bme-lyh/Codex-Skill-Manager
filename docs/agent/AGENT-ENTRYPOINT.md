@@ -10,7 +10,7 @@ preview-and-apply workflow:
 2. apply it only after the user has approved the exact skills and any accepted
    high-risk findings.
 
-Version 0.12.0 manages both `.codex/skills` and `.agents/skills`. Every Skill,
+Version 0.13.0 manages both `.codex/skills` and `.agents/skills`. Every Skill,
 group, scan, update, and transaction is identified by `rootId`; omitted install
 targets default to `codex-default` only for compatibility. New integrations
 must send the root explicitly. Both `.system` directories are read-only.
@@ -19,7 +19,8 @@ The app uses one **Source → Understand & plan → Check & confirm → Install 
 workflow for every GitHub and local source. The application identifies the
 project type and installation route automatically, runs mandatory layered checks,
 and reports one of four gates: installable, needs confirmation, blocked, or
-incomplete. Persist and inspect the source-bound preview, assessment, locally
+incomplete. Codex review is available from the first install screen; one human
+confirmation binds the reviewed source, report, permissions, and plan. Persist and inspect the source-bound preview, assessment, locally
 derived typed steps and permissions, explicit project root, progress sequence,
 parent transaction, and recovery status. Codex is an optional semantic check
 provider, not a separate installation mode; its output is untrusted proposal

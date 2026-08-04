@@ -6,14 +6,14 @@ Codex Skill Manager is a Windows app for understanding, checking, installing,
 updating, organizing, and recovering Codex Skills. Changes are explicit,
 logged, and reversible.
 
-[Download v0.12.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.12.0) ·
+[Download v0.13.0](https://github.com/bme-lyh/Codex-Skill-Manager/releases/tag/v0.13.0) ·
 [Get started](docs/en/getting-started.md) ·
 [User guide](docs/en/gui-guide.md) ·
 [Security](SECURITY_EN.md) ·
 [中文](README_ZH.md)
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb)
-![Version](https://img.shields.io/badge/version-0.12.0-187a69)
+![Version](https://img.shields.io/badge/version-0.13.0-187a69)
 ![Go](https://img.shields.io/badge/Go-1.26-00add8)
 ![Wails](https://img.shields.io/badge/Wails-v2-cc1f45)
 ![License](https://img.shields.io/badge/license-MIT-334155)
@@ -66,12 +66,13 @@ The **Add project** dialog uses one flow for GitHub links and local directories:
    recovery state. Completed changes can be rolled back from **History &
    Rollback**; removals can be restored from **Quarantine**.
 
-The entry point presents one unified installation flow. For a complex repository, the technical **Run enhanced project scan**
-action is under **More options**. Codex is an optional semantic-check provider:
-it is read-only during scanning, has shell access disabled, and its findings or
-plans still require local validation and explicit approval. **Switch to standard
-installation** is also a technical action in **More options**, not a separate
-entry flow.
+The entry point now offers **Codex review and controlled install** immediately.
+After the mandatory local assessment, Codex performs a bounded read-only review;
+one human confirmation then binds the reviewed source, report, permissions, and
+plan to the existing journaled installer. **Standard Skill install** remains
+available as an explicit alternative. The manager never executes scripts,
+dependency installers, publishing commands, or cleanup commands from a Skill
+repository.
 
 The app manages both `%USERPROFILE%\.codex\skills` and
 `%USERPROFILE%\.agents\skills`; new installations default to the Codex root.
@@ -103,10 +104,10 @@ so SmartScreen may show a warning. Download only from this repository and
 verify the archive against the included checksum file:
 
 ```powershell
-Get-FileHash .\CodexSkillManager-0.12.0-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\CodexSkillManager-0.13.0-windows-amd64.zip -Algorithm SHA256
 ```
 
-Compare the result with `CodexSkillManager-0.12.0-SHA256SUMS.txt`.
+Compare the result with `CodexSkillManager-0.13.0-SHA256SUMS.txt`.
 
 ### Add the bundled Codex Skill
 
@@ -120,13 +121,15 @@ install the selected Skill. From a source checkout, use
 
 - Repository scripts, free-form commands, and arbitrary Codex text are never
   executed by the app.
-- High risk requires individual confirmation and a reason; Critical risk
-  cannot be ignored.
-- Report-wide ignore applies only to known Medium-or-lower findings.
+- High risk requires one explicit human confirmation; the app records the
+  decision without asking for a typed explanation. Critical risk remains a
+  mandatory safety boundary.
+- Batch actions continue independent targets and report partial success with
+  child transaction IDs.
 - Replacements are backed up, removals go to quarantine, and rollback refuses
   to overwrite content changed after installation.
-- The Enhanced project scan is optional and read-only until you separately
-  approve a typed plan and every required permission.
+- Codex review is bounded and read-only until the single confirmation step;
+  permissions and digests are revalidated by the Go backend before execution.
 
 A clean scan is not proof that a Skill is safe. Read the
 [security policy](SECURITY_EN.md) before approving unfamiliar sources.
@@ -155,5 +158,5 @@ The unified shell is a UI refactor. Legacy Page routes and the Wails/API
 compatibility boundary remain available for existing integrations; the visible
 workflow is documented with the current labels above.
 
-Codex Skill Manager 0.12.0 supports Windows 10/11 and is licensed under the
+Codex Skill Manager 0.13.0 supports Windows 10/11 and is licensed under the
 [MIT License](LICENSE).

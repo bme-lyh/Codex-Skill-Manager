@@ -44,8 +44,8 @@ access to the optional Codex scan or dependency planning.
 - Confirm that the account has available usage.
 - For a private source, confirm that Codex CLI may process its contents.
 - An MCP plan needs a real Git or SVN project directory, not staging or a link.
-- Retry **More options → Run enhanced project scan** once, or keep the completed
-  local assessment and use **More options → Switch to standard installation**.
+- Retry the visible **Codex review** action once, or keep the completed local
+  assessment and choose **Standard Skill install**.
 
 Codex is optional. The local assessment and selected Skills remain available
 when the semantic scan cannot produce a reliable result.

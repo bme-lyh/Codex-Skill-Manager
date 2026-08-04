@@ -87,6 +87,18 @@ func (a *App) ApplyAdoption(planID string, names []string, rootID string) (model
 	return a.mgr.ApplyAdoption(planID, names, rootID)
 }
 
+// ApplyAdoptionBestEffort is used by select-all management actions so one
+// stale or conflicting Skill does not cancel the other explicit targets.
+func (a *App) ApplyAdoptionBestEffort(planID string, names []string, rootID string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApplyAdoptionBestEffort(planID, names, rootID)
+}
+
 func (a *App) CreateGroup(name, rootID string) (model.Transaction, error) {
 	if err := a.ready(); err != nil {
 		return model.Transaction{}, err
@@ -149,6 +161,20 @@ func (a *App) PrepareLocal(path, rootID string) (model.InstallPreview, error) {
 	return a.mgr.PrepareLocal(path, rootID)
 }
 
+// LinkLocalSource records an explicit, hash-verified GitHub association for an
+// existing local Skill without replacing its files.
+func (a *App) LinkLocalSource(skillName, rawURL, ref, rootID string) (model.DetectedSource, error) {
+	if err := a.ready(); err != nil {
+		return model.DetectedSource{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.DetectedSource{}, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Minute)
+	defer cancel()
+	return a.mgr.LinkLocalSource(ctx, skillName, rawURL, ref, rootID)
+}
+
 // AssessInstallSource performs the mandatory deterministic local assessment.
 // It does not call Codex, download dependencies, or mutate installation targets.
 func (a *App) AssessInstallSource(planID string) (model.ProjectAssessment, error) {
@@ -173,6 +199,18 @@ func (a *App) ApplyInstall(planID string, skills []string, acceptHighRisk bool, 
 		return model.Transaction{}, err
 	}
 	return a.mgr.ApplyInstall(planID, skills, acceptHighRisk, rootID)
+}
+
+// ApplyInstallBestEffort is the select-all variant: every selected Skill gets
+// its own journaled child transaction and the parent reports partial success.
+func (a *App) ApplyInstallBestEffort(planID string, skills []string, acceptHighRisk bool, rootID string) (model.Transaction, error) {
+	if err := a.ready(); err != nil {
+		return model.Transaction{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.Transaction{}, err
+	}
+	return a.mgr.ApplyInstallBestEffort(planID, skills, acceptHighRisk, rootID)
 }
 
 // ScanProjectWithCodex is the read-only first phase for planned installation.
@@ -229,6 +267,50 @@ func (a *App) ApplyAssistedInstall(
 		planID,
 		skills,
 		permissionIDs,
+		projectRoot,
+		rootID,
+		func(progress model.AssistedInstallProgress) {
+			wailsruntime.EventsEmit(a.ctx, "assisted-install-progress", progress)
+		},
+	)
+}
+
+// ConfirmCodexInstall records the single human acknowledgement for a
+// digest-bound Codex plan. The manager reloads and validates the source,
+// assessment, review and plan records before issuing the opaque confirmation.
+func (a *App) ConfirmCodexInstall(
+	planID string,
+	skills []string,
+	permissionIDs []string,
+	acceptHighRisk bool,
+	rootID string,
+) (manager.InstallConfirmation, error) {
+	if err := a.ready(); err != nil {
+		return manager.InstallConfirmation{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return manager.InstallConfirmation{}, err
+	}
+	return a.mgr.ConfirmCodexInstall(planID, skills, permissionIDs, acceptHighRisk, rootID)
+}
+
+// ApplyConfirmedAssistedInstall consumes the one-time acknowledgement and
+// delegates to the existing journaled assisted-install executor. No renderer
+// supplied selection or digest is trusted at this boundary.
+func (a *App) ApplyConfirmedAssistedInstall(
+	confirmationID string,
+	projectRoot string,
+	rootID string,
+) (model.AssistedInstallResult, error) {
+	if err := a.ready(); err != nil {
+		return model.AssistedInstallResult{}, err
+	}
+	if err := requireRootID(rootID); err != nil {
+		return model.AssistedInstallResult{}, err
+	}
+	return a.mgr.ApplyConfirmedAssistedInstall(
+		a.ctx,
+		confirmationID,
 		projectRoot,
 		rootID,
 		func(progress model.AssistedInstallProgress) {

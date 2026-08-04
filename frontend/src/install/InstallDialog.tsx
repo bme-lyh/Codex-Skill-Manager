@@ -107,7 +107,9 @@ interface InstallDialogProps {
 export function InstallDialog({ close, refresh, openSettings, roots = [], defaultRootId = "" }: InstallDialogProps) {
   const { t } = useI18n();
   const initialDraft = useRef(readInstallDraft()).current;
-  const [installMethod, setInstallMethod] = useState<InstallMethod>("standard");
+  // Codex is the primary installation path. Standard Skill-only installation
+  // remains an explicit choice on the first screen.
+  const [installMethod, setInstallMethod] = useState<InstallMethod>(initialDraft?.installMethod ?? "assisted");
   const [sourceMethod, setSourceMethod] = useState<SourceMethod>(initialDraft?.sourceMethod ?? "github");
   const [source, setSource] = useState(initialDraft?.source ?? "");
   const [requestedRef, setRequestedRef] = useState(initialDraft?.requestedRef ?? "");
@@ -121,6 +123,8 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
   const [projectRoot, setProjectRoot] = useState("");
   const [progress, setProgress] = useState<AssistedInstallProgress | null>(null);
   const [result, setResult] = useState<AssistedInstallResult | null>(null);
+  const [confirmationId, setConfirmationId] = useState("");
+  const [confirmationSelectionKey, setConfirmationSelectionKey] = useState("");
   const [executionStarted, setExecutionStarted] = useState(false);
   const [standardResult, setStandardResult] = useState<Transaction | null>(null);
   const [busy, setBusy] = useState<BusyTask>("restore");
@@ -144,6 +148,10 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
   const candidates = useMemo(
     () => preview?.skills?.length ? preview.skills : planCandidates(plan),
     [preview, plan]
+  );
+  const currentConfirmationSelectionKey = useMemo(
+    () => `${plan?.id ?? ""}\x00${[...selectedSkills].sort().join("\x00")}\x00${[...selectedPermissions].sort().join("\x00")}`,
+    [plan?.id, selectedPermissions, selectedSkills]
   );
   const scan = preview?.scan ?? plan?.scan;
   const activeClusters = scan?.clusters?.filter(cluster => !cluster.ignored) ?? [];
@@ -207,6 +215,10 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
   const hydrateRestoredPlan = useCallback((restored: AssistedInstallPlan) => {
     setInstallMethod("assisted");
     setPlan(restored);
+    // A restored plan never restores an old human acknowledgement.  The
+    // source/report/plan digests must be reviewed and confirmed again.
+    setConfirmationId("");
+    setConfirmationSelectionKey("");
     executionStartedRef.current = !!restored.transactionId;
     activeExecutionRunRef.current = restored.transactionId ?? "";
     executionStartedAtRef.current = 0;
@@ -576,6 +588,8 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     setPlan(null);
     setProgress(null);
     setResult(null);
+    setConfirmationId("");
+    setConfirmationSelectionKey("");
     executionStartedRef.current = false;
     activeExecutionRunRef.current = "";
     executionStartedAtRef.current = 0;
@@ -680,7 +694,10 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
       if (analyzedCandidates.length) {
         setSelectedSkills(current => current.length ? current : analyzedCandidates.map(skill => skill.name));
       }
-      setSelectedPermissions([]);
+      // The reviewed plan is the human confirmation boundary. Required
+      // permissions are selected once by default; optional steps remain
+      // visible and can still be deselected before execution.
+      setSelectedPermissions(analyzed.permissions.filter(permission => permission.required).map(permission => permission.id));
       setFeedback({
         tone: "success",
         title: t("安装计划已生成", "Installation plan ready"),
@@ -746,7 +763,7 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     const effectiveSourceMethod = sourceMethodOverride ?? sourceMethod;
     const trimmed = (sourceOverride ?? source).trim();
     if (!trimmed) return;
-    setInstallMethod("standard");
+    // The selected mode is preserved through the shared local assessment.
     setBusy("source");
     setFeedback({ tone: "info", title: t("正在准备来源", "Preparing source"),
       message: t("正在固定来源、创建受管快照并运行本地安全检查。", "Pinning the source, creating a managed snapshot, and running local safety checks.") });
@@ -757,6 +774,8 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     setPlan(null);
     setProgress(null);
     setResult(null);
+    setConfirmationId("");
+    setConfirmationSelectionKey("");
     executionStartedRef.current = false;
     setExecutionStarted(false);
     setStandardResult(null);
@@ -780,6 +799,14 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
               t("检查尚未完成", "Assessment incomplete"),
         message: assessed.summary
       });
+      // Codex-first mode is a visible first-screen choice.  Once the mandatory
+      // local gate passes, continue into the read-only Codex review without
+      // requiring a second hidden "more options" step.  The project scan still
+      // creates no install plan and remains cancellable/recoverable.
+      if (installMethod === "assisted" &&
+        (assessed.gate === "ready" || assessed.gate === "attention")) {
+        await scanWithCodex(analyzed.id);
+      }
     } catch (error) {
       const issue = issueFrom(error, t);
       setFeedback(issue);
@@ -899,14 +926,11 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
 		}
 		let reason = "";
 		if (highRisk.length === 1) {
-			reason = window.prompt(t(
-				"请输入接受此 High 风险的具体原因（必填）：",
-				"Enter the specific reason for accepting this High risk (required):"
-			))?.trim() ?? "";
-			if (!reason || !window.confirm(t(
+			if (!window.confirm(t(
 				"确认已理解此 High 风险，并仅接受当前风险簇？",
 				"Confirm that you understand this High risk and accept only this cluster?"
 			))) return;
+			reason = t("人工审核确认（无需填写理由）", "Human review confirmed");
 		}
     setBusy("risk");
     setFeedback({
@@ -994,10 +1018,48 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
     progressRef.current = startingProgress;
     setProgress(startingProgress);
     try {
-      const completed = await api.applyAssisted(
-        plan.id,
-        selectedSkills,
-        selectedPermissions,
+      // Mint (or reuse) the opaque one-time acknowledgement only after the
+      // user has reviewed this exact plan.  The backend re-loads all digests;
+      // the renderer cannot manufacture a confirmation or retarget it.
+      let activeConfirmation = confirmationSelectionKey === currentConfirmationSelectionKey
+        ? confirmationId
+        : "";
+      if (!activeConfirmation) {
+        const activeRisk = (scan?.clusters ?? []).filter(cluster => !cluster.ignored &&
+          (cluster.severity === "high" || cluster.severity === "critical"));
+        if (activeRisk.some(cluster => cluster.severity === "critical")) {
+          setFeedback({
+            tone: "error",
+            title: t("Critical 椋庨櫓涓嶅彲璺宠繃", "Critical risk cannot be bypassed"),
+            message: t("璇峰厛淇鎴栨崲鐢ㄦ潵婧愶紝鍐嶉噸鏂板畨鍏ㄦ鏌ャ€?",
+              "Fix or replace the source, then rerun the safety checks."),
+            retryable: false
+          });
+          setBusy("");
+          return;
+        }
+        const acceptsHighRisk = activeRisk.some(cluster => cluster.severity === "high") &&
+          window.confirm(t(
+            "Codex 审核中仍有 High 风险。确认你已阅读并接受这些风险？",
+            "The Codex review still has High-risk findings. Confirm that you read and accept them?"
+          ));
+        if (activeRisk.some(cluster => cluster.severity === "high") && !acceptsHighRisk) {
+          setBusy("");
+          return;
+        }
+        const confirmation = await api.confirmCodexInstall(
+          plan.id,
+          selectedSkills,
+          selectedPermissions,
+          acceptsHighRisk,
+          plan.targetRootId || preview?.targetRootId || rootId
+        );
+        activeConfirmation = confirmation.id;
+        setConfirmationId(activeConfirmation);
+        setConfirmationSelectionKey(currentConfirmationSelectionKey);
+      }
+      const completed = await api.applyConfirmedAssisted(
+        activeConfirmation,
         projectRoot.trim(),
         plan.targetRootId || preview?.targetRootId || rootId
       );
@@ -1299,18 +1361,36 @@ export function InstallDialog({ close, refresh, openSettings, roots = [], defaul
       return <>{assessmentPanel}<AnalysisProgressView progress={progress} /></>;
     }
     if (!preview && !plan) {
-      return <UnifiedSourceStep
-        sourceMethod={sourceMethod}
-        source={source}
-        requestedRef={requestedRef}
-        busy={busy !== ""}
-        roots={roots}
-        rootId={rootId}
-        setRootId={setRootId}
-        setSourceMethod={setSourceMethod}
-        setSource={setSource}
-        setRequestedRef={setRequestedRef}
-      />;
+      return <>
+        <div className="install-mode-choice" role="group" aria-label={t("安装模式", "Installation mode")}>
+          <button type="button" className={installMethod === "assisted" ? "active" : ""}
+            aria-pressed={installMethod === "assisted"} disabled={busy !== ""}
+            onClick={() => setInstallMethod("assisted")}>
+            <Sparkles size={17} />
+            <span><strong>{t("Codex 审核并受控安装", "Codex review and controlled install")}</strong>
+              <small>{t("先本地检查，再由 Codex 提供只读审核；管理器只执行受控步骤。", "Run local checks first, then a read-only Codex review; the manager executes only controlled steps.")}</small></span>
+          </button>
+          <button type="button" className={installMethod === "standard" ? "active" : ""}
+            aria-pressed={installMethod === "standard"} disabled={busy !== ""}
+            onClick={() => setInstallMethod("standard")}>
+            <Download size={17} />
+            <span><strong>{t("标准 Skill 安装", "Standard Skill install")}</strong>
+              <small>{t("仅复制已发现的 Skill，不配置依赖或 MCP。", "Copy discovered Skills only; do not configure dependencies or MCP.")}</small></span>
+          </button>
+        </div>
+        <UnifiedSourceStep
+          sourceMethod={sourceMethod}
+          source={source}
+          requestedRef={requestedRef}
+          busy={busy !== ""}
+          roots={roots}
+          rootId={rootId}
+          setRootId={setRootId}
+          setSourceMethod={setSourceMethod}
+          setSource={setSource}
+          setRequestedRef={setRequestedRef}
+        />
+      </>;
     }
     if (preview && !assessment && busy === "source") {
       return <CenteredState icon={<LoaderCircle className="spin" />} title={t("正在执行必选检查", "Running required checks")}
