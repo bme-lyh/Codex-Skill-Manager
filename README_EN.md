@@ -9,12 +9,12 @@ Activity contains **Updates**, **History & Rollback**, **Quarantine**, and
 **Reports**.
 
 To add a project, open **Add project** and follow **Source** → **Understand &
-plan** → **Check & confirm** → **Install & result**. The app automatically
-understands the project, runs required local layered checks, and reports
-**Ready to install**, **Review before installing**, **Installation blocked**, or
-**Assessment incomplete**. Codex is an optional semantic-check provider; the
-enhanced scan and the technical switch to standard installation are under
-**More options**, not separate entry modes.
+plan** → **Check & confirm** → **Install & result**. The first screen now makes
+**Codex review and controlled install** explicit. After required local checks,
+Codex runs a bounded read-only review; one human confirmation binds the source,
+report, permissions, and plan before the journaled installer runs. **Standard
+Skill install** remains available as an explicit alternative. The manager never
+executes scripts or dependency/publishing commands from a Skill repository.
 
 - [Open the project homepage](README.md)
 - [Open the Chinese homepage](README_ZH.md)

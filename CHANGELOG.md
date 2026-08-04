@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.13.0
+
+### English
+
+- Made Codex-assisted installation the primary Add project path: the local
+  assessment starts the read-only Codex review, and one human confirmation
+  creates a digest-bound acknowledgement for the existing journaled executor.
+- Added per-root writer leases, stale dashboard refresh protection, and
+  best-effort batch transactions with per-Skill results for select-all actions.
+- Added explicit local-source association to a GitHub repository. A link is
+  accepted only after an immutable commit is resolved and the local tree
+  matches the reviewed remote Skill exactly.
+- Reworked native controls and install/update/security surfaces for explicit
+  Light and Dark appearance modes, including themed checkboxes and selects.
+- Improved multi-Skill scans and structured failure counts so one bad target
+  does not hide the results for the remaining targets.
+
+### 中文
+
+- 将 Codex 审核设为“添加项目”的主流程：本地检查完成后自动开始只读审核，人工一次确认即可进入受控安装执行。
+- 增加按根目录的写入围栏、刷新结果防过期，以及全选操作的逐项事务和部分成功结果。
+- 支持将本地 Skill 明确关联到 GitHub 来源；只有解析到不可变 commit 且本地树与远端完全一致时才会关联。
+- 完善浅色/深色主题下的原生控件、复选框、选择框及安装/更新/安全弹窗样式。
+- 多 Skill 扫描改为保留已完成项并结构化报告失败项，不再因单项错误丢失其他结果。
+
 ## 0.12.0
 
 ### English

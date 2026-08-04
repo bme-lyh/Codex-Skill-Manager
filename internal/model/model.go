@@ -1,12 +1,13 @@
 package model
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-const Version = "0.12.0"
+const Version = "0.13.0"
 const SourcesLockSchemaVersion = 2
 
 // Skill root identifiers are part of the persisted identity of a Skill.  A
@@ -45,6 +46,120 @@ const (
 	RiskHigh     RiskSeverity = "high"
 	RiskCritical RiskSeverity = "critical"
 )
+
+// Source association is deliberately separate from Provider.  Provider
+// describes how a record was obtained (for example, github or local), while
+// SourceAssociation describes whether an installed/local Skill has a
+// verifiable remote identity.  Keeping the values as strings preserves the
+// JSON contract used by older clients and makes an absent value safe to read
+// as unknown/unlinked.
+const (
+	SourceAssociationRemote   = "remote"
+	SourceAssociationLocal    = "local"
+	SourceAssociationUnlinked = "unlinked"
+
+	// SourceAssociationLinked is retained as a concise compatibility alias for
+	// callers that only distinguish linked versus unlinked sources.  Remote is
+	// the canonical value because local snapshots are not remote associations.
+	SourceAssociationLinked = SourceAssociationRemote
+)
+
+const (
+	ScanStatusPassed   = "passed"
+	ScanStatusFindings = "findings"
+	ScanStatusFailed   = "failed"
+)
+
+// NormalizeSourceAssociation returns a stable association value for a source
+// record.  Older locks and inventory payloads may omit the field, so provider
+// is used only as a conservative fallback; unknown providers remain
+// unlinked rather than being treated as remotely trusted.
+func NormalizeSourceAssociation(provider, association string) string {
+	value := strings.ToLower(strings.TrimSpace(association))
+	switch value {
+	case SourceAssociationRemote, "remote-linked", "github", "linked":
+		return SourceAssociationRemote
+	case SourceAssociationLocal, "local-linked":
+		return SourceAssociationLocal
+	case SourceAssociationUnlinked, "unknown", "none":
+		return SourceAssociationUnlinked
+	}
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "github", "git", "remote":
+		return SourceAssociationRemote
+	case "local":
+		// A local provider without an explicit association is an unmanaged or
+		// legacy local Skill.  Keep it visibly unlinked; an explicitly recorded
+		// local association still reaches the branch above.
+		return SourceAssociationUnlinked
+	default:
+		return SourceAssociationUnlinked
+	}
+}
+
+// IsRemoteSourceAssociation reports whether a record has a remote source
+// association.  It intentionally accepts both the canonical value and the
+// legacy linked spelling so callers can safely inspect old payloads.
+func IsRemoteSourceAssociation(provider, association string) bool {
+	return NormalizeSourceAssociation(provider, association) == SourceAssociationRemote
+}
+
+// IsImmutableCommitSHA validates the full 160-bit hexadecimal commit form
+// required for remote source locks.  Prefixes, abbreviated SHAs, refs, and
+// mixed metadata are rejected.  The check is kept in model so every reader
+// and writer can enforce the same immutable-ref rule without importing a
+// higher-level manager package.
+func IsImmutableCommitSHA(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 40 {
+		return false
+	}
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// IsImmutableGitHubCommit is a descriptive alias used by source-provider
+// callers.  It intentionally has the same strict full-SHA semantics.
+func IsImmutableGitHubCommit(value string) bool { return IsImmutableCommitSHA(value) }
+
+// IsImmutableRef is a short compatibility alias for callers that use ref
+// terminology rather than commit terminology.
+func IsImmutableRef(value string) bool { return IsImmutableCommitSHA(value) }
+
+// CanonicalCommitSHA normalizes a full commit SHA for lock persistence.  An
+// empty value remains empty for legacy/local records; a non-empty mutable ref
+// is rejected so it cannot silently become an apparently immutable lock.
+func CanonicalCommitSHA(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if !IsImmutableCommitSHA(value) {
+		return "", fmt.Errorf("commit is not a full immutable SHA")
+	}
+	return strings.ToLower(value), nil
+}
+
+// ValidateImmutableRef applies the remote-provider lock rule.  Local sources
+// are content-bound by their file hashes and therefore do not require a Git
+// commit; a remote provider must carry a full commit SHA whenever a revision is
+// supplied or when the caller asks for a remote lock.
+func ValidateImmutableRef(provider, commit string) error {
+	if strings.EqualFold(strings.TrimSpace(provider), "github") {
+		if !IsImmutableCommitSHA(commit) {
+			return fmt.Errorf("github source must use a full immutable commit SHA")
+		}
+		return nil
+	}
+	// Local providers bind content through their tree/file hashes and may use
+	// a non-Git digest in a provider-specific field.  Do not reject that
+	// metadata here; only GitHub refs require the 40-character commit form.
+	return nil
+}
 
 type Paths struct {
 	SkillsRoot     string `json:"skillsRoot" yaml:"skillsRoot"`
@@ -121,32 +236,36 @@ type FileRecord struct {
 }
 
 type Skill struct {
-	Name             string       `json:"name"`
-	RootID           string       `json:"rootId,omitempty"`
-	Identity         string       `json:"identity,omitempty"`
-	Description      string       `json:"description"`
-	Path             string       `json:"path"`
-	GroupID          string       `json:"groupId"`
-	GroupName        string       `json:"groupName"`
-	SourceGroupID    string       `json:"sourceGroupId"`
-	SourceGroupName  string       `json:"sourceGroupName"`
-	SourceProvider   string       `json:"sourceProvider"`
-	SourceConfidence float64      `json:"sourceConfidence"`
-	SourceEvidence   string       `json:"sourceEvidence,omitempty"`
-	Managed          bool         `json:"managed"`
-	System           bool         `json:"system"`
-	LocalModified    bool         `json:"localModified"`
-	SecurityStatus   string       `json:"securityStatus"`
-	UpdateStatus     string       `json:"updateStatus"`
-	InstalledCommit  string       `json:"installedCommit,omitempty"`
-	SourceRepository string       `json:"sourceRepository,omitempty"`
-	SourcePath       string       `json:"sourcePath,omitempty"`
-	Files            []FileRecord `json:"files,omitempty"`
-	Dependencies     []string     `json:"dependencies,omitempty"`
-	Relationships    []Relation   `json:"relationships,omitempty"`
-	LastChecked      *time.Time   `json:"lastChecked,omitempty"`
-	LastSecurityScan *time.Time   `json:"lastSecurityScan,omitempty"`
-	SecurityChanged  bool         `json:"securityChanged"`
+	Name            string `json:"name"`
+	RootID          string `json:"rootId,omitempty"`
+	Identity        string `json:"identity,omitempty"`
+	Description     string `json:"description"`
+	Path            string `json:"path"`
+	GroupID         string `json:"groupId"`
+	GroupName       string `json:"groupName"`
+	SourceGroupID   string `json:"sourceGroupId"`
+	SourceGroupName string `json:"sourceGroupName"`
+	SourceProvider  string `json:"sourceProvider"`
+	// SourceAssociation is remote, local, or unlinked.  It is independent of
+	// SourceProvider so an unmanaged local Skill cannot be mistaken for a
+	// remotely verified source merely because it has a local path.
+	SourceAssociation string       `json:"sourceAssociation,omitempty"`
+	SourceConfidence  float64      `json:"sourceConfidence"`
+	SourceEvidence    string       `json:"sourceEvidence,omitempty"`
+	Managed           bool         `json:"managed"`
+	System            bool         `json:"system"`
+	LocalModified     bool         `json:"localModified"`
+	SecurityStatus    string       `json:"securityStatus"`
+	UpdateStatus      string       `json:"updateStatus"`
+	InstalledCommit   string       `json:"installedCommit,omitempty"`
+	SourceRepository  string       `json:"sourceRepository,omitempty"`
+	SourcePath        string       `json:"sourcePath,omitempty"`
+	Files             []FileRecord `json:"files,omitempty"`
+	Dependencies      []string     `json:"dependencies,omitempty"`
+	Relationships     []Relation   `json:"relationships,omitempty"`
+	LastChecked       *time.Time   `json:"lastChecked,omitempty"`
+	LastSecurityScan  *time.Time   `json:"lastSecurityScan,omitempty"`
+	SecurityChanged   bool         `json:"securityChanged"`
 }
 
 type Group struct {
@@ -163,17 +282,19 @@ type Group struct {
 }
 
 type DetectedSource struct {
-	SkillName    string  `json:"skillName"`
-	RootID       string  `json:"rootId,omitempty"`
-	Provider     string  `json:"provider"`
-	Repository   string  `json:"repository"`
-	SourceURL    string  `json:"sourceUrl"`
-	RequestedRef string  `json:"requestedRef,omitempty"`
-	SourcePath   string  `json:"sourcePath"`
-	GroupID      string  `json:"groupId"`
-	GroupName    string  `json:"groupName"`
-	Confidence   float64 `json:"confidence"`
-	Evidence     string  `json:"evidence"`
+	SkillName         string  `json:"skillName"`
+	RootID            string  `json:"rootId,omitempty"`
+	Provider          string  `json:"provider"`
+	SourceAssociation string  `json:"sourceAssociation,omitempty"`
+	Repository        string  `json:"repository"`
+	SourceURL         string  `json:"sourceUrl"`
+	RequestedRef      string  `json:"requestedRef,omitempty"`
+	ResolvedCommit    string  `json:"resolvedCommit,omitempty"`
+	SourcePath        string  `json:"sourcePath"`
+	GroupID           string  `json:"groupId"`
+	GroupName         string  `json:"groupName"`
+	Confidence        float64 `json:"confidence"`
+	Evidence          string  `json:"evidence"`
 }
 
 type GroupPreference struct {
@@ -280,15 +401,21 @@ type CodexSkillReview struct {
 }
 
 type CodexReviewBatch struct {
-	Index       int       `json:"index"`
-	GroupID     string    `json:"groupId"`
-	GroupName   string    `json:"groupName"`
-	Status      string    `json:"status"`
-	Attempts    int       `json:"attempts"`
-	SkillNames  []string  `json:"skillNames"`
-	StartedAt   time.Time `json:"startedAt,omitempty"`
-	CompletedAt time.Time `json:"completedAt,omitempty"`
-	Error       string    `json:"error,omitempty"`
+	Index      int      `json:"index"`
+	GroupID    string   `json:"groupId"`
+	GroupName  string   `json:"groupName"`
+	Status     string   `json:"status"`
+	Attempts   int      `json:"attempts"`
+	SkillNames []string `json:"skillNames"`
+	// Counts are optional because older persisted Codex reviews only recorded
+	// scheduling state.  When present they make a batch result consumable
+	// without reconstructing findings from the whole report.
+	FindingCount       int          `json:"findingCount,omitempty"`
+	ActiveFindingCount int          `json:"activeFindingCount,omitempty"`
+	HighestSeverity    RiskSeverity `json:"highestSeverity,omitempty"`
+	StartedAt          time.Time    `json:"startedAt,omitempty"`
+	CompletedAt        time.Time    `json:"completedAt,omitempty"`
+	Error              string       `json:"error,omitempty"`
 }
 
 type CodexReviewProgress struct {
@@ -348,10 +475,14 @@ type ScanReport struct {
 	ActiveHighestSeverity RiskSeverity       `json:"activeHighestSeverity"`
 	Findings              []Finding          `json:"findings"`
 	FilesScanned          int                `json:"filesScanned"`
+	FilesSkipped          int                `json:"filesSkipped,omitempty"`
 	ActiveFindingCount    int                `json:"activeFindingCount"`
 	IgnoredFindingCount   int                `json:"ignoredFindingCount"`
 	Status                string             `json:"status"`
+	Error                 string             `json:"error,omitempty"`
 	ScannerVersion        string             `json:"scannerVersion"`
+	RuleCounts            map[string]int     `json:"ruleCounts"`
+	CategoryCounts        map[string]int     `json:"categoryCounts"`
 	Clusters              []RiskCluster      `json:"clusters"`
 	CodexReview           *CodexReviewResult `json:"codexReview,omitempty"`
 	Skills                []ScanSkillSummary `json:"skills"`
@@ -364,6 +495,8 @@ type ScanSkillSummary struct {
 	GroupID             string       `json:"groupId"`
 	GroupName           string       `json:"groupName"`
 	FilesScanned        int          `json:"filesScanned"`
+	FindingCount        int          `json:"findingCount,omitempty"`
+	Error               string       `json:"error,omitempty"`
 	HighestSeverity     RiskSeverity `json:"highestSeverity"`
 	ActiveFindingCount  int          `json:"activeFindingCount"`
 	IgnoredFindingCount int          `json:"ignoredFindingCount"`
@@ -378,12 +511,16 @@ type SkillSecurityState struct {
 }
 
 type PackageLock struct {
-	RootID         string               `json:"rootId,omitempty"`
-	Provider       string               `json:"provider"`
-	Repository     string               `json:"repository,omitempty"`
-	GroupName      string               `json:"groupName,omitempty"`
-	SourceURL      string               `json:"sourceUrl,omitempty"`
-	RequestedRef   string               `json:"requestedRef,omitempty"`
+	RootID            string `json:"rootId,omitempty"`
+	Provider          string `json:"provider"`
+	SourceAssociation string `json:"sourceAssociation,omitempty"`
+	Repository        string `json:"repository,omitempty"`
+	GroupName         string `json:"groupName,omitempty"`
+	SourceURL         string `json:"sourceUrl,omitempty"`
+	RequestedRef      string `json:"requestedRef,omitempty"`
+	// ResolvedRef is the immutable ref returned by a provider.  ResolvedCommit
+	// remains the canonical v1/v2 field and is preferred when both exist.
+	ResolvedRef    string               `json:"resolvedRef,omitempty"`
 	ResolvedCommit string               `json:"resolvedCommit,omitempty"`
 	InstalledAt    time.Time            `json:"installedAt"`
 	UpdatedAt      time.Time            `json:"updatedAt"`
@@ -391,14 +528,16 @@ type PackageLock struct {
 }
 
 type SkillLock struct {
-	RootID         string            `json:"rootId,omitempty"`
-	SourcePath     string            `json:"sourcePath"`
-	LocalPath      string            `json:"localPath"`
-	ResolvedCommit string            `json:"resolvedCommit,omitempty"`
-	TreeHash       string            `json:"treeHash,omitempty"`
-	Files          map[string]string `json:"files"`
-	Pinned         bool              `json:"pinned"`
-	LastScanReport string            `json:"lastScanReport,omitempty"`
+	RootID            string            `json:"rootId,omitempty"`
+	SourceAssociation string            `json:"sourceAssociation,omitempty"`
+	SourcePath        string            `json:"sourcePath"`
+	LocalPath         string            `json:"localPath"`
+	ResolvedCommit    string            `json:"resolvedCommit,omitempty"`
+	ResolvedRef       string            `json:"resolvedRef,omitempty"`
+	TreeHash          string            `json:"treeHash,omitempty"`
+	Files             map[string]string `json:"files"`
+	Pinned            bool              `json:"pinned"`
+	LastScanReport    string            `json:"lastScanReport,omitempty"`
 }
 
 type SourcesLock struct {
@@ -463,18 +602,19 @@ func IsSystemSkillPath(root SkillRoot, target string) bool {
 }
 
 type Repository struct {
-	Provider      string    `json:"provider"`
-	Owner         string    `json:"owner"`
-	Name          string    `json:"name"`
-	FullName      string    `json:"fullName"`
-	Private       bool      `json:"private"`
-	DefaultBranch string    `json:"defaultBranch"`
-	License       string    `json:"license,omitempty"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	ResolvedRef   string    `json:"resolvedRef"`
-	CommitSHA     string    `json:"commitSha"`
-	SourcePath    string    `json:"sourcePath,omitempty"`
-	LocalPath     string    `json:"localPath,omitempty"`
+	Provider          string    `json:"provider"`
+	SourceAssociation string    `json:"sourceAssociation,omitempty"`
+	Owner             string    `json:"owner"`
+	Name              string    `json:"name"`
+	FullName          string    `json:"fullName"`
+	Private           bool      `json:"private"`
+	DefaultBranch     string    `json:"defaultBranch"`
+	License           string    `json:"license,omitempty"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+	ResolvedRef       string    `json:"resolvedRef"`
+	CommitSHA         string    `json:"commitSha"`
+	SourcePath        string    `json:"sourcePath,omitempty"`
+	LocalPath         string    `json:"localPath,omitempty"`
 }
 
 type CandidateSkill struct {
@@ -768,6 +908,18 @@ type Transaction struct {
 	ProjectRoot    string                `json:"projectRoot,omitempty"`
 	RecoveryStatus string                `json:"recoveryStatus,omitempty"`
 	Error          string                `json:"error,omitempty"`
+	ParentID       string                `json:"parentId,omitempty"`
+	ItemResults    []BatchItemResult     `json:"itemResults,omitempty"`
+}
+
+// BatchItemResult keeps best-effort batch operations useful even when one
+// target fails. Each item points at its own journaled transaction so callers
+// can retry or recover only the failed target.
+type BatchItemResult struct {
+	Target        string `json:"target"`
+	Status        string `json:"status"`
+	TransactionID string `json:"transactionId,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 type Dashboard struct {

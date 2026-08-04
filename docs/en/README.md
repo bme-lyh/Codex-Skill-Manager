@@ -9,9 +9,9 @@ The **Add project** dialog uses four steps for every GitHub or local source:
 **Source**, **Understand & plan**, **Check & confirm**, and **Install & result**.
 Required local layered checks run automatically and end with **Ready to install**,
 **Review before installing**, **Installation blocked**, or **Assessment incomplete**.
-The Enhanced project scan and the technical switch to standard installation are
-available from **More options**. Codex is an optional semantic-check provider,
-not a separate GUI installation mode.
+The first screen offers **Codex review and controlled install**. Required local
+checks run first; one human confirmation then starts the digest-bound reviewed
+plan. **Standard Skill install** remains an explicit alternative.
 
 Start with the page that matches your task:
 

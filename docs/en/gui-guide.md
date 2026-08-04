@@ -3,10 +3,10 @@
 The unified desktop shell has five primary areas: **Home**, **Assets**,
 **Security**, **Activity**, and **Settings**. Assets and Activity expose their
 own secondary tabs. The **Add project** dialog uses one four-step flow for every
-source; it always starts with required local checks before any optional Codex
-work. Review exact targets, permissions, and recovery information before
-writing. Critical findings cannot be ignored; High findings require per-cluster
-confirmation and a non-empty reason.
+source; it always starts with required local checks, then exposes Codex review
+on the first screen. One human confirmation is enough to run the digest-bound
+reviewed plan. Critical findings remain a safety boundary; High findings use a
+single explicit confirmation without a typed reason.
 
 ## Navigation
 
@@ -84,14 +84,12 @@ The target root is part of the plan. Once review begins, applying to another
 root is rejected; return to Source and analyze again. Same-name Skills may live
 in both roots, but bulk actions never cross roots.
 
-Adding a project starts one unified flow. For a complex repository, **More options** contains **Run enhanced
-project scan**. This is an explicit, optional semantic scan provided by Codex,
-not a separate installation mode. It reuses the local assessment, sends bounded
+Adding a project starts one unified flow. **Codex review and controlled install**
+is available on the first screen. It reuses the local assessment, sends bounded
 source context with shell access disabled, and returns a project overview,
 security conclusion, evidence limitations, and declarative installation methods.
-The scan does not authorize installation, create a plan, or download
-dependencies. Review it and choose **Approve and create installation plan**
-before typed steps and permissions can be proposed.
+After review, one human confirmation creates the digest-bound plan and starts
+the existing journaled executor.
 
 Codex text is never executed as a command. Automatic steps are limited to
 selected Skill installation, an exact-version Python tool from official PyPI,
@@ -110,9 +108,9 @@ approval. Apply verifies the locked files and installs offline.
 Every required permission must be approved before execution. The dialog can be
 hidden while a long task continues in the background; reopening restores its
 latest progress. If a Codex plan cannot be generated, the source assessment,
-risk result, and Skill selection remain available. **More options** also offers
-**Switch to standard installation**, which writes only the selected Skill
-directories and does not configure MCP or extra dependencies.
+risk result, and Skill selection remain available. **Standard Skill install**
+writes only the selected Skill directories and does not configure MCP or extra
+dependencies.
 
 After failure or cancellation, reversible steps are recovered in reverse order.
 A partial result keeps unsupported manual steps and its rollback entry. If the
@@ -130,9 +128,9 @@ default for large reports. Repeated scans count unique active High/Critical
 findings from the latest effective report per target.
 
 Critical findings always block writes and cannot be ignored. High findings need
-per-cluster confirmation and a non-empty reason; batch actions cannot bypass
-that rule. Medium and lower findings use the ordinary ignore flow. Restoring a
-previously accepted High cluster immediately reactivates the gate.
+one explicit per-cluster confirmation; the app records the decision without a
+typed reason. Medium and lower findings use the ordinary ignore flow. Restoring
+a previously accepted High cluster immediately reactivates the gate.
 
 The Security page's optional **Codex review** packages the selected group with
 shell access disabled. It is advisory, treats local rule hits as supplemental

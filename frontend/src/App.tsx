@@ -96,6 +96,8 @@ function AppShell({ locale, setLocale, theme, setTheme, rootContract }: {
   const [installOpen, setInstallOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [operation, setOperation] = useState<Operation | null>(null);
+  const operationInFlight = useRef<{ label: string } | null>(null);
+  const dashboardRequest = useRef(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return window.localStorage.getItem("csm.sidebar.collapsed") === "1"; } catch { return false; }
   });
@@ -106,15 +108,19 @@ function AppShell({ locale, setLocale, theme, setTheme, rootContract }: {
   }, [sidebarCollapsed]);
 
   const loadDashboard = async (throwOnError: boolean) => {
+    const requestId = ++dashboardRequest.current;
     setLoading(true);
     try {
-      setData(await api.dashboard());
+      const next = await api.dashboard();
+      if (requestId !== dashboardRequest.current) return;
+      setData(next);
       setError("");
     } catch (e: any) {
+      if (requestId !== dashboardRequest.current) return;
       setError(e?.message ?? String(e));
       if (throwOnError) throw e;
     } finally {
-      setLoading(false);
+      if (requestId === dashboardRequest.current) setLoading(false);
     }
   };
   const refresh = () => loadDashboard(false);
@@ -123,6 +129,15 @@ function AppShell({ locale, setLocale, theme, setTheme, rootContract }: {
   useEffect(() => { void refresh(); }, []);
 
   const runOperation: RunOperation = async (label, task, successDetail) => {
+    const active = operationInFlight.current;
+    if (active) {
+      setError(t(
+        `已有操作正在进行：${active.label}。请等待完成后再开始其他操作。`,
+        `Another operation is running: ${active.label}. Wait for it to finish before starting another.`
+      ));
+      return undefined;
+    }
+    operationInFlight.current = { label };
     setOperation({ label, detail: t("正在处理，请稍候…", "Working…"), status: "running" });
     try {
       const value = await task();
@@ -134,6 +149,8 @@ function AppShell({ locale, setLocale, theme, setTheme, rootContract }: {
       setError(message);
       setOperation({ label, detail: message, status: "error" });
       return undefined;
+    } finally {
+      if (operationInFlight.current?.label === label) operationInFlight.current = null;
     }
   };
 
@@ -159,10 +176,10 @@ function AppShell({ locale, setLocale, theme, setTheme, rootContract }: {
                 {roots.map(root => <option key={root.rootId} value={root.rootId}>{root.rootName}</option>)}
               </select>
             </label>}
-            <button className="ghost" disabled={loading} onClick={() => void runOperation(t("刷新 Skills 清单", "Refresh Skills"), refresh, t("清单已刷新", "Skills refreshed"))}>
+            <button className="ghost" disabled={loading || operation?.status === "running"} onClick={() => void runOperation(t("刷新 Skills 清单", "Refresh Skills"), refresh, t("清单已刷新", "Skills refreshed"))}>
               <RefreshCw size={17} className={loading ? "spin" : ""} />{loading ? t("刷新中…", "Refreshing…") : t("刷新", "Refresh")}
             </button>
-            <button className="primary" onClick={() => setInstallOpen(true)}><Plus size={17} />{t("添加项目", "Add project")}</button>
+            <button className="primary" disabled={operation?.status === "running"} onClick={() => setInstallOpen(true)}><Plus size={17} />{t("添加项目", "Add project")}</button>
           </div>
         </header>
         {activeTabId && <div className="section-tabs-wrap">
@@ -466,7 +483,9 @@ function AdoptionDialog({ preview, close, refresh, runOperation, onCompleted }: 
   const apply = async () => {
     setWorking(true);
     try {
-      const result = await runOperation(t("管理现有 Skills", "Manage existing Skills"), () => api.applyAdoption(preview.id, selected, preview.targetRootId || preview.skills[0]?.rootId || "codex-default"), t("已完成管理", "Management complete"));
+      const result = await runOperation(t("管理现有 Skills", "Manage existing Skills"),
+        () => api.applyAdoption(preview.id, selected, preview.targetRootId || preview.skills[0]?.rootId || "codex-default"),
+        t("已完成管理；失败项可单独重试", "Management finished; failed items can be retried"));
       if (result) { onCompleted(); await refresh(); close(); }
     } finally { setWorking(false); }
   };
@@ -630,6 +649,22 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
       if (checked) { setStatuses(checked.statuses); await refresh(); }
     } finally { setWorking(false); }
   };
+  const linkRemote = async (group: Group) => {
+    const skillName = group.skillNames[0];
+    if (!skillName) return;
+    const url = window.prompt(t("输入该 Skill 的 GitHub 仓库地址", "Enter the GitHub repository URL for this Skill"), "https://github.com/");
+    if (!url?.trim() || url.trim() === "https://github.com/") return;
+    const ref = window.prompt(t("输入分支或标签（可留空）", "Enter a branch or tag (optional)"), "main") ?? "";
+    setWorking(true);
+    try {
+      const linked = await runOperation(
+        t("关联远程来源", "Link remote source"),
+        () => api.linkLocalSource(skillName, url.trim(), ref.trim(), group.rootId || "codex-default"),
+        t("来源已关联；现在可以检查更新", "Source linked; updates can now be checked")
+      );
+      if (linked) await refresh();
+    } finally { setWorking(false); }
+  };
   const prepare = async (groups: Group[]) => {
     if (!groups.length) return;
     setWorking(true);
@@ -706,6 +741,10 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
           {status?.status === "update-available" && <button className="ghost compact" disabled={working} onClick={() => void prepare([g])}>
             <ShieldCheck size={15} />{t("单独复核", "Review separately")}
           </button>}
+          {status?.status === "unsupported" && g.skillNames.length > 0 &&
+            <button className="ghost compact" disabled={working} onClick={() => void linkRemote(g)}>
+              <Link2 size={15} />{t("关联远程来源", "Link source")}
+            </button>}
           {(status?.status === "error" || status?.status === "rate-limited") &&
             <button className="ghost compact" disabled={working}
               onClick={() => void retry(g)}>
@@ -753,7 +792,7 @@ function updateDetail(status: UpdateStatus, t: Translate, formatDate: (value: st
     return t(`本地与远端一致 · Commit ${status.remoteCommit?.slice(0, 10) || "未知"} · 检查于 ${checked}`,
       `Local and remote match · Commit ${status.remoteCommit?.slice(0, 10) || "unknown"} · Checked ${checked}`);
   }
-  if (status.status === "unsupported") return t(`本地来源没有可检查的 GitHub 版本 · 检查于 ${checked}`, `Local source has no GitHub version to check · Checked ${checked}`);
+  if (status.status === "unsupported") return t(`本地来源尚未关联 GitHub；可点击“关联远程来源” · 检查于 ${checked}`, `Local source is not linked to GitHub; use “Link source” · Checked ${checked}`);
   if (status.status === "rate-limited") {
     const previous = status.lastSuccessStatus === "update-available" ? t("上次成功检查发现新版本，仍可选中", "The last successful check found an update; it remains selectable") :
       status.lastSuccessStatus === "up-to-date" ? t("上次成功检查时已是最新", "The last successful check was up to date") : t("没有可用的历史成功状态", "No previous successful status");
@@ -1429,15 +1468,14 @@ function requestRiskDecision(cluster: RiskCluster, ignored: boolean, t: Translat
 		return null;
 	}
 	if (cluster.severity !== "high") return { reason: "", confirmHighRisk: false };
-	const reason = window.prompt(t(
-		"请输入接受此 High 风险的具体原因（必填）：",
-		"Enter the specific reason for accepting this High risk (required):"
-	))?.trim() ?? "";
-	if (!reason || !window.confirm(t(
+	if (!window.confirm(t(
 		"确认已理解此 High 风险，并仅接受当前风险簇？",
 		"Confirm that you understand this High risk and accept only this cluster?"
 	))) return null;
-	return { reason, confirmHighRisk: true };
+	return {
+		reason: t("人工审核确认（无需填写理由）", "Human review confirmed"),
+		confirmHighRisk: true
+	};
 }
 
 function codexBatchReason(report: ScanReport, clusters: RiskCluster[], locale: AppLocale): string {

@@ -76,7 +76,7 @@ func ScanRoot(rootID, root string, maxFiles int, maxFileBytes int64) (model.Scan
 	}
 	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
 		now := time.Now().UTC()
-		return model.ScanReport{ID: fmt.Sprintf("scan-%s", now.Format("20060102T150405.000000000")), Target: root, RootID: rootID, StartedAt: now, CompletedAt: now, HighestSeverity: model.RiskInfo, ActiveHighestSeverity: model.RiskInfo, Findings: []model.Finding{}, Skills: []model.ScanSkillSummary{}, ScannerVersion: Version, Status: "passed"}, nil
+		return model.ScanReport{ID: fmt.Sprintf("scan-%s", now.Format("20060102T150405.000000000")), Target: root, RootID: rootID, StartedAt: now, CompletedAt: now, HighestSeverity: model.RiskInfo, ActiveHighestSeverity: model.RiskInfo, Findings: []model.Finding{}, Skills: []model.ScanSkillSummary{}, ScannerVersion: Version, Status: model.ScanStatusPassed, RuleCounts: map[string]int{}, CategoryCounts: map[string]int{}}, nil
 	}
 	report, err := scanWithSystemDir(root, maxFiles, maxFileBytes, true, ".system")
 	report.RootID = rootID
@@ -145,8 +145,8 @@ func scanWithSystemDir(root string, maxFiles int, maxFileBytes int64, skipRootIn
 	now := time.Now().UTC()
 	report := model.ScanReport{
 		ID:     fmt.Sprintf("scan-%s", now.Format("20060102T150405.000000000")),
-		Target: root, StartedAt: now, ScannerVersion: Version, Status: "passed",
-		HighestSeverity: model.RiskInfo, Findings: []model.Finding{},
+		Target: root, StartedAt: now, ScannerVersion: Version, Status: model.ScanStatusPassed,
+		HighestSeverity: model.RiskInfo, Findings: []model.Finding{}, RuleCounts: map[string]int{}, CategoryCounts: map[string]int{},
 	}
 	textFiles := make([]textFile, 0)
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -184,6 +184,7 @@ func scanWithSystemDir(root string, maxFiles int, maxFileBytes int64, skipRootIn
 			return nil
 		}
 		if info.Size() > maxFileBytes {
+			report.FilesSkipped++
 			addFinding(&report, model.Finding{RuleID: "CSM-FS-002", Title: "文件超过大小限制", Severity: model.RiskHigh, Confidence: 1, File: filepath.ToSlash(rel), Explanation: "超大文件无法按正常策略完整审查，也可能消耗异常多的磁盘和扫描资源。", Recommendation: "核对文件必要性后再调整大小策略"})
 			return nil
 		}
@@ -201,6 +202,9 @@ func scanWithSystemDir(root string, maxFiles int, maxFileBytes int64, skipRootIn
 			addFinding(&report, model.Finding{RuleID: "CSM-FILE-001", Title: "未批准的文件类型", Severity: model.RiskHigh, Confidence: .95, File: filepath.ToSlash(rel), Evidence: ext, Explanation: "该扩展名不在允许审查的类型中，扫描器无法确认它是否包含可执行内容或隐藏载荷。", Recommendation: "人工确认文件用途、格式和来源；无法确认时拒绝安装"})
 		}
 		if info.Size() == 0 || info.Size() > 4<<20 || !isTextExt(ext) {
+			if info.Size() > 0 && !isTextExt(ext) {
+				report.FilesSkipped++
+			}
 			return nil
 		}
 		textFiles = append(textFiles, textFile{path: path, rel: filepath.ToSlash(rel)})
@@ -216,6 +220,10 @@ func scanWithSystemDir(root string, maxFiles int, maxFileBytes int64, skipRootIn
 			}
 		}
 	}
+	if err != nil {
+		report.Status = model.ScanStatusFailed
+		report.Error = err.Error()
+	}
 	report.CompletedAt = time.Now().UTC()
 	sort.Slice(report.Findings, func(i, j int) bool {
 		if report.Findings[i].Severity == report.Findings[j].Severity {
@@ -229,8 +237,8 @@ func scanWithSystemDir(root string, maxFiles int, maxFileBytes int64, skipRootIn
 		}
 		return severityRank(report.Findings[i].Severity) > severityRank(report.Findings[j].Severity)
 	})
-	if len(report.Findings) > 0 {
-		report.Status = "findings"
+	if err == nil && len(report.Findings) > 0 {
+		report.Status = model.ScanStatusFindings
 	}
 	return report, err
 }
@@ -332,6 +340,14 @@ func addFinding(report *model.ScanReport, f model.Finding) {
 	f.Category = categoryForRule(f.RuleID)
 	f.Deterministic = deterministicRule(f.RuleID)
 	report.Findings = append(report.Findings, f)
+	if report.RuleCounts == nil {
+		report.RuleCounts = map[string]int{}
+	}
+	if report.CategoryCounts == nil {
+		report.CategoryCounts = map[string]int{}
+	}
+	report.RuleCounts[f.RuleID]++
+	report.CategoryCounts[f.Category]++
 	if severityRank(f.Severity) > severityRank(report.HighestSeverity) {
 		report.HighestSeverity = f.Severity
 	}

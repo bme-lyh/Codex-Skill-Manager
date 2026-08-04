@@ -1805,3 +1805,212 @@
   .modal-actions.install-dialog-actions { align-items: stretch; }
   .modal-actions.install-dialog-actions > button { flex: 1 1 auto; min-height: 40px; }
 }
+
+/* v0.12 theme contract: install, update, assessment and permission states
+   use the same semantic surfaces as the shell. Keep this block last so the
+   older light-first workflow rules cannot leak white cards into explicit dark
+   mode (or dark native controls into explicit light mode). */
+.install-dialog,
+.install-dialog-head,
+.install-dialog-body,
+.install-dialog-actions {
+  background: var(--panel);
+  color: var(--ink);
+  border-color: var(--line);
+  background-image: none;
+}
+
+.install-dialog :is(.source-intro, .install-safety-note, .install-repository,
+  .skill-selection, .assisted-overview, .plan-section, .execution-view,
+  .assessment-view, .plan-warnings, .approach, .candidate-list,
+  .permission-list, .plan-step, .execution-timeline li, .project-root-field,
+  .result-grid > div) {
+  background: var(--panel-soft);
+  color: var(--ink);
+  border-color: var(--line);
+  background-image: none;
+}
+
+.install-dialog :is(.install-source-tabs, .install-skill-list label,
+  .risk-details, .risk-details article, .assessment-check,
+  .assessment-targets, .requirement-row, .plan-step-meta span,
+  .wheel-lock-list, .permission-list label, .permission-list label strong em,
+  .plan-step details code, .plan-step details p, .timeline-icon,
+  .assisted-meta span, .execution-error, .execution-time,
+  .execution-progress-track, .analysis-progress-track) {
+  background: var(--subtle-surface);
+  color: var(--ink);
+  border-color: var(--line);
+  background-image: none;
+}
+
+.install-dialog :is(.install-methods > button, .install-source-tabs button,
+  .selection-tools button, .permission-tools button, .feedback-actions button,
+  .compact-risk-head > button, .risk-details article button) {
+  background: var(--subtle-surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.install-dialog :is(.install-methods > button:hover,
+  .install-source-tabs button:hover, .selection-tools button:hover,
+  .permission-tools button:hover, .feedback-actions button:hover) {
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+.install-dialog .install-source-tabs button.active {
+  background: var(--panel);
+  color: var(--system-blue);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.install-dialog .install-methods > button.active {
+  background: var(--success-surface);
+  color: var(--success-ink);
+  border-color: var(--success-line);
+  box-shadow: none;
+}
+
+.install-dialog :is(.install-field input, .install-field select,
+  .permission-list input, .project-root-field input) {
+  background: var(--control-surface);
+  color: var(--ink);
+  border-color: var(--line);
+  color-scheme: inherit;
+}
+.install-dialog :is(.install-field input:disabled, .install-field select:disabled) {
+  background: var(--subtle-surface);
+  color: var(--muted);
+}
+.install-dialog :is(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+  accent-color: var(--system-blue);
+}
+
+.install-mode-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+.install-mode-choice button {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 76px;
+  padding: 14px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+.install-mode-choice button:hover,
+.install-mode-choice button.active {
+  border-color: var(--system-blue);
+  background: var(--info-surface);
+}
+.install-mode-choice button > svg { flex: 0 0 auto; color: var(--system-blue); margin-top: 2px; }
+.install-mode-choice span { display: grid; gap: 5px; }
+.install-mode-choice strong { font-size: 14px; }
+.install-mode-choice small { color: var(--muted); line-height: 1.35; }
+@media (max-width: 720px) {
+  .install-mode-choice { grid-template-columns: 1fr; }
+}
+
+.install-dialog :is(.install-dialog-head > div > span, .install-field > p,
+  .install-repository span, .install-skill-list span span,
+  .install-skill-list code, .section-heading p, .compact-risk p,
+  .assisted-overview > p, .assisted-meta span, .plan-section-head p,
+  .requirement-row p, .plan-step > div > p, .plan-step-meta span,
+  .plan-step details summary, .plan-step details code,
+  .plan-step details p, .wheel-lock-list small, .permission-list label p,
+  .permission-list label code, .plan-warnings li, .analysis-progress-head p,
+  .execution-summary p, .timeline-step span, .timeline-step small,
+  .result-grid p, .execution-time, .install-centered-state p) {
+  color: var(--muted);
+}
+.install-dialog :is(.install-methods strong, .install-field > span,
+  .install-repository strong, .install-skill-list strong,
+  .assisted-overview h3, .execution-summary h3, .plan-section-head h3,
+  .requirement-row strong, .plan-step-title strong,
+  .wheel-lock-list > strong, .wheel-lock-list b,
+  .permission-list label strong, .analysis-progress-head h3,
+  .timeline-step strong, .result-grid strong, .install-centered-state h3) {
+  color: var(--ink);
+}
+.install-dialog :is(.source-intro > svg, .install-safety-note > svg,
+  .plan-section-head > svg, .install-centered-state > svg) { color: var(--system-blue); }
+
+.install-dialog .compact-risk,
+.install-dialog .analysis-progress-head,
+.install-dialog .execution-summary,
+.install-dialog .assessment-view.ready,
+.install-dialog .requirement-row.satisfied,
+.install-dialog .empty-plan-text,
+.install-dialog .execution-summary.completed,
+.install-dialog .timeline-step.completed .timeline-icon,
+.install-dialog .install-feedback.success {
+  background: var(--success-surface);
+  color: var(--success-ink);
+  border-color: var(--success-line);
+}
+.install-dialog .compact-risk.has-warnings,
+.install-dialog .assessment-view.attention,
+.install-dialog .requirement-row.required:not(.satisfied),
+.install-dialog .plan-step.manual,
+.install-dialog .plan-warnings,
+.install-dialog .permission-dependency-warning,
+.install-dialog .execution-summary.partial,
+.install-dialog .timeline-step.manual-pending .timeline-icon,
+.install-dialog .install-feedback.warning {
+  background: var(--warning-surface);
+  color: var(--warning-ink);
+  border-color: var(--warning-line);
+}
+.install-dialog :is(.assessment-view.blocked, .assessment-view.incomplete,
+  .execution-summary.failed, .execution-error, .timeline-step.failed .timeline-icon,
+  .timeline-step.interrupted .timeline-icon, .timeline-step p,
+  .plan-step details .step-error, .install-feedback.error) {
+  background: var(--danger-surface);
+  color: var(--danger-ink);
+  border-color: var(--danger-line);
+}
+.install-dialog .execution-summary.rolled-back {
+  background: var(--subtle-surface);
+  color: var(--muted);
+  border-color: var(--line);
+}
+.install-dialog :is(.compact-risk-head, .assessment-outcome) { color: var(--ink); }
+.install-dialog .compact-risk.has-warnings .compact-risk-head,
+.install-dialog .plan-warnings,
+.install-dialog .permission-dependency-warning { color: var(--warning-ink); }
+.install-dialog :is(.risk-details article .risk-policy-label,
+  .permission-risk.high, .permission-risk.critical) {
+  background: var(--danger-surface);
+  color: var(--danger-ink);
+  border-color: var(--danger-line);
+}
+.install-dialog .permission-risk.medium {
+  background: var(--warning-surface);
+  color: var(--warning-ink);
+}
+.install-dialog .permission-risk:not(.medium):not(.high):not(.critical) {
+  background: var(--success-surface);
+  color: var(--success-ink);
+}
+.install-dialog :is(.execution-progress-track, .analysis-progress-track) {
+  background: var(--subtle-surface);
+  border-color: var(--line);
+}
+.install-dialog :is(.execution-progress-track i, .analysis-progress-track i) {
+  background: var(--system-blue);
+  background-image: none;
+}
+.install-dialog .install-feedback pre {
+  background: var(--code-surface);
+  color: var(--ink);
+}
+.install-dialog .install-secondary-actions > div {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--ink);
+}

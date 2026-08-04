@@ -528,7 +528,7 @@ func (s *Store) ReplaceGroupLayout(layout model.GroupLayoutState) error {
 func (s *Store) LoadLock() (model.SourcesLock, error) {
 	data, err := os.ReadFile(s.lockPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return model.SourcesLock{SchemaVersion: 2, Packages: map[string]model.PackageLock{}}, nil
+		return model.SourcesLock{SchemaVersion: model.SourcesLockSchemaVersion, Packages: map[string]model.PackageLock{}}, nil
 	}
 	if err != nil {
 		return model.SourcesLock{}, err
@@ -543,7 +543,7 @@ func (s *Store) LoadLock() (model.SourcesLock, error) {
 	if lock.SchemaVersion == 1 || lock.SchemaVersion == 0 {
 		return s.migrateSourcesLockV1(lock)
 	}
-	if lock.SchemaVersion != 2 {
+	if lock.SchemaVersion != model.SourcesLockSchemaVersion {
 		return model.SourcesLock{}, fmt.Errorf("unsupported sources lock schema: %d", lock.SchemaVersion)
 	}
 	return normalizeSourcesLock(lock, s.roots)
@@ -558,7 +558,7 @@ func (s *Store) SaveLock(lock model.SourcesLock) error {
 	if err != nil {
 		return err
 	}
-	lock.SchemaVersion = 2
+	lock.SchemaVersion = model.SourcesLockSchemaVersion
 	data, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
 		return err
@@ -607,9 +607,32 @@ func normalizeSourcesLock(lock model.SourcesLock, roots []model.SkillRoot) (mode
 			return model.SourcesLock{}, fmt.Errorf("migrate package %q: root identity is ambiguous", id)
 		}
 		pkg.RootID = rootID
+		pkg.SourceAssociation = model.NormalizeSourceAssociation(pkg.Provider, pkg.SourceAssociation)
+		// v1/v2 locks used resolvedCommit; newer records may also expose the
+		// immutable ref explicitly.  Populate only from a full SHA so a branch
+		// or tag can never be promoted into an immutable lock by migration.
+		if canonical, err := model.CanonicalCommitSHA(pkg.ResolvedCommit); err == nil && canonical != "" {
+			pkg.ResolvedCommit = canonical
+		}
+		if pkg.ResolvedRef == "" && model.IsImmutableCommitSHA(pkg.ResolvedCommit) {
+			pkg.ResolvedRef = pkg.ResolvedCommit
+		}
+		if pkg.ResolvedCommit == "" && model.IsImmutableCommitSHA(pkg.ResolvedRef) {
+			pkg.ResolvedCommit = strings.ToLower(strings.TrimSpace(pkg.ResolvedRef))
+		}
 		for name, skill := range pkg.Skills {
 			if skill.RootID == "" {
 				skill.RootID = rootID
+			}
+			skill.SourceAssociation = model.NormalizeSourceAssociation(pkg.Provider, skill.SourceAssociation)
+			if canonical, err := model.CanonicalCommitSHA(skill.ResolvedCommit); err == nil && canonical != "" {
+				skill.ResolvedCommit = canonical
+			}
+			if skill.ResolvedRef == "" && model.IsImmutableCommitSHA(skill.ResolvedCommit) {
+				skill.ResolvedRef = skill.ResolvedCommit
+			}
+			if skill.ResolvedCommit == "" && model.IsImmutableCommitSHA(skill.ResolvedRef) {
+				skill.ResolvedCommit = strings.ToLower(strings.TrimSpace(skill.ResolvedRef))
 			}
 			pkg.Skills[name] = skill
 		}
@@ -619,7 +642,7 @@ func normalizeSourcesLock(lock model.SourcesLock, roots []model.SkillRoot) (mode
 		}
 		packages[qualifiedID] = pkg
 	}
-	lock.SchemaVersion = 2
+	lock.SchemaVersion = model.SourcesLockSchemaVersion
 	lock.Packages = packages
 	return lock, nil
 }

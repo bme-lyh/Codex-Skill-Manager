@@ -41,13 +41,12 @@ steps for a GitHub link and a local directory:
    dialog shows progress, records a transaction, refreshes the latest Skills and
    operation status, and keeps the recovery state visible.
 
-The entry point does not ask you to choose an installation mode. For a complex
-repository, open **More options** and choose **Run enhanced project scan**.
-Codex is an optional semantic-check provider, not a separate installation mode.
-The scan is read-only, has shell access disabled, and still requires local
-validation and explicit approval. **Switch to standard installation** is also a
-technical action under **More options**; it writes only selected Skill
-directories and does not configure MCP or extra dependencies.
+The first screen now offers **Codex review and controlled install**. After the
+mandatory local assessment, Codex performs a bounded read-only review. One human
+confirmation binds the source, report, permissions, and plan before the existing
+journaled installer runs. **Standard Skill install** remains an explicit
+alternative; the manager never executes repository scripts or dependency,
+publishing, and cleanup commands.
 
 The assessment groups checks automatically and ends in one of four UI outcomes.
 Expired, replaced, digest-mismatched, unknown, unsupported, or case-variant
@@ -79,9 +78,9 @@ read-only preview shows detected repositories, source paths, proposed groups,
 confidence, and scan results. Confirming the plan records provenance and hashes;
 it does not move or rewrite Skill content.
 
-## Optional enhanced project scan
+## Codex review and controlled installation
 
-The **Run enhanced project scan** action is for repositories that also need a
+The Codex review action is for repositories that also need a
 Python tool or Codex MCP integration. Check Codex in **Settings** and make sure
 the CLI is installed, signed in, and has available usage. The app packages the
 prepared source with shell access disabled and returns a project summary,
