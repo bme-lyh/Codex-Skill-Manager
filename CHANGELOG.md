@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.12.0
+
+### English
+
+- Added a persisted System / Light / Dark appearance setting and aligned shell,
+  install, report, form, and sidebar surfaces with semantic light and dark tokens.
+- Refined the light theme's sidebar control and Home management banner so the
+  icon, heading, description, and update action remain readable on light surfaces.
+- Refreshed the English and Chinese showcase assets at a uniform 1440×900 size;
+  long screens are represented by scroll-separated frames, including report details.
+- Fixed root-scoped update status joins and selected-source checks so every Skill
+  receives its latest checked state across `.codex/skills` and `.agents/skills`.
+- Added clickable report details with findings, clusters, ignored state, and
+  Codex conclusions.
+- Accepted valid repository-root `SKILL.md` sources, including the
+  `book-to-skill` URL shape, while retaining staging containment and hash checks.
+- Made oversized Codex context review more resilient with local manifest counts,
+  per-chunk retries, explicit coverage warnings, a review deadline, and chunk
+  progress reporting. Large binary-only contexts now retain bounded metadata.
+- Added model-specific reasoning tiers, including `max` and `ultra` only when
+  the current Codex CLI advertises them; the new default is GPT-5.6 Luna at
+  extra-high effort.
+
+### 中文
+
+- 新增“跟随系统 / 浅色 / 深色”外观设置，并统一侧栏、安装流程、报告、表单和深色控件的语义色板。
+- 修正浅色模式的侧栏收起按钮和首页管理横幅，保证图标、标题、说明与检查更新按钮清晰可读。
+- 重新生成中英文展示图，统一为 1440×900；超出一屏的设置、安全和报告页面按滚动位置拆成多帧。
+- 修复按根目录区分的更新状态和选中来源检查，两个 Skills 根目录中的每个 Skill 都能显示最新检查结果。
+- 扫描报告支持点击查看风险命中、风险分组、忽略状态和 Codex 复核结论。
+- 支持仓库根目录 `SKILL.md`，修复 `book-to-skill` 这类根目录 Skill 的安装失败，同时保留暂存目录、哈希和路径边界校验。
+- 增强超大 Codex 上下文复核：本地清单计数、分块重试、覆盖率告警、总超时和分块进度；纯二进制上下文保留有界元数据。
+- 推理档位按当前 Codex CLI 的模型能力动态显示，模型支持时提供 `max` 和 `ultra`；新默认模型为 GPT-5.6 Luna，档位为超高。
+
 ## 0.11.0
 
 ### English

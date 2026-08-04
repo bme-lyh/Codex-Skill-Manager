@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArchiveRestore, CheckCircle2, ChevronRight, CircleAlert, Clock3,
   FolderGit2, Gauge, History,
   Link2, ListRestart, LoaderCircle, Pencil, Plus, RefreshCw, RotateCcw, Search,
   Settings, ShieldCheck, ShieldAlert, Trash2, X, GripVertical, CheckSquare2,
-  ArrowUpCircle, KeyRound, Stethoscope, Sparkles, Languages
+  ArrowUpCircle, KeyRound, Stethoscope, Sparkles, Languages, Sun, Moon, Monitor
 } from "lucide-react";
 import { api } from "./api";
 import { isPackagedFullContextMode } from "./codexContext";
@@ -16,6 +16,8 @@ import { matchesRoot, normalizeRootContract, rootKindLabel } from "./roots";
 import type { RootContract } from "./roots";
 import { Loading, OperationBanner } from "./shell/AppChrome";
 import type { Operation } from "./shell/AppChrome";
+import { applyTheme, normalizeTheme } from "./theme";
+import type { AppTheme } from "./theme";
 import type { NavigationGroupId, NavigationTabId } from "./shell/navigation";
 import type { AppLocale, Translate } from "./i18n";
 import type { AdoptionPreview, CodexCLIStatus, CodexReviewProgress, Dashboard, Finding, Group, InstallPreview, RiskCluster, ScanReport, Skill, UpdateStatus } from "./types";
@@ -66,19 +68,24 @@ function useCodexProgress() {
 
 export default function App() {
   const [locale, setLocale] = useState<AppLocale>("zh-CN");
+  const [theme, setTheme] = useState<AppTheme>("system");
   const [rootContract, setRootContract] = useState<{ roots: RootContract[]; defaultRootId: string }>({ roots: [], defaultRootId: "" });
   useEffect(() => {
     void api.config().then(cfg => {
       setLocale(normalizeLocale(cfg?.locale));
+      setTheme(normalizeTheme(cfg?.theme));
       setRootContract(normalizeRootContract(cfg));
     }).catch(() => undefined);
   }, []);
-  return <I18nProvider locale={locale}><AppShell locale={locale} setLocale={setLocale} rootContract={rootContract} /></I18nProvider>;
+  useEffect(() => { applyTheme(theme); }, [theme]);
+  return <I18nProvider locale={locale}><AppShell locale={locale} setLocale={setLocale} theme={theme} setTheme={setTheme} rootContract={rootContract} /></I18nProvider>;
 }
 
-function AppShell({ locale, setLocale, rootContract }: {
+function AppShell({ locale, setLocale, theme, setTheme, rootContract }: {
   locale: AppLocale;
   setLocale: (locale: AppLocale) => void;
+  theme: AppTheme;
+  setTheme: (theme: AppTheme) => void;
   rootContract: { roots: RootContract[]; defaultRootId: string };
 }) {
   const { t } = useI18n();
@@ -147,7 +154,6 @@ function AppShell({ locale, setLocale, rootContract }: {
           <h1>{title}</h1>
           <div className="header-actions">
             {roots.length > 0 && <label className="root-filter">
-              <span>{t("筛选根目录", "Filter roots")}</span>
               <select aria-label={t("按根目录筛选", "Filter by root")} value={rootFilter} onChange={event => setRootFilter(event.target.value)}>
                 <option value="all">{t("全部根目录", "All roots")}</option>
                 {roots.map(root => <option key={root.rootId} value={root.rootId}>{root.rootName}</option>)}
@@ -176,7 +182,7 @@ function AppShell({ locale, setLocale, rootContract }: {
             {page === "history" && <HistoryPage data={data} refresh={refresh} runOperation={runOperation} />}
             {page === "quarantine" && <QuarantinePage refresh={refresh} runOperation={runOperation} rootId={rootFilter === "all" ? defaultRootId : rootFilter} />}
             {page === "reports" && <ReportsPage data={data} />}
-            {page === "settings" && <SettingsPage locale={locale} setLocale={setLocale} refresh={refresh} runOperation={runOperation} />}
+            {page === "settings" && <SettingsPage locale={locale} setLocale={setLocale} theme={theme} setTheme={setTheme} refresh={refresh} runOperation={runOperation} />}
           </div>
         ) : null}
       </main>
@@ -280,10 +286,24 @@ function skillStatusLabel(value: string, locale: AppLocale): string {
 function reasoningEffortLabel(value: string, t: Translate): string {
   const labels: Record<string, [string, string]> = {
     minimal: ["最低", "minimal"], low: ["低", "low"], medium: ["中", "medium"],
-    high: ["高", "high"], xhigh: ["超高", "extra high"]
+    high: ["高", "high"], xhigh: ["超高", "extra high"], max: ["最高", "max"], ultra: ["极高", "ultra"]
   };
   const label = labels[value];
   return label ? t(label[0], label[1]) : value;
+}
+
+const reasoningOrder = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
+function availableReasoningLevels(models: CodexCLIStatus["models"], model: string, current: string) {
+  const candidates = (models ?? []).filter(item => model === "default" || item.slug === model);
+  const values = candidates.flatMap(item => item.reasoningLevels?.map(level => level.effort) ?? []);
+  if (!values.length) values.push(current || "xhigh");
+  if (current && !values.includes(current)) values.push(current);
+  return [...new Set(values)].sort((a, b) => {
+    const left = reasoningOrder.indexOf(a);
+    const right = reasoningOrder.indexOf(b);
+    return (left < 0 ? reasoningOrder.length : left) - (right < 0 ? reasoningOrder.length : right);
+  });
 }
 
 function GroupRow({ group }: { group: Group }) {
@@ -599,12 +619,12 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
       if (checked) { setStatuses(checked.statuses); await refresh(); }
     } finally { setWorking(false); }
   };
-  const retry = async (groupId: string) => {
+  const retry = async (group: Group) => {
     setWorking(true);
     try {
       const checked = await runOperation(
         t("重试 GitHub 更新检查", "Retry GitHub update check"),
-        () => api.checkSelected([groupId], true),
+        () => api.checkSelected([groupIdentity(group)], true),
         t("该来源已重新检查", "Source checked again")
       );
       if (checked) { setStatuses(checked.statuses); await refresh(); }
@@ -632,18 +652,19 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
       }
     } finally { setWorking(false); }
   };
-  const statusByGroup = new Map(statuses.map(status => [status.groupId, status]));
+  const statusByGroup = new Map(statuses.map(status => [statusIdentity(status), status]));
+  const statusForGroup = (group: Group) => statusByGroup.get(groupIdentity(group)) ?? statusByGroup.get(group.id);
   const updateGroups = data.sourceGroups.filter(group => group.provider !== "system");
   const availableGroups = updateGroups.filter(group => {
-    const status = statusByGroup.get(group.id);
+    const status = statusForGroup(group);
     return status?.status === "update-available" ||
       ((status?.status === "error" || status?.status === "rate-limited") && status.lastSuccessStatus === "update-available");
   });
-  const selectableIds = availableGroups.map(group => group.id);
+  const selectableIds = availableGroups.map(groupIdentity);
   const selectAll = () => setSelectedGroups(selectableIds);
   const invert = () => setSelectedGroups(selectableIds.filter(id => !selectedGroups.includes(id)));
   const clear = () => setSelectedGroups([]);
-  const selectedAvailableGroups = availableGroups.filter(group => selectedGroups.includes(group.id));
+  const selectedAvailableGroups = availableGroups.filter(group => selectedGroups.includes(groupIdentity(group)));
   const lastChecked = statuses.reduce<string | undefined>((latest, status) =>
     !latest || new Date(status.checkedAt) > new Date(latest) ? status.checkedAt : latest, data.lastUpdateCheck);
   return <section className="panel full">
@@ -666,12 +687,13 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
     {prepareFailures.length > 0 && <div className="prepare-failures"><CircleAlert size={17} /><div><strong>{t("部分更新无法准备", "Some updates could not be prepared")}</strong>
       {prepareFailures.map(message => <small key={message}>{message}</small>)}</div><button onClick={() => setPrepareFailures([])}><X size={15} /></button></div>}
     <div className="update-list">{updateGroups.length === 0 ? <Empty text={t("暂无可检查的个人 Skill 来源", "No personal Skill sources can be checked")} /> : updateGroups.map(g => {
-      const status = statusByGroup.get(g.id);
+      const status = statusForGroup(g);
+      const identity = groupIdentity(g);
       const presentation = updatePresentation(status, t);
-      return <article key={g.id} className={`update-item ${presentation.tone}`}>
-        <input className="update-check" type="checkbox" disabled={!availableGroups.some(group => group.id === g.id) || working}
-          checked={selectedGroups.includes(g.id)}
-          onChange={() => setSelectedGroups(selectedGroups.includes(g.id) ? selectedGroups.filter(id => id !== g.id) : [...selectedGroups, g.id])} />
+      return <article key={identity} className={`update-item ${presentation.tone}`}>
+        <input className="update-check" type="checkbox" disabled={!availableGroups.some(group => groupIdentity(group) === identity) || working}
+          checked={selectedGroups.includes(identity)}
+          onChange={() => setSelectedGroups(selectedGroups.includes(identity) ? selectedGroups.filter(id => id !== identity) : [...selectedGroups, identity])} />
         <div className={`update-state-icon ${presentation.tone}`}>{presentation.icon}</div>
         <div className="update-copy"><strong>{displayGroupName(g.name, locale)}</strong><span>{g.skillNames.length} Skills · {g.repository || g.provider}</span>
           <small>{status ? updateDetail(status, t, formatDate, join) : t("点击“检查更新”获取当前状态", "Select “Check updates” to get the current status")}</small>
@@ -686,7 +708,7 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
           </button>}
           {(status?.status === "error" || status?.status === "rate-limited") &&
             <button className="ghost compact" disabled={working}
-              onClick={() => void retry(g.id)}>
+              onClick={() => void retry(g)}>
               <RefreshCw size={15} />{t("重新检查", "Check again")}
             </button>}
         </div>
@@ -695,6 +717,21 @@ function UpdatesPage({ data, refresh, runOperation }: { data: Dashboard; refresh
     {previews.length > 0 && <UpdateDialog items={previews} close={() => setPreviews([])}
       refresh={refresh} />}
   </section>;
+}
+
+function groupIdentity(group: Pick<Group, "id" | "rootId">): string {
+  return `${group.rootId ?? ""}\x00${group.id}`;
+}
+
+function statusIdentity(status: Pick<UpdateStatus, "groupId" | "rootId">): string {
+  let rootId = status.rootId ?? "";
+  let groupId = status.groupId;
+  const separator = groupId.indexOf("\x00");
+  if (separator >= 0) {
+    if (!rootId) rootId = groupId.slice(0, separator);
+    groupId = groupId.slice(separator + 1);
+  }
+  return `${rootId}\x00${groupId}`;
 }
 
 function updatePresentation(status: UpdateStatus | undefined, t: Translate) {
@@ -1045,6 +1082,9 @@ function CodexProgressCard({ progress }: { progress: CodexReviewProgress }) {
     <div className="codex-progress-meta">
       <span>{progress.completedSkills}/{progress.totalSkills || "?"} Skills</span>
       <span>{progress.completedBatch}/{progress.batchCount || "?"} {t("分组", "groups")}</span>
+      {!!progress.contextChunkCount && <span>{t(`上下文 ${progress.contextChunkIndex || 0}/${progress.contextChunkCount} 块`, `Context ${progress.contextChunkIndex || 0}/${progress.contextChunkCount} chunks`)}
+        {progress.contextChunkAttempt ? ` · ${t(`第 ${progress.contextChunkAttempt} 次`, `attempt ${progress.contextChunkAttempt}`)}` : ""}</span>}
+      {!!progress.contextChunkFiles && <span>{progress.contextChunkFiles} {t("个文件", "files")}</span>}
       <span>{t(`${progress.activityCount} 次分析活动`, `${progress.activityCount} analysis events`)}</span>
     </div>
     {!!progress.activeBatches?.length ? <div className="codex-progress-batches">
@@ -1486,17 +1526,53 @@ function QuarantinePage({ refresh, runOperation, rootId }: { refresh: () => Prom
 
 function ReportsPage({ data }: { data: Dashboard }) {
   const { t, locale, formatDate } = useI18n();
-  return <section className="panel full"><PanelHead title={t("扫描报告", "Scan reports")} subtitle={t("查看已保存的 Markdown 和 JSON 报告", "View saved Markdown and JSON reports")} />
-    <div className="history-list">{data.recentReports.length === 0 ? <Empty text={t("暂无报告", "No reports")} /> : data.recentReports.map(r => <article key={r.id}>
-      <div className={`tx-icon ${r.activeHighestSeverity}`}><ShieldCheck size={19} /></div><div className="grow"><strong>{r.id}</strong><span>{r.target}</span>
-        <small>{formatDate(r.completedAt)} · {t(`${r.filesScanned} 文件 · ${r.ignoredFindingCount} 已忽略`,
-          `${r.filesScanned} files · ${r.ignoredFindingCount} ignored`)}</small></div>
-      <span className={`severity ${r.activeHighestSeverity}`}>{severityLabel(r.activeHighestSeverity, locale)}</span></article>)}</div>
+  const [selected, setSelected] = useState<ScanReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const requestId = useRef(0);
+  const openReport = async (report: ScanReport) => {
+    const currentRequest = ++requestId.current;
+    setSelected(report);
+    setLoading(true);
+    try {
+      const detail = await api.report(report.id, report.rootId ?? "");
+      if (currentRequest === requestId.current) setSelected(detail);
+    } catch {
+      // The dashboard already contains a complete report in v0.11; keep it
+      // visible when an older backend does not expose the detail endpoint.
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false);
+    }
+  };
+  return <section className="panel full"><PanelHead title={t("扫描报告", "Scan reports")} subtitle={t("选择一份报告查看风险详情", "Select a report to inspect its findings")} />
+    <div className="history-list">{data.recentReports.length === 0 ? <Empty text={t("暂无报告", "No reports")} /> : data.recentReports.map(r => {
+      const active = selected?.id === r.id && (selected.rootId ?? "") === (r.rootId ?? "");
+      return <article key={`${r.rootId ?? ""}:${r.id}`} className={`report-row ${active ? "selected" : ""}`} role="button" tabIndex={0}
+        aria-controls="report-detail"
+        aria-expanded={active} onClick={() => void openReport(r)}
+        onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void openReport(r); } }}>
+        <div className={`tx-icon ${r.activeHighestSeverity}`}><ShieldCheck size={19} /></div><div className="grow"><strong>{r.id}</strong><span>{r.target}</span>
+          <small>{formatDate(r.completedAt)} · {t(`${r.filesScanned} 文件 · ${r.ignoredFindingCount} 已忽略`,
+            `${r.filesScanned} files · ${r.ignoredFindingCount} ignored`)}</small></div>
+        <span className={`severity ${r.activeHighestSeverity}`}>{severityLabel(r.activeHighestSeverity, locale)}</span>
+        <ChevronRight size={17} aria-hidden="true" />
+      </article>;
+    })}</div>
+    {selected && <section id="report-detail" className="report-detail" aria-live="polite">
+      <div className="report-detail-head"><div><h3>{selected.id}</h3><p>{selected.target} · {formatDate(selected.completedAt)}</p></div>
+        <button className="icon-button" aria-label={t("关闭报告详情", "Close report details")} onClick={() => setSelected(null)}><X size={16} /></button></div>
+      {loading && <div className="report-detail-loading"><LoaderCircle className="spin" size={16} />{t("正在读取完整报告…", "Loading full report…")}</div>}
+      <div className="scan-summary"><ShieldCheck size={18} /><div><strong>{t("扫描结果", "Scan result")}</strong>
+        <small>{selected.filesScanned} {t("个文件", "files")} · {selected.activeFindingCount} {t("个活动风险", "active findings")} · {selected.ignoredFindingCount} {t("个已忽略", "ignored")}</small></div>
+        <span className={`severity ${selected.activeHighestSeverity}`}>{severityLabel(selected.activeHighestSeverity, locale)}</span></div>
+      <FindingDetails report={selected} />
+      {selected.codexReview && <CodexSkillReviewList report={selected} />}
+    </section>}
   </section>;
 }
 
-function SettingsPage({ locale, setLocale, refresh, runOperation }: {
+function SettingsPage({ locale, setLocale, theme, setTheme, refresh, runOperation }: {
   locale: AppLocale; setLocale: (locale: AppLocale) => void;
+  theme: AppTheme; setTheme: (theme: AppTheme) => void;
   refresh: () => Promise<void>; runOperation: RunOperation;
 }) {
   const { t, formatDate } = useI18n();
@@ -1511,7 +1587,7 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
   useEffect(() => {
     void api.config().then(value => {
       const normalized = normalizeLocale(value?.locale);
-      setCfg({ ...value, locale: normalized });
+      setCfg({ ...value, locale: normalized, theme: normalizeTheme(value?.theme) });
     });
     void api.diagnostics().then(setDiagnostics);
     let active = true;
@@ -1542,9 +1618,11 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
   }, []);
   if (!cfg) return <Loading />;
   const codexModels = codexStatus?.authenticated ? (codexStatus.models ?? []) : [];
-  const configuredModel = cfg.codexReview.model || "default";
+  const configuredModel = cfg.codexReview.model || "gpt-5.6-luna";
   const configuredModelMissing = configuredModel !== "default" &&
     !codexModels.some(model => model.slug === configuredModel);
+  const configuredEffort = cfg.codexReview.reasoningEffort || "xhigh";
+  const reasoningLevels = availableReasoningLevels(codexModels, configuredModel, configuredEffort);
   const pathFields = [
     [t("Skills 根目录", "Skills root"), "skillsRoot"], [t("数据目录", "Data directory"), "dataRoot"],
     [t("操作日志", "Operation logs"), "logsRoot"], [t("扫描与操作报告", "Scan and operation reports"), "reportsRoot"],
@@ -1566,6 +1644,16 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
       translate(nextLocale, "切换界面语言", "Change interface language"),
       async () => { await api.saveConfig(nextCfg); return true; },
       translate(nextLocale, "界面语言已保存", "Interface language saved")
+    );
+  };
+  const changeTheme = async (nextTheme: AppTheme) => {
+    setTheme(nextTheme);
+    const nextCfg = { ...cfg, theme: nextTheme };
+    setCfg(nextCfg);
+    await runOperation(
+      translate(locale, "切换外观", "Change appearance"),
+      async () => { await api.saveConfig(nextCfg); return true; },
+      translate(locale, "外观已保存", "Appearance saved")
     );
   };
   const schedule = async () => {
@@ -1597,6 +1685,14 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
     const status = await runOperation(t("检查 Codex CLI", "Check Codex CLI"), api.codexStatus, t("Codex CLI 检查完成", "Codex CLI check completed"));
     if (status) setCodexStatus(status);
   };
+  const changeCodexModel = (nextModel: string) => {
+    const catalogEntry = codexModels.find(model => model.slug === nextModel);
+    const supported = catalogEntry?.reasoningLevels?.map(level => level.effort) ?? [];
+    const nextEffort = catalogEntry?.defaultReasoningLevel && supported.includes(catalogEntry.defaultReasoningLevel)
+      ? catalogEntry.defaultReasoningLevel
+      : availableReasoningLevels(codexModels, nextModel, configuredEffort)[0] ?? configuredEffort;
+    setCfg({ ...cfg, codexReview: { ...cfg.codexReview, model: nextModel, reasoningEffort: nextEffort } });
+  };
   const bootstrap = async () => {
     if (!confirm(t("自动识别并管理当前已知的历史 Skills？此操作不会替换或移动 Skill 文件。",
       "Automatically identify and manage known existing Skills? Skill files will not be replaced or moved."))) return;
@@ -1623,6 +1719,17 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
         </button>
       </div>
       <small className="language-hint">{t("选择后立即切换并自动保存。", "The interface switches immediately and saves automatically.")}</small>
+      <div className="theme-options" role="group" aria-label={t("颜色模式", "Color mode")}>
+        {([
+          ["system", Monitor, t("跟随系统", "System")],
+          ["light", Sun, t("浅色", "Light")],
+          ["dark", Moon, t("深色", "Dark")]
+        ] as const).map(([value, Icon, label]) => <button key={value} className={theme === value ? "active" : ""}
+          onClick={() => void changeTheme(value)} aria-pressed={theme === value}>
+          <Icon size={18} /><span><strong>{label}</strong><small>{value === "system" ? t("自动匹配 Windows", "Use Windows setting") : value === "light" ? t("保持明亮背景", "Keep light surfaces") : t("降低夜间亮度", "Reduce night glare")}</small></span>
+          {theme === value && <CheckCircle2 size={17} />}
+        </button>)}
+      </div>
     </section>
     <section className="panel settings-paths"><PanelHead title={t("存储位置", "Storage locations")} subtitle={t("设置 Skills、数据、日志和备份目录", "Set directories for Skills, data, logs, and backups")} />
       <div className="form">{pathFields.map(([label, key]) => <label key={key}><span>{label}</span>
@@ -1672,7 +1779,7 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
           placeholder={t("留空自动查找独立 codex.exe", "Leave blank to find standalone codex.exe automatically")} /></label>
         <label><span>{t("模型", "Model")}</span><select value={configuredModel}
           disabled={!codexStatus?.authenticated}
-          onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, model: e.target.value } })}>
+          onChange={e => changeCodexModel(e.target.value)}>
           <option value="default">{t("跟随 Codex 默认模型（推荐）", "Use Codex default model (recommended)")}</option>
           {configuredModelMissing && <option value={configuredModel}>{t(`${configuredModel}（当前配置，模型目录中未返回）`,
             `${configuredModel} (configured, not returned by model catalog)`)}</option>}
@@ -1680,10 +1787,9 @@ function SettingsPage({ locale, setLocale, refresh, runOperation }: {
             {model.displayName}{model.displayName === model.slug ? "" : ` · ${model.slug}`}
           </option>)}
         </select></label>
-        <label><span>{t("推理强度", "Reasoning effort")}</span><select value={cfg.codexReview.reasoningEffort}
+        <label><span>{t("推理强度", "Reasoning effort")}</span><select value={configuredEffort}
           onChange={e => setCfg({ ...cfg, codexReview: { ...cfg.codexReview, reasoningEffort: e.target.value } })}>
-          <option value="minimal">{t("最低", "Minimal")}</option><option value="low">{t("低", "Low")}</option><option value="medium">{t("中（推荐）", "Medium (recommended)")}</option>
-          <option value="high">{t("高", "High")}</option><option value="xhigh">{t("超高", "Extra high")}</option>
+          {reasoningLevels.map(level => <option key={level} value={level}>{reasoningEffortLabel(level, t)}{level === "xhigh" && configuredModel === "gpt-5.6-luna" ? t("（默认）", " (default)") : ""}</option>)}
         </select></label>
         <div className="codex-batch-settings">
           <label><span>{t("同时复核的分组", "Groups reviewed in parallel")}</span><input type="number" min="1" max="4"

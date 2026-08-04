@@ -46,6 +46,7 @@ type Backend = {
   ApplyInstall(plan: string, skills: string[], acceptHighRisk: boolean, rootId: string): Promise<Transaction>;
   AuditSkill(name: string, rootId: string): Promise<ScanReport>;
   AuditSkills(names: string[], rootId: string): Promise<ScanReport>;
+  GetScanReport(id: string, rootId: string): Promise<ScanReport>;
   SetFindingIgnored(finding: Finding, ignored: boolean, reason: string): Promise<boolean>;
   SetRiskClusterIgnored(cluster: RiskCluster, ignored: boolean, reason: string, confirmDeterministic: boolean): Promise<boolean>;
   SetRiskClustersIgnored(clusters: RiskCluster[], ignored: boolean, reason: string): Promise<boolean>;
@@ -385,6 +386,11 @@ export const api = {
     const b = backend();
     if (!b) return localizedDemo(demoScanReport);
     return normalizeScan(await b.AuditSkills(names, rootId));
+  },
+  report: async (id: string, rootId = "") => {
+    const b = backend();
+    if (!b) return normalizeScan(demoScanReport);
+    return normalizeScan(await b.GetScanReport(id, rootId));
   },
   setFindingIgnored: async (finding: Finding, ignored: boolean, reason = "") => {
     const b = backend();

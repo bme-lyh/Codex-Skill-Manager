@@ -12,8 +12,9 @@ confirmation and a non-empty reason.
 
 Use the root selector at the top of the sidebar to switch between **Codex
 Skills** and **Agents Skills**. Lists, groups, security, updates, history, and
-quarantine follow the selected root. The sidebar collapses, while appearance,
-accent color, and high contrast follow Windows settings.
+quarantine follow the selected root. The sidebar collapses, while appearance can
+follow Windows or be set explicitly to Light or Dark; high contrast remains
+available through Windows.
 
 - **Home** shows managed, unmanaged, and system Skill counts, open reports,
   source groups, and recent operations.
@@ -21,8 +22,8 @@ accent color, and high contrast follow Windows settings.
 - **Security** contains the local Skill scanner and risk-review results.
 - **Activity** contains **Updates**, **History & Rollback**, **Quarantine**, and
   **Reports**.
-- **Settings** contains language, storage, GitHub, scheduled checks, optional
-  Codex review, and diagnostics.
+- **Settings** contains language, appearance, storage, GitHub, scheduled checks,
+  optional Codex review, and diagnostics.
 
 The header's **Add project** action is available from the main shell. Existing
 Page routes and the Wails/API compatibility boundary remain for integrations,
@@ -158,13 +159,14 @@ overwriting a managed target that changed after installation.
 ### Quarantine and Reports
 
 Quarantine stores explicitly removed personal Skills without permanent deletion
-and allows restoration. Reports provide human-readable and structured audit
-records for local scans and operations.
+and allows restoration. Each report opens its findings, risk clusters, ignored
+state, and Codex conclusions in place.
 
 ## Settings
 
-Language supports Simplified Chinese and English. Chinese is used on first run
-and when no saved language exists. Switching language is immediate, saved
+Language supports Simplified Chinese and English. Appearance supports System,
+Light, and Dark. Chinese and System are used on first run and when no saved
+settings exist. Switching language or appearance is immediate, saved
 automatically, and restored on the next launch.
 
 Configure absolute paths, scheduled read-only checks, private GitHub

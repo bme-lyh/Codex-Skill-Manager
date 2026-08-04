@@ -155,8 +155,8 @@ export const demoScanReport: ScanReport = {
     status: "completed",
     summary: "命中主要来自发布流程示例。未发现明确破坏行为，建议重点复核网络目标和命令参数。",
     overallVerdict: "人工复核后可接受",
-    model: "gpt-5.6",
-    reasoningEffort: "medium",
+    model: "gpt-5.6-luna",
+    reasoningEffort: "xhigh",
     contextMode: "full-target-packaged-no-tools",
     contextFileCount: 128,
     startedAt: "2026-07-28T10:21:00Z",
@@ -618,8 +618,8 @@ export const demoConfig = {
   codexReview: {
     enabled: true,
     cliPath: "",
-    model: "gpt-5.6",
-    reasoningEffort: "medium",
+    model: "gpt-5.6-luna",
+    reasoningEffort: "xhigh",
     timeoutSeconds: 300,
     maxSamplePerRisk: 8,
     maxParallelBatches: 1
@@ -636,13 +636,16 @@ export const demoCodexStatus: CodexCLIStatus = {
   checkedAt: "2026-07-28T11:05:00Z",
   models: [
     {
-      slug: "gpt-5.6",
-      displayName: "GPT-5.6",
-      description: "Latest frontier agentic coding model.",
+      slug: "gpt-5.6-luna",
+      displayName: "GPT-5.6 Luna",
+      description: "Balanced frontier model for deep repository reviews.",
       defaultReasoningLevel: "medium",
       reasoningLevels: [
-        { effort: "medium", description: "平衡速度和分析深度" },
-        { effort: "high", description: "更深入的语义复核" }
+        { effort: "low", description: "Fast review" },
+        { effort: "medium", description: "Balanced speed and depth" },
+        { effort: "high", description: "Deeper semantic review" },
+        { effort: "xhigh", description: "Most complete standard review" },
+        { effort: "max", description: "Highest available review effort" }
       ]
     }
   ]
@@ -893,8 +896,8 @@ export const demoAssistedInstallPlan: AssistedInstallPlan = {
   ],
   needsProjectRoot: true,
   projectRootReason: "MCP 服务需要一个明确的项目目录作为默认分析范围。",
-  codexModel: "gpt-5.6",
-  reasoningEffort: "medium",
+  codexModel: "gpt-5.6-luna",
+  reasoningEffort: "xhigh",
   contextFileCount: 348,
   createdAt: "2026-07-28T11:12:00Z",
   expiresAt: "2026-07-28T12:12:00Z",
